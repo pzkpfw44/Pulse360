@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 class Base:
     id: Any
     __name__: str
+    __allow_unmapped__ = True
     # Generate tablename automatically based on class name
     @declared_attr
     def __tablename__(cls) -> str:

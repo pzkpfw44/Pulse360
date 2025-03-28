@@ -5,8 +5,8 @@ from app.core.config import settings
 
 # Create SQLAlchemy engine
 engine = create_engine(
-    settings.DATABASE_URL,
-    pool_pre_ping=True,  # Enables connection pool "pre-ping" feature
+    str(settings.DATABASE_URL),  # Convert PostgresDsn to string
+    pool_pre_ping=True,
 )
 
 # Create session factory
