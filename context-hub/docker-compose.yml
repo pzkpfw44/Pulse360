@@ -55,7 +55,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      Dockerfile.custom: Dockerfile.custom
     container_name: context-hub-backend
     volumes:
       - ./backend:/app
@@ -90,3 +90,12 @@ volumes:
 networks:
   context_hub_network:
     driver: bridge
+
+command: >
+    bash -c "
+      ln -sf /shared/shared /app/shared &&
+      cd /shared && 
+      alembic upgrade head &&
+      cd /app &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    "
