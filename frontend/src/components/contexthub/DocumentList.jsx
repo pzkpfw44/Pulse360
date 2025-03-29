@@ -27,10 +27,10 @@ import {
   CheckCircle,
   HourglassEmpty,
   ErrorOutline,
-  ArrowRight,
-} from 'lucide-react';
+  ArrowForward,
+} from '@mui/icons-material';
 
-const DocumentList = ({ embedded = false }) => {
+const DocumentList = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -79,11 +79,11 @@ const DocumentList = ({ embedded = false }) => {
 
   const getStatusChip = (status) => {
     const statusConfig = {
-      uploaded: { color: 'default', label: 'Uploaded', icon: <CheckCircle size={16} /> },
-      uploaded_to_ai: { color: 'info', label: 'Uploaded to AI', icon: <CheckCircle size={16} /> },
-      analysis_in_progress: { color: 'warning', label: 'Analysis In Progress', icon: <HourglassEmpty size={16} /> },
-      analysis_complete: { color: 'success', label: 'Analysis Complete', icon: <CheckCircle size={16} /> },
-      analysis_failed: { color: 'error', label: 'Analysis Failed', icon: <ErrorOutline size={16} /> },
+      uploaded: { color: 'default', label: 'Uploaded', icon: <CheckCircle fontSize="small" /> },
+      uploaded_to_ai: { color: 'info', label: 'Uploaded to AI', icon: <CheckCircle fontSize="small" /> },
+      analysis_in_progress: { color: 'warning', label: 'Analysis In Progress', icon: <HourglassEmpty fontSize="small" /> },
+      analysis_complete: { color: 'success', label: 'Analysis Complete', icon: <CheckCircle fontSize="small" /> },
+      analysis_failed: { color: 'error', label: 'Analysis Failed', icon: <ErrorOutline fontSize="small" /> },
     };
 
     const config = statusConfig[status] || statusConfig.uploaded;
@@ -135,17 +135,7 @@ const DocumentList = ({ embedded = false }) => {
   }
 
   if (documents.length === 0) {
-    // Show different empty state based on embedded mode
-    return embedded ? (
-      <Box className="py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-        <Typography variant="body1" gutterBottom>
-          No documents have been uploaded yet.
-        </Typography>
-        <Typography variant="body2" color="text.secondary" className="mb-4">
-          Upload organizational documents to get started.
-        </Typography>
-      </Box>
-    ) : (
+    return (
       <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: '#f5f5f5' }}>
         <Typography variant="h6" gutterBottom>
           No Documents Found
@@ -164,10 +154,18 @@ const DocumentList = ({ embedded = false }) => {
     );
   }
 
-  // Table content is the same for both modes
-  const tableContent = (
-    <>
-      <TableContainer>
+  return (
+    <Container>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" component="h2" gutterBottom>
+          Document Library
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Manage your uploaded organizational documents
+        </Typography>
+      </Box>
+
+      <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
@@ -181,7 +179,7 @@ const DocumentList = ({ embedded = false }) => {
           </TableHead>
           <TableBody>
             {documents.map((document) => (
-              <TableRow key={document.id} hover>
+              <TableRow key={document.id}>
                 <TableCell>
                   <Typography variant="body2" component="div">
                     {document.filename}
@@ -209,7 +207,7 @@ const DocumentList = ({ embedded = false }) => {
                       }}
                       title="View Template"
                     >
-                      <ArrowRight size={18} />
+                      <ArrowForward />
                     </IconButton>
                   )}
                   <IconButton
@@ -218,7 +216,7 @@ const DocumentList = ({ embedded = false }) => {
                     onClick={() => handleDeleteClick(document)}
                     title="Delete Document"
                   >
-                    <Delete size={18} />
+                    <Delete />
                   </IconButton>
                 </TableCell>
               </TableRow>
@@ -226,6 +224,18 @@ const DocumentList = ({ embedded = false }) => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {documents.some(doc => doc.status === 'analysis_complete') && (
+        <Box sx={{ mt: 3, textAlign: 'right' }}>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={() => window.location.href = '/contexthub?tab=2'}
+          >
+            View All Templates
+          </Button>
+        </Box>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog
@@ -245,36 +255,6 @@ const DocumentList = ({ embedded = false }) => {
           </Button>
         </DialogActions>
       </Dialog>
-    </>
-  );
-
-  // Return appropriate wrapper based on embedded mode
-  return embedded ? tableContent : (
-    <Container>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" component="h2" gutterBottom>
-          Document Library
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Manage your uploaded organizational documents
-        </Typography>
-      </Box>
-
-      <Paper>
-        {tableContent}
-      </Paper>
-
-      {documents.some(doc => doc.status === 'analysis_complete') && (
-        <Box sx={{ mt: 3, textAlign: 'right' }}>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={() => window.location.href = '/contexthub?tab=2'}
-          >
-            View All Templates
-          </Button>
-        </Box>
-      )}
     </Container>
   );
 };

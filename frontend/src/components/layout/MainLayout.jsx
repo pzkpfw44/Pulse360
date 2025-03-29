@@ -4,6 +4,7 @@ import {
   Home, Upload, BookOpen, FileText, PieChart, 
   BarChart, MessageSquare, Users, Database, Settings 
 } from 'lucide-react';
+import fluxLogo from "../../../assets/Flux_white_symbol.png";
 
 // Sidebar navigation item component
 const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
@@ -133,19 +134,13 @@ export function MainLayout({ children }) {
             </nav>
           </div>
           
-          {/* Flux AI branding footer - UPDATED */}
-          <div className="mt-auto border-t border-white/10 p-6 flex justify-center items-center">
-            <div className="text-white/90 text-sm flex items-center">
+          {/* Flux AI branding footer */}
+          <div className="mt-auto border-t border-white/10 p-4 flex justify-center items-center">
+            <div className="text-white/80 text-xs flex items-center">
               <span className="mr-2">AI powered by</span>
-              <a href="https://runonflux.com" target="_blank" rel="noopener noreferrer">
-                <img 
-                  src="/Flux_white_symbol.png" 
-                  alt="Flux" 
-                  className="h-5 w-auto" 
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
+              <a href="https://runonflux.com" target="_blank" rel="noopener noreferrer" className="flex items-center">
+                <img src={fluxLogo} alt="Flux" className="h-4 w-auto" />
+                <span className="font-semibold text-white ml-1">Flux</span>
               </a>
             </div>
           </div>
