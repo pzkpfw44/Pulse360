@@ -51,6 +51,7 @@ export const templatesApi = {
   create: (data) => api.post('/templates', data),
   update: (id, data) => api.put(`/templates/${id}`, data),
   approve: (id, data) => api.put(`/templates/${id}/approve`, data),
+  reanalyze: (id) => api.post(`/templates/${id}/reanalyze`),
   delete: (id) => api.delete(`/templates/${id}`),
 };
 

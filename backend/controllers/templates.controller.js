@@ -1,6 +1,7 @@
 // controllers/templates.controller.js
 
 const { Template, Question, SourceDocument } = require('../models');
+const { Document } = require('../models');
 
 // Get all templates
 exports.getAllTemplates = async (req, res) => {
@@ -70,7 +71,16 @@ exports.getTemplateById = async (req, res) => {
 // Create new template
 exports.createTemplate = async (req, res) => {
   try {
-    const { name, description, documentType, questions, sourceDocuments } = req.body;
+    const { 
+      name, 
+      description, 
+      purpose,
+      department,
+      documentType, 
+      questions, 
+      sourceDocuments,
+      perspectiveSettings
+    } = req.body;
     
     if (!name || !documentType) {
       return res.status(400).json({ message: 'Name and document type are required' });
@@ -80,7 +90,16 @@ exports.createTemplate = async (req, res) => {
     const template = await Template.create({
       name,
       description,
+      purpose,
+      department,
       documentType,
+      perspectiveSettings: perspectiveSettings || {
+        manager: { questionCount: 10, enabled: true },
+        peer: { questionCount: 10, enabled: true },
+        direct_report: { questionCount: 10, enabled: true },
+        self: { questionCount: 10, enabled: true },
+        external: { questionCount: 5, enabled: false }
+      },
       generatedBy: 'manual',
       createdBy: req.user.id
     });
@@ -89,6 +108,7 @@ exports.createTemplate = async (req, res) => {
     if (questions && Array.isArray(questions)) {
       for (let i = 0; i < questions.length; i++) {
         const question = questions[i];
+        
         await Question.create({
           text: question.text,
           type: question.type || 'rating',
@@ -132,7 +152,15 @@ exports.createTemplate = async (req, res) => {
 // Update template
 exports.updateTemplate = async (req, res) => {
   try {
-    const { name, description, questions, status } = req.body;
+    const { 
+      name, 
+      description, 
+      purpose,
+      department,
+      questions, 
+      status,
+      perspectiveSettings
+    } = req.body;
     
     // Find the template
     const template = await Template.findOne({
@@ -154,7 +182,10 @@ exports.updateTemplate = async (req, res) => {
     await template.update({
       name: name || template.name,
       description: description || template.description,
-      status: status || template.status
+      purpose: purpose !== undefined ? purpose : template.purpose,
+      department: department !== undefined ? department : template.department,
+      status: status || template.status,
+      perspectiveSettings: perspectiveSettings || template.perspectiveSettings
     });
     
     // Update questions if provided
@@ -187,7 +218,7 @@ exports.updateTemplate = async (req, res) => {
       for (let i = 0; i < questionsToAdd.length; i++) {
         const question = questionsToAdd[i];
         // If it has a temporary ID (like from frontend), remove it
-        const { _id, id, ...questionData } = question;
+        const { _id, id, ratingScaleId, ...questionData } = question;
         await Question.create({
           ...questionData,
           perspective: questionData.perspective || 'peer',
@@ -226,7 +257,7 @@ exports.updateTemplate = async (req, res) => {
 // Approve template
 exports.approveTemplate = async (req, res) => {
   try {
-    const { name, description, questions } = req.body;
+    const { name, description, purpose, department, questions } = req.body;
     
     // Find the template
     const template = await Template.findOne({
@@ -247,6 +278,8 @@ exports.approveTemplate = async (req, res) => {
     await template.update({
       name: name || template.name,
       description: description || template.description,
+      purpose: purpose !== undefined ? purpose : template.purpose,
+      department: department !== undefined ? department : template.department,
       status: 'approved'
     });
     
@@ -280,7 +313,7 @@ exports.approveTemplate = async (req, res) => {
       for (let i = 0; i < questionsToAdd.length; i++) {
         const question = questionsToAdd[i];
         // If it has a temporary ID (like from frontend), remove it
-        const { _id, id, ...questionData } = question;
+        const { _id, id, ratingScaleId, ...questionData } = question;
         await Question.create({
           ...questionData,
           perspective: questionData.perspective || 'peer',
@@ -313,6 +346,153 @@ exports.approveTemplate = async (req, res) => {
   } catch (error) {
     console.error('Error approving template:', error);
     res.status(500).json({ message: 'Failed to approve template', error: error.message });
+  }
+};
+
+// Re-analyze template with AI
+exports.reAnalyzeTemplate = async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    
+    // Find the template with its source documents
+    const template = await Template.findOne({
+      where: { id: templateId },
+      include: [
+        { 
+          model: Question, 
+          as: 'questions'
+        },
+        {
+          model: SourceDocument,
+          as: 'sourceDocuments'
+        }
+      ]
+    });
+    
+    if (!template) {
+      return res.status(404).json({ message: 'Template not found' });
+    }
+    
+    // Check if template has source documents
+    if (!template.sourceDocuments || template.sourceDocuments.length === 0) {
+      return res.status(400).json({ 
+        message: 'Cannot re-analyze template without source documents' 
+      });
+    }
+    
+    // Get document IDs from source documents
+    const documentIds = template.sourceDocuments
+      .filter(src => src.documentId)
+      .map(src => src.documentId);
+    
+    // Find the actual documents
+    const documents = await Document.findAll({
+      where: { id: documentIds }
+    });
+    
+    if (documents.length === 0) {
+      return res.status(400).json({ 
+        message: 'No valid documents found for re-analysis' 
+      });
+    }
+    
+    // Start the re-analysis process
+    // This is a simplified version - in a real implementation, 
+    // we would call the AI service asynchronously and update the template
+    try {
+      // Store existing questions in memory
+      const existingQuestions = [...template.questions];
+      
+      // Store existing categories and question text for merging
+      const existingCategories = new Set();
+      const existingQuestionTexts = new Set();
+      
+      existingQuestions.forEach(q => {
+        if (q.category) existingCategories.add(q.category);
+        existingQuestionTexts.add(q.text);
+      });
+      
+      // Get file IDs for AI analysis
+      const fileIds = template.sourceDocuments
+        .filter(src => src.fluxAiFileId)
+        .map(src => src.fluxAiFileId);
+        
+      // In development mode - simulate adding new questions
+      // Add a few new mock questions
+      const mockNewQuestions = [
+        {
+          text: "How effectively does this person communicate complex ideas?",
+          type: "rating",
+          category: "Communication",
+          perspective: "manager",
+          required: true,
+          order: existingQuestions.length + 1,
+          templateId: template.id
+        },
+        {
+          text: "What specific areas could this person improve in their leadership approach?",
+          type: "open_ended",
+          category: "Leadership",
+          perspective: "peer",
+          required: true,
+          order: existingQuestions.length + 2,
+          templateId: template.id
+        },
+        {
+          text: "How well does this person adapt to changing priorities?",
+          type: "rating",
+          category: "Adaptability",
+          perspective: "direct_report",
+          required: true,
+          order: existingQuestions.length + 3,
+          templateId: template.id
+        }
+      ];
+      
+      // Add the mock questions to the database
+      for (const question of mockNewQuestions) {
+        if (!existingQuestionTexts.has(question.text)) {
+          await Question.create(question);
+        }
+      }
+      
+      // Update template's last analysis date
+      await template.update({
+        lastAnalysisDate: new Date()
+      });
+      
+      // Return updated template
+      const updatedTemplate = await Template.findOne({
+        where: { id: templateId },
+        include: [
+          { 
+            model: Question, 
+            as: 'questions',
+            order: [['order', 'ASC']]
+          },
+          {
+            model: SourceDocument,
+            as: 'sourceDocuments'
+          }
+        ]
+      });
+      
+      res.status(200).json({
+        message: `Re-analysis complete. Added ${mockNewQuestions.length} new questions.`,
+        template: updatedTemplate
+      });
+      
+    } catch (error) {
+      console.error('Error during re-analysis:', error);
+      return res.status(500).json({ 
+        message: 'AI re-analysis failed', 
+        error: error.message 
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error with template re-analysis:', error);
+    res.status(500).json({ message: 'Failed to re-analyze template', error: error.message });
   }
 };
 

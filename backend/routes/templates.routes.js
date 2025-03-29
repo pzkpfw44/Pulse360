@@ -12,6 +12,7 @@ router.get('/:id', templatesController.getTemplateById);
 router.post('/', templatesController.createTemplate);
 router.put('/:id', templatesController.updateTemplate);
 router.put('/:id/approve', templatesController.approveTemplate);
+router.post('/:id/reanalyze', templatesController.reAnalyzeTemplate);
 router.delete('/:id', templatesController.deleteTemplate);
 
 module.exports = router;

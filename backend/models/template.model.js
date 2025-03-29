@@ -95,6 +95,16 @@ const Template = sequelize.define('Template', {
     type: DataTypes.TEXT,
     allowNull: true
   },
+  purpose: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Purpose of the template, e.g. "360 Assessment for Finance Controller Manager"'
+  },
+  department: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Department or function this template is for'
+  },
   documentType: {
     type: DataTypes.ENUM,
     values: [
@@ -115,6 +125,22 @@ const Template = sequelize.define('Template', {
     type: DataTypes.ENUM,
     values: ['pending_review', 'approved', 'archived'],
     defaultValue: 'pending_review'
+  },
+  perspectiveSettings: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {
+      manager: { questionCount: 10, enabled: true },
+      peer: { questionCount: 10, enabled: true },
+      direct_report: { questionCount: 10, enabled: true },
+      self: { questionCount: 10, enabled: true },
+      external: { questionCount: 5, enabled: false }
+    },
+    comment: 'Settings for each perspective including question counts and enabled status'
+  },
+  lastAnalysisDate: {
+    type: DataTypes.DATE,
+    allowNull: true
   },
   createdBy: {
     type: DataTypes.UUID,
