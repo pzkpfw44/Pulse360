@@ -37,9 +37,25 @@ exports.uploadDocuments = async (req, res) => {
       uploadedDocuments.push(document);
     }
 
-    // Start FluxAI analysis in the background
+    // Start analysis in the background
     // This will be asynchronous to not block the response
-    startDocumentAnalysis(uploadedDocuments, documentType, req.user.id);
+    if (fluxAiConfig.isConfigured()) {
+      startDocumentAnalysis(uploadedDocuments, documentType, req.user.id);
+    } else if (fluxAiConfig.isDevelopment) {
+      console.log('Running in development mode without Flux AI API key');
+      startDevelopmentModeAnalysis(uploadedDocuments, documentType, req.user.id);
+    } else {
+      console.error('Flux AI not configured and not in development mode');
+      // Update documents with error status
+      const documentIds = uploadedDocuments.map(doc => doc.id);
+      await Document.update(
+        { 
+          status: 'analysis_failed', 
+          analysisError: 'Flux AI API key not configured' 
+        },
+        { where: { id: documentIds } }
+      );
+    }
 
     res.status(201).json({
       message: 'Documents uploaded successfully',
@@ -57,6 +73,291 @@ exports.uploadDocuments = async (req, res) => {
     res.status(500).json({ message: 'Failed to upload documents', error: error.message });
   }
 };
+
+// Development mode analysis (no API key needed)
+async function startDevelopmentModeAnalysis(documents, documentType, userId) {
+  try {
+    console.log('Starting development mode analysis for document type:', documentType);
+    
+    // Update documents to show analysis in progress
+    const documentIds = documents.map(doc => doc.id);
+    await Document.update(
+      { 
+        status: 'analysis_in_progress',
+        fluxAiFileId: 'dev-mode-' + uuidv4() // Generate a fake file ID
+      },
+      { where: { id: documentIds } }
+    );
+    
+    // Wait a moment to simulate actual API call
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Generate mock questions based on document type
+    const questions = generateMockQuestionsForDocumentType(documentType);
+    
+    // Create a new template
+    const template = await Template.create({
+      name: `${documentType.replace('_', ' ')} Template (Dev Mode)`,
+      description: 'Generated in development mode without Flux AI',
+      documentType,
+      generatedBy: 'flux_ai',
+      createdBy: userId,
+      status: 'pending_review'
+    });
+    
+    // Create questions for the template
+    await Promise.all(
+      questions.map(async (q, index) => {
+        return Question.create({
+          ...q,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Create mock source document references
+    await Promise.all(
+      documents.map(async (doc) => {
+        return SourceDocument.create({
+          fluxAiFileId: doc.fluxAiFileId || 'dev-mode-file',
+          documentId: doc.id,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Update documents with analysis complete status
+    await Document.update(
+      { 
+        status: 'analysis_complete',
+        associatedTemplateId: template.id
+      },
+      { where: { id: documentIds } }
+    );
+    
+    console.log('Development mode analysis complete, template created:', template.id);
+    return template;
+  } catch (error) {
+    console.error('Error in development mode analysis:', error);
+    
+    // Update documents with error status
+    const documentIds = documents.map(doc => doc.id);
+    await Document.update(
+      { status: 'analysis_failed', analysisError: error.message },
+      { where: { id: documentIds } }
+    );
+  }
+}
+
+// Generate mock questions based on document type
+function generateMockQuestionsForDocumentType(documentType) {
+  const commonQuestions = [
+    {
+      text: "How effectively does this person communicate with team members?",
+      type: "rating",
+      category: "Communication",
+      required: true,
+      order: 1
+    },
+    {
+      text: "What are this person's key strengths? Please provide specific examples.",
+      type: "open_ended",
+      category: "Strengths",
+      required: true,
+      order: 2
+    },
+    {
+      text: "In what areas could this person improve? Please be specific and constructive.",
+      type: "open_ended",
+      category: "Development Areas",
+      required: true,
+      order: 3
+    }
+  ];
+  
+  let typeSpecificQuestions = [];
+  
+  switch (documentType) {
+    case 'leadership_model':
+      typeSpecificQuestions = [
+        {
+          text: "How well does this person demonstrate leadership through vision and strategy?",
+          type: "rating",
+          category: "Leadership",
+          required: true,
+          order: 4
+        },
+        {
+          text: "How effectively does this person delegate tasks and empower team members?",
+          type: "rating",
+          category: "Team Management",
+          required: true,
+          order: 5
+        },
+        {
+          text: "Rate this person's ability to make difficult decisions under pressure.",
+          type: "rating",
+          category: "Decision Making",
+          required: true,
+          order: 6
+        },
+        {
+          text: "How well does this person develop and mentor team members?",
+          type: "rating",
+          category: "Talent Development",
+          required: true,
+          order: 7
+        }
+      ];
+      break;
+      
+    case 'job_description':
+      typeSpecificQuestions = [
+        {
+          text: "How effectively does this person meet the core responsibilities of their role?",
+          type: "rating",
+          category: "Job Performance",
+          required: true,
+          order: 4
+        },
+        {
+          text: "How well does this person demonstrate the technical skills required for their position?",
+          type: "rating",
+          category: "Technical Skills",
+          required: true,
+          order: 5
+        },
+        {
+          text: "How would you rate this person's efficiency and quality of work?",
+          type: "rating",
+          category: "Work Quality",
+          required: true,
+          order: 6
+        }
+      ];
+      break;
+      
+    case 'competency_framework':
+      typeSpecificQuestions = [
+        {
+          text: "How well does this person demonstrate problem-solving abilities?",
+          type: "rating",
+          category: "Problem Solving",
+          required: true,
+          order: 4
+        },
+        {
+          text: "How effectively does this person collaborate with others across the organization?",
+          type: "rating",
+          category: "Collaboration",
+          required: true,
+          order: 5
+        },
+        {
+          text: "How well does this person adapt to changing priorities and requirements?",
+          type: "rating",
+          category: "Adaptability",
+          required: true,
+          order: 6
+        },
+        {
+          text: "Rate this person's ability to innovate and bring new ideas to the team.",
+          type: "rating",
+          category: "Innovation",
+          required: true,
+          order: 7
+        }
+      ];
+      break;
+      
+    case 'company_values':
+      typeSpecificQuestions = [
+        {
+          text: "How consistently does this person demonstrate the company's core values in their daily work?",
+          type: "rating",
+          category: "Values Alignment",
+          required: true,
+          order: 4
+        },
+        {
+          text: "How well does this person foster an inclusive environment that respects diversity?",
+          type: "rating",
+          category: "Inclusion",
+          required: true,
+          order: 5
+        },
+        {
+          text: "How would you rate this person's integrity and ethical behavior?",
+          type: "rating",
+          category: "Ethics",
+          required: true,
+          order: 6
+        }
+      ];
+      break;
+      
+    case 'performance_criteria':
+      typeSpecificQuestions = [
+        {
+          text: "How consistently does this person meet or exceed their performance targets?",
+          type: "rating",
+          category: "Target Achievement",
+          required: true,
+          order: 4
+        },
+        {
+          text: "How well does this person prioritize and manage their time?",
+          type: "rating",
+          category: "Time Management",
+          required: true,
+          order: 5
+        },
+        {
+          text: "How effectively does this person take initiative and drive results?",
+          type: "rating",
+          category: "Initiative",
+          required: true,
+          order: 6
+        },
+        {
+          text: "What specific accomplishments has this person achieved in the past period?",
+          type: "open_ended",
+          category: "Accomplishments",
+          required: true,
+          order: 7
+        }
+      ];
+      break;
+      
+    default:
+      // Add some generic questions
+      typeSpecificQuestions = [
+        {
+          text: "How would you rate this person's overall performance?",
+          type: "rating",
+          category: "Overall",
+          required: true,
+          order: 4
+        },
+        {
+          text: "What is one thing this person should continue doing?",
+          type: "open_ended",
+          category: "Feedback",
+          required: true,
+          order: 5
+        },
+        {
+          text: "What is one thing this person should start doing?",
+          type: "open_ended",
+          category: "Feedback",
+          required: true,
+          order: 6
+        }
+      ];
+  }
+  
+  return [...commonQuestions, ...typeSpecificQuestions];
+}
 
 // Start FluxAI analysis process
 async function startDocumentAnalysis(documents, documentType, userId) {
@@ -341,8 +642,8 @@ exports.deleteDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
     
-    // If document was uploaded to FluxAI, delete it there too
-    if (document.fluxAiFileId) {
+    // If document was uploaded to FluxAI and we have an API key, delete it there too
+    if (document.fluxAiFileId && fluxAiConfig.isConfigured() && !document.fluxAiFileId.startsWith('dev-mode-')) {
       try {
         await axios.delete(`${fluxAiConfig.baseUrl}/v1/files/${document.fluxAiFileId}`, {
           headers: {

@@ -2,16 +2,19 @@
 
 require('dotenv').config();
 
-module.exports = {
+const config = {
   baseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com/api',
   apiKey: process.env.FLUX_AI_API_KEY,
-  model: process.env.FLUX_AI_MODEL || 'Llama 3.1', // Default model, can be changed based on requirements
+  model: process.env.FLUX_AI_MODEL || 'Llama 3.1',
   maxUploadSize: parseInt(process.env.MAX_UPLOAD_SIZE || '10485760', 10), // 10MB default max size
   
   // Helper function to check if Flux AI is properly configured
   isConfigured: function() {
     return !!this.apiKey;
   },
+  
+  // Are we in development mode?
+  isDevelopment: process.env.NODE_ENV === 'development',
   
   // Helper function for generating system prompts based on task
   getSystemPrompt: function(task) {
@@ -28,3 +31,5 @@ module.exports = {
     return prompts[task] || prompts.document_analysis;
   }
 };
+
+module.exports = config;

@@ -13,7 +13,8 @@ import {
   MenuItem, 
   Select, 
   Typography, 
-  Alert
+  Alert,
+  Snackbar
 } from '@mui/material';
 import { CloudUpload, Check, ErrorOutline } from '@mui/icons-material';
 
@@ -66,13 +67,48 @@ const DocumentUpload = () => {
       setFiles([]);
       setDocumentType('');
     } catch (error) {
+      console.error('Error uploading documents:', error);
+      
+      // Extract detailed error message if available
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Error uploading documents';
+      
       setUploadStatus({
         success: false,
-        message: error.response?.data?.message || 'Error uploading documents'
+        message: errorMessage
       });
     } finally {
       setIsUploading(false);
     }
+  };
+
+  // Handle drag and drop
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleDragEnter = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+      setFiles(Array.from(event.dataTransfer.files));
+    }
+  };
+
+  // Handle closing the alert
+  const handleAlertClose = () => {
+    setUploadStatus(null);
   };
 
   return (
@@ -119,6 +155,10 @@ const DocumentUpload = () => {
                 }
               }}
               onClick={() => document.getElementById('file-input').click()}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
             >
               <input
                 id="file-input"
@@ -172,8 +212,15 @@ const DocumentUpload = () => {
               <Alert 
                 severity={uploadStatus.success ? 'success' : 'error'}
                 icon={uploadStatus.success ? <Check /> : <ErrorOutline />}
+                onClose={handleAlertClose}
               >
                 {uploadStatus.message}
+                
+                {!uploadStatus.success && (
+                  <Typography variant="caption" component="div" sx={{ mt: 1 }}>
+                    Note: In development mode, the system will generate mock questions without using the Flux AI API.
+                  </Typography>
+                )}
               </Alert>
             </Grid>
           )}
@@ -186,10 +233,17 @@ const DocumentUpload = () => {
             Next Steps
           </Typography>
           <Typography paragraph>
-            Your documents have been uploaded successfully. Our AI is now analyzing them to generate 
-            relevant feedback questions. You'll be notified once the analysis is complete.
+            Your documents have been uploaded successfully. 
+            {process.env.NODE_ENV === 'development' ? 
+              ' In development mode, mock questions will be generated automatically.' : 
+              ' Our AI is now analyzing them to generate relevant feedback questions.'}
+            {' '}You'll be able to review the generated template once the analysis is complete.
           </Typography>
-          <Button variant="outlined" color="primary">
+          <Button 
+            variant="outlined" 
+            color="primary" 
+            href="/contexthub?tab=1"
+          >
             View Document Library
           </Button>
         </Card>
