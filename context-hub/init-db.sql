@@ -1,2 +1,0 @@
-CREATE DATABASE context_hub;
-GRANT ALL PRIVILEGES ON DATABASE context_hub TO pulse360;
