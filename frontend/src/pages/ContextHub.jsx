@@ -41,6 +41,7 @@ const ContextHub = () => {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+    console.log(`Switching to tab ${newValue}`);
     // Update URL with tab parameter
     navigate(`/contexthub?tab=${newValue}`);
   };

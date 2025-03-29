@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../services/api';
-import axios from 'axios';
 import {
   Box,
   Button,
-  Card,
   Chip,
   CircularProgress,
   Container,
@@ -26,10 +24,9 @@ import {
 } from '@mui/material';
 import {
   Delete,
-  Visibility,
-  Error as ErrorIcon,
   CheckCircle,
   HourglassEmpty,
+  ErrorOutline,
   ArrowForward,
 } from '@mui/icons-material';
 
@@ -47,6 +44,7 @@ const DocumentList = () => {
   const fetchDocuments = async () => {
     try {
       setLoading(true);
+      console.log('Fetching documents...');
       const response = await api.get('/documents');
       console.log('Documents response:', response.data);
       setDocuments(response.data.documents || []);
@@ -68,9 +66,9 @@ const DocumentList = () => {
     if (!documentToDelete) return;
 
     try {
-      await axios.delete(`/api/documents/${documentToDelete._id}`);
+      await api.delete(`/documents/${documentToDelete.id}`);
       // Remove the deleted document from the list
-      setDocuments(documents.filter(doc => doc._id !== documentToDelete._id));
+      setDocuments(documents.filter(doc => doc.id !== documentToDelete.id));
       setDeleteDialogOpen(false);
       setDocumentToDelete(null);
     } catch (err) {
@@ -85,7 +83,7 @@ const DocumentList = () => {
       uploaded_to_ai: { color: 'info', label: 'Uploaded to AI', icon: <CheckCircle fontSize="small" /> },
       analysis_in_progress: { color: 'warning', label: 'Analysis In Progress', icon: <HourglassEmpty fontSize="small" /> },
       analysis_complete: { color: 'success', label: 'Analysis Complete', icon: <CheckCircle fontSize="small" /> },
-      analysis_failed: { color: 'error', label: 'Analysis Failed', icon: <ErrorIcon fontSize="small" /> },
+      analysis_failed: { color: 'error', label: 'Analysis Failed', icon: <ErrorOutline fontSize="small" /> },
     };
 
     const config = statusConfig[status] || statusConfig.uploaded;
@@ -181,7 +179,7 @@ const DocumentList = () => {
           </TableHead>
           <TableBody>
             {documents.map((document) => (
-              <TableRow key={document._id}>
+              <TableRow key={document.id}>
                 <TableCell>
                   <Typography variant="body2" component="div">
                     {document.filename}
@@ -203,7 +201,10 @@ const DocumentList = () => {
                     <IconButton
                       color="primary"
                       size="small"
-                      onClick={() => window.location.href = `/contexthub/templates/${document.associatedTemplateId}`}
+                      onClick={() => {
+                        window.location.href = `/contexthub?tab=2`;
+                        console.log("Navigating to templates tab");
+                      }}
                       title="View Template"
                     >
                       <ArrowForward />
@@ -223,6 +224,18 @@ const DocumentList = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {documents.some(doc => doc.status === 'analysis_complete') && (
+        <Box sx={{ mt: 3, textAlign: 'right' }}>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={() => window.location.href = '/contexthub?tab=2'}
+          >
+            View All Templates
+          </Button>
+        </Box>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog

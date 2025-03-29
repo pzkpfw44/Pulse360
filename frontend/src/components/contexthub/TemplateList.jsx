@@ -49,7 +49,18 @@ const TemplateList = () => {
       console.log('Fetching templates...');
       const response = await api.get('/templates');
       console.log('Templates response:', response.data);
-      setTemplates(response.data.templates || []);
+      
+      // Check if templates exist
+      if (response.data && response.data.templates) {
+        setTemplates(response.data.templates);
+      } else if (response.data && Array.isArray(response.data)) {
+        // If data is returned as an array directly
+        setTemplates(response.data);
+      } else {
+        console.warn('Unexpected templates data format:', response.data);
+        setTemplates([]);
+      }
+      
       setError(null);
     } catch (err) {
       console.error('Error fetching templates:', err);
