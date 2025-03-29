@@ -5,7 +5,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-const authRoutes = require('./routes/auth.routes');
+const { router: authRoutes } = require('./routes/auth.routes');
 const documentsRoutes = require('./routes/documents.routes');
 const templatesRoutes = require('./routes/templates.routes');
 
