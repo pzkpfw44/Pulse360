@@ -1,3 +1,5 @@
+// In backend/models/template.model.js
+
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
@@ -35,6 +37,10 @@ const Question = sequelize.define('Question', {
     type: DataTypes.INTEGER,
     allowNull: false
   },
+  ratingScaleId: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
   templateId: {
     type: DataTypes.UUID,
     allowNull: false,
@@ -45,6 +51,50 @@ const Question = sequelize.define('Question', {
   }
 }, {
   tableName: 'questions',
+  timestamps: true
+});
+
+// Rating Scale model
+const RatingScale = sequelize.define('RatingScale', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  minValue: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1
+  },
+  maxValue: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 5
+  },
+  labels: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'JSON object mapping scale values to labels, e.g. {"1": "Poor", "5": "Outstanding"}'
+  },
+  defaultForPerspective: {
+    type: DataTypes.ENUM,
+    values: ['manager', 'peer', 'direct_report', 'self', 'external', 'all'],
+    allowNull: true
+  },
+  templateId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Templates',
+      key: 'id'
+    }
+  }
+}, {
+  tableName: 'rating_scales',
   timestamps: true
 });
 
@@ -171,6 +221,13 @@ Template.hasMany(Question, {
 });
 Question.belongsTo(Template, { foreignKey: 'templateId' });
 
+Template.hasMany(RatingScale, {
+  as: 'ratingScales',
+  foreignKey: 'templateId',
+  onDelete: 'CASCADE'
+});
+RatingScale.belongsTo(Template, { foreignKey: 'templateId' });
+
 Template.hasMany(SourceDocument, { 
   as: 'sourceDocuments',
   foreignKey: 'templateId',
@@ -178,8 +235,13 @@ Template.hasMany(SourceDocument, {
 });
 SourceDocument.belongsTo(Template, { foreignKey: 'templateId' });
 
+// Questions can have a specific rating scale
+Question.belongsTo(RatingScale, { foreignKey: 'ratingScaleId', as: 'ratingScale' });
+RatingScale.hasMany(Question, { foreignKey: 'ratingScaleId', as: 'questions' });
+
 module.exports = {
   Template,
   Question,
-  SourceDocument
+  SourceDocument,
+  RatingScale
 };

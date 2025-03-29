@@ -1,6 +1,6 @@
 // controllers/templates.controller.js
 
-const { Template, Question, SourceDocument } = require('../models');
+const { Template, Question, SourceDocument, RatingScale } = require('../models');
 const { Document } = require('../models');
 
 // Get all templates
@@ -51,6 +51,7 @@ exports.getTemplateById = async (req, res) => {
           model: SourceDocument,
           as: 'sourceDocuments'
         }
+        // Removed RatingScale include to fix the error
       ]
     });
     
@@ -159,7 +160,8 @@ exports.updateTemplate = async (req, res) => {
       department,
       questions, 
       status,
-      perspectiveSettings
+      perspectiveSettings,
+      ratingScales
     } = req.body;
     
     // Find the template
@@ -168,10 +170,16 @@ exports.updateTemplate = async (req, res) => {
         id: req.params.id,
         createdBy: req.user.id
       },
-      include: [{ 
-        model: Question, 
-        as: 'questions'
-      }]
+      include: [
+        { 
+          model: Question, 
+          as: 'questions'
+        },
+        {
+          model: RatingScale,
+          as: 'ratingScales'
+        }
+      ]
     });
     
     if (!template) {
@@ -188,6 +196,38 @@ exports.updateTemplate = async (req, res) => {
       perspectiveSettings: perspectiveSettings || template.perspectiveSettings
     });
     
+    // Update rating scales if provided
+    if (ratingScales && Array.isArray(ratingScales)) {
+      // Get existing scales
+      const existingScales = template.ratingScales || [];
+      const existingScaleIds = existingScales.map(s => s.id);
+      
+      // Find scales to add, update, or remove
+      const scalesToUpdate = ratingScales.filter(s => s.id && existingScaleIds.includes(s.id));
+      const scalesToAdd = ratingScales.filter(s => !s.id || !existingScaleIds.includes(s.id));
+      const scaleIdsToKeep = ratingScales.filter(s => s.id).map(s => s.id);
+      
+      // Update existing scales
+      for (const scale of scalesToUpdate) {
+        const { _id, ...scaleData } = scale;
+        await RatingScale.update(scaleData, {
+          where: { id: scale.id, templateId: template.id }
+        });
+      }
+      
+      // Add new scales
+      for (const scale of scalesToAdd) {
+        // Remove temporary frontend IDs
+        const { _id, id, ...scaleData } = scale;
+        await RatingScale.create({
+          ...scaleData,
+          templateId: template.id
+        });
+      }
+      
+      // We don't automatically delete scales as they might be used by questions
+    }
+    
     // Update questions if provided
     if (questions && Array.isArray(questions)) {
       // Get existing questions
@@ -202,14 +242,8 @@ exports.updateTemplate = async (req, res) => {
       
       // Update existing questions
       for (const question of questionsToUpdate) {
-        await Question.update({
-          text: question.text,
-          type: question.type,
-          category: question.category,
-          perspective: question.perspective || 'peer',
-          required: question.required,
-          order: question.order
-        }, {
+        const { _id, ...questionData } = question;
+        await Question.update(questionData, {
           where: { id: question.id, templateId: template.id }
         });
       }
@@ -218,10 +252,9 @@ exports.updateTemplate = async (req, res) => {
       for (let i = 0; i < questionsToAdd.length; i++) {
         const question = questionsToAdd[i];
         // If it has a temporary ID (like from frontend), remove it
-        const { _id, id, ratingScaleId, ...questionData } = question;
+        const { _id, id, ...questionData } = question;
         await Question.create({
           ...questionData,
-          perspective: questionData.perspective || 'peer',
           templateId: template.id
         });
       }
@@ -237,14 +270,20 @@ exports.updateTemplate = async (req, res) => {
       }
     }
     
-    // Return the updated template with its questions
+    // Return the updated template with its questions and rating scales
     const updatedTemplate = await Template.findOne({
       where: { id: template.id },
-      include: [{ 
-        model: Question, 
-        as: 'questions',
-        order: [['order', 'ASC']]
-      }]
+      include: [
+        { 
+          model: Question, 
+          as: 'questions',
+          order: [['order', 'ASC']]
+        },
+        {
+          model: RatingScale,
+          as: 'ratingScales'
+        }
+      ]
     });
     
     res.status(200).json(updatedTemplate);

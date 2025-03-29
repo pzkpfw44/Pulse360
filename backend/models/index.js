@@ -1,7 +1,7 @@
 const { sequelize, testConnection } = require('../config/database');
 const User = require('./user.model');
 const Document = require('./document.model');
-const { Template, Question, SourceDocument } = require('./template.model');
+const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 
 // Define associations between models
 User.hasMany(Document, { foreignKey: 'uploadedBy' });
@@ -45,5 +45,6 @@ module.exports = {
   Document,
   Template,
   Question,
-  SourceDocument
+  SourceDocument,
+  RatingScale
 };
