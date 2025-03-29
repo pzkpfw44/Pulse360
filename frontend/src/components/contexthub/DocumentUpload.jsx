@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import api from "../../services/api";
 import { 
   Box, 
   Button, 
@@ -16,7 +17,6 @@ import {
   Snackbar
 } from '@mui/material';
 import { CloudUpload, Check, ErrorOutline } from '@mui/icons-material';
-import api from '../../../services/api';
 
 const DocumentUpload = () => {
   const [files, setFiles] = useState([]);

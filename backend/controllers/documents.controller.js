@@ -155,212 +155,564 @@ async function startDevelopmentModeAnalysis(documents, documentType, userId) {
 
 // Generate mock questions based on document type
 function generateMockQuestionsForDocumentType(documentType) {
-  const commonQuestions = [
-    {
-      text: "How effectively does this person communicate with team members?",
-      type: "rating",
-      category: "Communication",
-      required: true,
-      order: 1
-    },
-    {
-      text: "What are this person's key strengths? Please provide specific examples.",
-      type: "open_ended",
-      category: "Strengths",
-      required: true,
-      order: 2
-    },
-    {
-      text: "In what areas could this person improve? Please be specific and constructive.",
-      type: "open_ended",
-      category: "Development Areas",
-      required: true,
-      order: 3
+  const allQuestions = [];
+  const perspectives = ['manager', 'peer', 'direct_report', 'self'];
+  let questionOrder = 1;
+  
+  // For each perspective, generate appropriate questions
+  perspectives.forEach(perspective => {
+    // Common questions for all perspectives
+    const commonQuestions = [
+      {
+        text: `How effectively does this person communicate with ${perspective === 'self' ? 'others' : 'you and team members'}?`,
+        type: "rating",
+        category: "Communication",
+        perspective: perspective,
+        required: true,
+        order: questionOrder++
+      }
+    ];
+    
+    // Add perspective-specific open-ended questions
+    if (perspective === 'self') {
+      commonQuestions.push({
+        text: "What do you consider to be your key strengths? Please provide specific examples.",
+        type: "open_ended",
+        category: "Strengths",
+        perspective: perspective,
+        required: true,
+        order: questionOrder++
+      });
+      
+      commonQuestions.push({
+        text: "In what areas could you improve? Please be specific and constructive.",
+        type: "open_ended",
+        category: "Development Areas",
+        perspective: perspective,
+        required: true,
+        order: questionOrder++
+      });
+    } else {
+      commonQuestions.push({
+        text: "What are this person's key strengths? Please provide specific examples.",
+        type: "open_ended",
+        category: "Strengths",
+        perspective: perspective,
+        required: true,
+        order: questionOrder++
+      });
+      
+      commonQuestions.push({
+        text: "In what areas could this person improve? Please be specific and constructive.",
+        type: "open_ended",
+        category: "Development Areas",
+        perspective: perspective,
+        required: true,
+        order: questionOrder++
+      });
     }
-  ];
+    
+    // Add all common questions to final array
+    allQuestions.push(...commonQuestions);
+    
+    // Document type specific questions with perspective awareness
+    let typeSpecificQuestions = [];
+    
+    switch (documentType) {
+      case 'leadership_model':
+        if (perspective === 'direct_report') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person provide you with clear direction and guidance?",
+              type: "rating",
+              category: "Leadership",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person delegate tasks and empower you?",
+              type: "rating",
+              category: "Team Management",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well does this person support your professional development?",
+              type: "rating",
+              category: "Talent Development",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'peer') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person collaborate across teams and departments?",
+              type: "rating",
+              category: "Collaboration",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How would you rate this person's ability to influence without authority?",
+              type: "rating",
+              category: "Influence",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person share information and resources?",
+              type: "rating",
+              category: "Team Management",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'manager') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person demonstrate leadership potential?",
+              type: "rating",
+              category: "Leadership",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person manage their team's performance?",
+              type: "rating",
+              category: "Performance Management",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well does this person align their team's work with organizational goals?",
+              type: "rating",
+              category: "Strategic Alignment",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'self') {
+          typeSpecificQuestions = [
+            {
+              text: "How well do you demonstrate leadership through vision and strategy?",
+              type: "rating",
+              category: "Leadership",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively do you delegate tasks and empower team members?",
+              type: "rating",
+              category: "Team Management",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How would you rate your ability to make difficult decisions under pressure?",
+              type: "rating",
+              category: "Decision Making",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        }
+        break;
+        
+      case 'job_description':
+        if (perspective === 'direct_report') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person support you in achieving your job responsibilities?",
+              type: "rating",
+              category: "Job Support",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How clearly does this person communicate expectations to you?",
+              type: "rating",
+              category: "Expectation Setting",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'peer') {
+          typeSpecificQuestions = [
+            {
+              text: "How effectively does this person fulfill their role responsibilities when working with you?",
+              type: "rating",
+              category: "Job Performance",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How would you rate this person's technical skills when collaborating on projects?",
+              type: "rating",
+              category: "Technical Skills",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'manager') {
+          typeSpecificQuestions = [
+            {
+              text: "How effectively does this person meet the core responsibilities of their role?",
+              type: "rating",
+              category: "Job Performance",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well does this person demonstrate the technical skills required for their position?",
+              type: "rating",
+              category: "Technical Skills",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'self') {
+          typeSpecificQuestions = [
+            {
+              text: "How effectively do you fulfill the core responsibilities of your role?",
+              type: "rating",
+              category: "Job Performance",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How would you rate your efficiency and quality of work?",
+              type: "rating",
+              category: "Work Quality",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        }
+        break;
+        
+      case 'competency_framework':
+        if (perspective === 'direct_report') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person demonstrate active listening when you share ideas?",
+              type: "rating",
+              category: "Communication",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person help you solve problems?",
+              type: "rating",
+              category: "Problem Solving",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'peer') {
+          typeSpecificQuestions = [
+            {
+              text: "How effectively does this person collaborate with you and others across the organization?",
+              type: "rating",
+              category: "Collaboration",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well does this person adapt to changing priorities and requirements?",
+              type: "rating",
+              category: "Adaptability",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'manager') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person demonstrate problem-solving abilities?",
+              type: "rating",
+              category: "Problem Solving",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "Rate this person's ability to innovate and bring new ideas to the team.",
+              type: "rating",
+              category: "Innovation",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'self') {
+          typeSpecificQuestions = [
+            {
+              text: "How would you rate your ability to solve complex problems?",
+              type: "rating",
+              category: "Problem Solving",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively do you collaborate with others across the organization?",
+              type: "rating",
+              category: "Collaboration",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        }
+        break;
+        
+      case 'company_values':
+        if (perspective === 'direct_report') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person exemplify our company values in their interactions with you?",
+              type: "rating",
+              category: "Values Alignment",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person create an inclusive environment for you and your colleagues?",
+              type: "rating",
+              category: "Inclusion",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'peer') {
+          typeSpecificQuestions = [
+            {
+              text: "How consistently does this person demonstrate our company values in their daily work?",
+              type: "rating",
+              category: "Values Alignment",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How would you rate this person's integrity and ethical behavior?",
+              type: "rating",
+              category: "Ethics",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'manager') {
+          typeSpecificQuestions = [
+            {
+              text: "How well does this person embody our company values in their leadership approach?",
+              type: "rating",
+              category: "Values Alignment",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person promote our values within their team?",
+              type: "rating",
+              category: "Values Advocacy",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'self') {
+          typeSpecificQuestions = [
+            {
+              text: "How consistently do you demonstrate the company's core values in your daily work?",
+              type: "rating",
+              category: "Values Alignment",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well do you foster an inclusive environment that respects diversity?",
+              type: "rating",
+              category: "Inclusion",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        }
+        break;
+        
+      case 'performance_criteria':
+        if (perspective === 'direct_report') {
+          typeSpecificQuestions = [
+            {
+              text: "How effectively does this person help you achieve your performance goals?",
+              type: "rating",
+              category: "Performance Support",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well does this person recognize your achievements?",
+              type: "rating",
+              category: "Recognition",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'peer') {
+          typeSpecificQuestions = [
+            {
+              text: "How effectively does this person contribute to team goals and outcomes?",
+              type: "rating",
+              category: "Target Achievement",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well does this person meet deadlines when working with you?",
+              type: "rating",
+              category: "Time Management",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'manager') {
+          typeSpecificQuestions = [
+            {
+              text: "How consistently does this person meet or exceed their performance targets?",
+              type: "rating",
+              category: "Target Achievement",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How effectively does this person take initiative and drive results?",
+              type: "rating",
+              category: "Initiative",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'self') {
+          typeSpecificQuestions = [
+            {
+              text: "How consistently do you meet or exceed your performance targets?",
+              type: "rating",
+              category: "Target Achievement",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "How well do you prioritize and manage your time?",
+              type: "rating",
+              category: "Time Management",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            },
+            {
+              text: "What specific accomplishments have you achieved in the past period?",
+              type: "open_ended",
+              category: "Accomplishments",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        }
+        break;
+        
+      default:
+        // Add some generic questions based on perspective
+        if (perspective === 'direct_report') {
+          typeSpecificQuestions = [
+            {
+              text: "How would you rate the support this person provides to you?",
+              type: "rating",
+              category: "Support",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'peer') {
+          typeSpecificQuestions = [
+            {
+              text: "How would you rate this person's overall collaboration with you?",
+              type: "rating",
+              category: "Collaboration",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'manager') {
+          typeSpecificQuestions = [
+            {
+              text: "How would you rate this person's overall performance?",
+              type: "rating",
+              category: "Overall Performance",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        } else if (perspective === 'self') {
+          typeSpecificQuestions = [
+            {
+              text: "How would you rate your overall performance?",
+              type: "rating",
+              category: "Overall Performance",
+              perspective: perspective,
+              required: true,
+              order: questionOrder++
+            }
+          ];
+        }
+    }
+    
+    // Add type-specific questions to the final array
+    allQuestions.push(...typeSpecificQuestions);
+  });
   
-  let typeSpecificQuestions = [];
-  
-  switch (documentType) {
-    case 'leadership_model':
-      typeSpecificQuestions = [
-        {
-          text: "How well does this person demonstrate leadership through vision and strategy?",
-          type: "rating",
-          category: "Leadership",
-          required: true,
-          order: 4
-        },
-        {
-          text: "How effectively does this person delegate tasks and empower team members?",
-          type: "rating",
-          category: "Team Management",
-          required: true,
-          order: 5
-        },
-        {
-          text: "Rate this person's ability to make difficult decisions under pressure.",
-          type: "rating",
-          category: "Decision Making",
-          required: true,
-          order: 6
-        },
-        {
-          text: "How well does this person develop and mentor team members?",
-          type: "rating",
-          category: "Talent Development",
-          required: true,
-          order: 7
-        }
-      ];
-      break;
-      
-    case 'job_description':
-      typeSpecificQuestions = [
-        {
-          text: "How effectively does this person meet the core responsibilities of their role?",
-          type: "rating",
-          category: "Job Performance",
-          required: true,
-          order: 4
-        },
-        {
-          text: "How well does this person demonstrate the technical skills required for their position?",
-          type: "rating",
-          category: "Technical Skills",
-          required: true,
-          order: 5
-        },
-        {
-          text: "How would you rate this person's efficiency and quality of work?",
-          type: "rating",
-          category: "Work Quality",
-          required: true,
-          order: 6
-        }
-      ];
-      break;
-      
-    case 'competency_framework':
-      typeSpecificQuestions = [
-        {
-          text: "How well does this person demonstrate problem-solving abilities?",
-          type: "rating",
-          category: "Problem Solving",
-          required: true,
-          order: 4
-        },
-        {
-          text: "How effectively does this person collaborate with others across the organization?",
-          type: "rating",
-          category: "Collaboration",
-          required: true,
-          order: 5
-        },
-        {
-          text: "How well does this person adapt to changing priorities and requirements?",
-          type: "rating",
-          category: "Adaptability",
-          required: true,
-          order: 6
-        },
-        {
-          text: "Rate this person's ability to innovate and bring new ideas to the team.",
-          type: "rating",
-          category: "Innovation",
-          required: true,
-          order: 7
-        }
-      ];
-      break;
-      
-    case 'company_values':
-      typeSpecificQuestions = [
-        {
-          text: "How consistently does this person demonstrate the company's core values in their daily work?",
-          type: "rating",
-          category: "Values Alignment",
-          required: true,
-          order: 4
-        },
-        {
-          text: "How well does this person foster an inclusive environment that respects diversity?",
-          type: "rating",
-          category: "Inclusion",
-          required: true,
-          order: 5
-        },
-        {
-          text: "How would you rate this person's integrity and ethical behavior?",
-          type: "rating",
-          category: "Ethics",
-          required: true,
-          order: 6
-        }
-      ];
-      break;
-      
-    case 'performance_criteria':
-      typeSpecificQuestions = [
-        {
-          text: "How consistently does this person meet or exceed their performance targets?",
-          type: "rating",
-          category: "Target Achievement",
-          required: true,
-          order: 4
-        },
-        {
-          text: "How well does this person prioritize and manage their time?",
-          type: "rating",
-          category: "Time Management",
-          required: true,
-          order: 5
-        },
-        {
-          text: "How effectively does this person take initiative and drive results?",
-          type: "rating",
-          category: "Initiative",
-          required: true,
-          order: 6
-        },
-        {
-          text: "What specific accomplishments has this person achieved in the past period?",
-          type: "open_ended",
-          category: "Accomplishments",
-          required: true,
-          order: 7
-        }
-      ];
-      break;
-      
-    default:
-      // Add some generic questions
-      typeSpecificQuestions = [
-        {
-          text: "How would you rate this person's overall performance?",
-          type: "rating",
-          category: "Overall",
-          required: true,
-          order: 4
-        },
-        {
-          text: "What is one thing this person should continue doing?",
-          type: "open_ended",
-          category: "Feedback",
-          required: true,
-          order: 5
-        },
-        {
-          text: "What is one thing this person should start doing?",
-          type: "open_ended",
-          category: "Feedback",
-          required: true,
-          order: 6
-        }
-      ];
-  }
-  
-  return [...commonQuestions, ...typeSpecificQuestions];
+  return allQuestions;
 }
 
 // Start FluxAI analysis process

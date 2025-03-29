@@ -5,6 +5,9 @@ const { Template, Question, SourceDocument } = require('../models');
 // Get all templates
 exports.getAllTemplates = async (req, res) => {
   try {
+    // Log the user for debugging
+    console.log('User requesting templates:', req.user.id);
+    
     const templates = await Template.findAll({
       where: { createdBy: req.user.id },
       include: [{ 
@@ -14,6 +17,9 @@ exports.getAllTemplates = async (req, res) => {
       }],
       order: [['createdAt', 'DESC']]
     });
+    
+    // Log the templates for debugging
+    console.log('Found templates:', templates.length);
     
     res.status(200).json({
       count: templates.length,
@@ -28,10 +34,11 @@ exports.getAllTemplates = async (req, res) => {
 // Get template by ID
 exports.getTemplateById = async (req, res) => {
   try {
+    console.log('Getting template by ID:', req.params.id);
+    
     const template = await Template.findOne({
       where: { 
-        id: req.params.id,
-        createdBy: req.user.id
+        id: req.params.id
       },
       include: [
         { 
@@ -47,8 +54,11 @@ exports.getTemplateById = async (req, res) => {
     });
     
     if (!template) {
+      console.log('Template not found for ID:', req.params.id);
       return res.status(404).json({ message: 'Template not found' });
     }
+
+    console.log('Template found, questions count:', template.questions.length);
     
     res.status(200).json(template);
   } catch (error) {
@@ -83,6 +93,7 @@ exports.createTemplate = async (req, res) => {
           text: question.text,
           type: question.type || 'rating',
           category: question.category,
+          perspective: question.perspective || 'peer',
           required: question.required !== undefined ? question.required : true,
           order: question.order || (i + 1),
           templateId: template.id
@@ -164,6 +175,7 @@ exports.updateTemplate = async (req, res) => {
           text: question.text,
           type: question.type,
           category: question.category,
+          perspective: question.perspective || 'peer',
           required: question.required,
           order: question.order
         }, {
@@ -178,6 +190,7 @@ exports.updateTemplate = async (req, res) => {
         const { _id, id, ...questionData } = question;
         await Question.create({
           ...questionData,
+          perspective: questionData.perspective || 'peer',
           templateId: template.id
         });
       }
@@ -218,9 +231,12 @@ exports.approveTemplate = async (req, res) => {
     // Find the template
     const template = await Template.findOne({
       where: { 
-        id: req.params.id,
-        createdBy: req.user.id
-      }
+        id: req.params.id
+      },
+      include: [{ 
+        model: Question, 
+        as: 'questions'
+      }]
     });
     
     if (!template) {
@@ -236,15 +252,51 @@ exports.approveTemplate = async (req, res) => {
     
     // Update questions if provided
     if (questions && Array.isArray(questions)) {
-      // Use the same logic as the updateTemplate method
-      await exports.updateTemplate({
-        params: { id: req.params.id },
-        user: req.user,
-        body: { questions }
-      }, { 
-        status: () => {}, 
-        json: () => {} 
-      });
+      // Get existing questions
+      const existingQuestions = template.questions || [];
+      const existingQuestionIds = existingQuestions.map(q => q.id);
+      
+      // Find questions to add, update, or remove
+      const questionsToUpdate = questions.filter(q => q.id && existingQuestionIds.includes(q.id));
+      const questionsToAdd = questions.filter(q => !q.id || !existingQuestionIds.includes(q.id));
+      const questionIdsToKeep = questions.filter(q => q.id).map(q => q.id);
+      const questionIdsToRemove = existingQuestionIds.filter(id => !questionIdsToKeep.includes(id));
+      
+      // Update existing questions
+      for (const question of questionsToUpdate) {
+        await Question.update({
+          text: question.text,
+          type: question.type,
+          category: question.category,
+          perspective: question.perspective || 'peer',
+          required: question.required,
+          order: question.order
+        }, {
+          where: { id: question.id, templateId: template.id }
+        });
+      }
+      
+      // Add new questions
+      for (let i = 0; i < questionsToAdd.length; i++) {
+        const question = questionsToAdd[i];
+        // If it has a temporary ID (like from frontend), remove it
+        const { _id, id, ...questionData } = question;
+        await Question.create({
+          ...questionData,
+          perspective: questionData.perspective || 'peer',
+          templateId: template.id
+        });
+      }
+      
+      // Remove questions
+      if (questionIdsToRemove.length > 0) {
+        await Question.destroy({
+          where: { 
+            id: questionIdsToRemove,
+            templateId: template.id
+          }
+        });
+      }
     }
     
     // Return the approved template

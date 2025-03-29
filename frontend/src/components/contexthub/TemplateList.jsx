@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../../../services/api';
+import api from "../../services/api";
 import {
   Box,
   Button,
@@ -71,6 +71,8 @@ const TemplateList = () => {
   };
 
   const handleViewTemplate = (templateId) => {
+    console.log('Viewing template with ID:', templateId);
+    // Use navigate directly instead of window.location.href
     navigate(`/contexthub/templates/${templateId}`);
   };
 

@@ -21,6 +21,12 @@ const Question = sequelize.define('Question', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  perspective: {
+    type: DataTypes.ENUM,
+    values: ['manager', 'peer', 'direct_report', 'self', 'external'],
+    defaultValue: 'peer',
+    allowNull: false
+  },
   required: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
