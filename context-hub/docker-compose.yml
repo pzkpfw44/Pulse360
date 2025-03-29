@@ -13,6 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - context_hub_postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pulse360"]
       interval: 5s
@@ -55,7 +56,7 @@ services:
   backend:
     build:
       context: ./backend
-      Dockerfile.custom: Dockerfile.custom
+      dockerfile: Dockerfile.custom
     container_name: context-hub-backend
     volumes:
       - ./backend:/app
@@ -81,6 +82,14 @@ services:
         condition: service_started
     networks:
       - context_hub_network
+    command: >
+      bash -c "
+        ln -sf /shared/shared /app/shared &&
+        cd /shared && 
+        alembic upgrade head &&
+        cd /app &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
 
 volumes:
   context_hub_postgres_data:
@@ -90,12 +99,4 @@ volumes:
 networks:
   context_hub_network:
     driver: bridge
-
-command: >
-    bash -c "
-      ln -sf /shared/shared /app/shared &&
-      cd /shared && 
-      alembic upgrade head &&
-      cd /app &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    "
+    
