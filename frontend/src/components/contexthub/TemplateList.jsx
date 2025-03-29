@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../../services/api';
 import {
   Box,
   Button,
@@ -26,7 +26,7 @@ import {
   FileCopy,
   Visibility,
   CheckCircle,
-  Error as ErrorIcon,
+  ErrorOutline,
   HourglassEmpty,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -46,7 +46,9 @@ const TemplateList = () => {
   const fetchTemplates = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/templates');
+      console.log('Fetching templates...');
+      const response = await api.get('/templates');
+      console.log('Templates response:', response.data);
       setTemplates(response.data.templates || []);
       setError(null);
     } catch (err) {
@@ -70,9 +72,9 @@ const TemplateList = () => {
     if (!templateToDelete) return;
 
     try {
-      await axios.delete(`/api/templates/${templateToDelete._id}`);
+      await api.delete(`/templates/${templateToDelete.id}`);
       // Remove the deleted template from the list
-      setTemplates(templates.filter(t => t._id !== templateToDelete._id));
+      setTemplates(templates.filter(t => t.id !== templateToDelete.id));
       setDeleteDialogOpen(false);
       setTemplateToDelete(null);
     } catch (err) {
@@ -160,7 +162,7 @@ const TemplateList = () => {
 
       <Grid container spacing={3}>
         {templates.map((template) => (
-          <Grid item xs={12} md={6} lg={4} key={template._id}>
+          <Grid item xs={12} md={6} lg={4} key={template.id}>
             <Card elevation={2}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
@@ -196,7 +198,7 @@ const TemplateList = () => {
                 <Button
                   size="small"
                   startIcon={<Visibility />}
-                  onClick={() => handleViewTemplate(template._id)}
+                  onClick={() => handleViewTemplate(template.id)}
                 >
                   View
                 </Button>
@@ -204,7 +206,7 @@ const TemplateList = () => {
                   <Button
                     size="small"
                     startIcon={<Edit />}
-                    onClick={() => handleViewTemplate(template._id)}
+                    onClick={() => handleViewTemplate(template.id)}
                   >
                     Edit
                   </Button>

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { 
   Box, 
   Button, 
@@ -17,6 +16,7 @@ import {
   Snackbar
 } from '@mui/material';
 import { CloudUpload, Check, ErrorOutline } from '@mui/icons-material';
+import api from '../../../services/api';
 
 const DocumentUpload = () => {
   const [files, setFiles] = useState([]);
@@ -51,7 +51,7 @@ const DocumentUpload = () => {
     formData.append('documentType', documentType);
 
     try {
-      const response = await axios.post('/api/documents/upload', formData, {
+      const response = await api.post('/documents/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -242,7 +242,7 @@ const DocumentUpload = () => {
           <Button 
             variant="outlined" 
             color="primary" 
-            href="/contexthub?tab=1"
+            onClick={() => window.location.href = '/contexthub?tab=1'}
           >
             View Document Library
           </Button>

@@ -10,7 +10,7 @@ const config = {
   
   // Helper function to check if Flux AI is properly configured
   isConfigured: function() {
-    return !!this.apiKey;
+    return !!this.apiKey && process.env.NODE_ENV !== 'development';
   },
   
   // Are we in development mode?

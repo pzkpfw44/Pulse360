@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import api from '../../../services/api';
 import axios from 'axios';
 import {
   Box,
@@ -46,7 +47,8 @@ const DocumentList = () => {
   const fetchDocuments = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/documents');
+      const response = await api.get('/documents');
+      console.log('Documents response:', response.data);
       setDocuments(response.data.documents || []);
       setError(null);
     } catch (err) {
