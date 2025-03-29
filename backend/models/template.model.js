@@ -1,42 +1,153 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const questionSchema = new mongoose.Schema({
-  text: { type: String, required: true },
-  type: { 
-    type: String, 
-    enum: ['rating', 'open_ended', 'multiple_choice'], 
-    default: 'rating' 
+// Question model (to be used within Template)
+const Question = sequelize.define('Question', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
-  category: { type: String },
-  required: { type: Boolean, default: true },
-  order: { type: Number, required: true }
+  text: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  type: {
+    type: DataTypes.ENUM,
+    values: ['rating', 'open_ended', 'multiple_choice'],
+    defaultValue: 'rating'
+  },
+  category: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  required: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
+  order: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  templateId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Templates',
+      key: 'id'
+    }
+  }
+}, {
+  tableName: 'questions',
+  timestamps: true
 });
 
-const templateSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  description: { type: String },
-  documentType: { 
-    type: String, 
-    enum: ['leadership_model', 'job_description', 'competency_framework', 
-           'company_values', 'performance_criteria'], 
-    required: true 
+// SourceDocument model (to be used within Template)
+const SourceDocument = sequelize.define('SourceDocument', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
-  generatedBy: { 
-    type: String, 
-    enum: ['flux_ai', 'manual'], 
-    default: 'flux_ai' 
+  fluxAiFileId: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
-  questions: [questionSchema],
-  sourceDocuments: [{
-    fluxAiFileId: { type: String },
-    documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' }
-  }],
-  status: { 
-    type: String, 
-    enum: ['pending_review', 'approved', 'archived'], 
-    default: 'pending_review' 
+  documentId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Documents',
+      key: 'id'
+    }
   },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
-}, { timestamps: true });
+  templateId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Templates',
+      key: 'id'
+    }
+  }
+}, {
+  tableName: 'source_documents',
+  timestamps: true
+});
 
-module.exports = mongoose.model('Template', templateSchema);
+// Template model
+const Template = sequelize.define('Template', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  documentType: {
+    type: DataTypes.ENUM,
+    values: [
+      'leadership_model', 
+      'job_description', 
+      'competency_framework', 
+      'company_values', 
+      'performance_criteria'
+    ],
+    allowNull: false
+  },
+  generatedBy: {
+    type: DataTypes.ENUM,
+    values: ['flux_ai', 'manual'],
+    defaultValue: 'flux_ai'
+  },
+  status: {
+    type: DataTypes.ENUM,
+    values: ['pending_review', 'approved', 'archived'],
+    defaultValue: 'pending_review'
+  },
+  createdBy: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  createdAt: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  updatedAt: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'templates',
+  timestamps: true
+});
+
+// Define associations
+Template.hasMany(Question, { 
+  as: 'questions',
+  foreignKey: 'templateId',
+  onDelete: 'CASCADE'
+});
+Question.belongsTo(Template, { foreignKey: 'templateId' });
+
+Template.hasMany(SourceDocument, { 
+  as: 'sourceDocuments',
+  foreignKey: 'templateId',
+  onDelete: 'CASCADE'
+});
+SourceDocument.belongsTo(Template, { foreignKey: 'templateId' });
+
+module.exports = {
+  Template,
+  Question,
+  SourceDocument
+};

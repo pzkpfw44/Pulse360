@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
-const mongoose = require('mongoose');
 require('dotenv').config();
 
 const { router: authRoutes } = require('./routes/auth.routes');
@@ -22,6 +21,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/templates', templatesRoutes);
+
+// Health check route
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'API is running' });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {

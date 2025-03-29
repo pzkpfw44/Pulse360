@@ -1,21 +1,32 @@
 const app = require('./app');
-const mongoose = require('mongoose');
+const { testConnection, syncDatabase } = require('./models');
 require('dotenv').config();
 
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/pulse360';
 
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
+// Initialize the database and start the server
+const startServer = async () => {
+  try {
+    // Test database connection
+    const isConnected = await testConnection();
     
-    // Start the server
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('Failed to connect to MongoDB', err);
+    if (isConnected) {
+      // Sync database models (set force to true to reset database in development)
+      const force = process.env.NODE_ENV === 'development' && process.env.RESET_DB === 'true';
+      await syncDatabase(force);
+      
+      // Start the server
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    } else {
+      console.error('Database connection failed. Cannot start server.');
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('Error starting server:', error);
     process.exit(1);
-  });
+  }
+};
+
+startServer();

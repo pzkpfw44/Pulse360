@@ -4,9 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
-const mongoose = require('mongoose');
-const Document = require('../models/document.model');
-const Template = require('../models/template.model');
+const { v4: uuidv4 } = require('uuid');
+const { Document, Template, Question, SourceDocument } = require('../models');
 const fluxAiConfig = require('../config/flux-ai');
 
 // Upload document(s)
@@ -25,8 +24,8 @@ exports.uploadDocuments = async (req, res) => {
     
     // Process each file
     for (const file of req.files) {
-      // Create document record in MongoDB
-      const document = new Document({
+      // Create document record in database
+      const document = await Document.create({
         filename: file.originalname,
         contentType: file.mimetype,
         size: file.size,
@@ -35,7 +34,6 @@ exports.uploadDocuments = async (req, res) => {
         uploadedBy: req.user.id,
       });
       
-      await document.save();
       uploadedDocuments.push(document);
     }
 
@@ -47,7 +45,7 @@ exports.uploadDocuments = async (req, res) => {
       message: 'Documents uploaded successfully',
       count: uploadedDocuments.length,
       documents: uploadedDocuments.map(doc => ({
-        id: doc._id,
+        id: doc.id,
         filename: doc.filename,
         documentType: doc.documentType,
         size: doc.size,
@@ -89,7 +87,7 @@ async function startDocumentAnalysis(documents, documentType, userId) {
         fileIds.push(uploadedFile.id);
         
         // Update document with FluxAI file ID
-        await Document.findByIdAndUpdate(document._id, {
+        await document.update({
           fluxAiFileId: uploadedFile.id,
           status: 'uploaded_to_ai'
         });
@@ -104,10 +102,10 @@ async function startDocumentAnalysis(documents, documentType, userId) {
     console.error('Error starting document analysis:', error);
     
     // Update documents with error status
-    const documentIds = documents.map(doc => doc._id);
-    await Document.updateMany(
-      { _id: { $in: documentIds } },
-      { status: 'analysis_failed', analysisError: error.message }
+    const documentIds = documents.map(doc => doc.id);
+    await Document.update(
+      { status: 'analysis_failed', analysisError: error.message },
+      { where: { id: documentIds } }
     );
   }
 }
@@ -150,28 +148,44 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId) {
     const aiResponse = response.data.choices[0].message.content;
     
     // Parse the AI response to extract questions
-    const questions = parseQuestionsFromAIResponse(aiResponse);
+    const questionData = parseQuestionsFromAIResponse(aiResponse);
     
     // Create a new template based on the analysis
-    const template = new Template({
+    const template = await Template.create({
       name: `${documentType.replace('_', ' ')} Template`,
       documentType,
       generatedBy: 'flux_ai',
-      questions,
-      sourceDocuments: fileIds.map(fileId => ({ fluxAiFileId: fileId })),
       createdBy: userId,
       status: 'pending_review'
     });
     
-    await template.save();
+    // Create questions for the template
+    const questions = await Promise.all(
+      questionData.map(async (q, index) => {
+        return Question.create({
+          ...q,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Create source document references
+    await Promise.all(
+      fileIds.map(async (fileId) => {
+        return SourceDocument.create({
+          fluxAiFileId: fileId,
+          templateId: template.id
+        });
+      })
+    );
     
     // Update documents with analysis complete status
-    await Document.updateMany(
-      { fluxAiFileId: { $in: fileIds } },
+    await Document.update(
       { 
         status: 'analysis_complete',
-        associatedTemplateId: template._id
-      }
+        associatedTemplateId: template.id
+      },
+      { where: { fluxAiFileId: fileIds } }
     );
     
     return template;
@@ -179,9 +193,9 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId) {
     console.error('Error analyzing documents with FluxAI:', error);
     
     // Update documents with error status
-    await Document.updateMany(
-      { fluxAiFileId: { $in: fileIds } },
-      { status: 'analysis_failed', analysisError: error.message }
+    await Document.update(
+      { status: 'analysis_failed', analysisError: error.message },
+      { where: { fluxAiFileId: fileIds } }
     );
     
     throw error;
@@ -277,9 +291,10 @@ function parseQuestionsFromAIResponse(aiResponse) {
 // Get all documents
 exports.getAllDocuments = async (req, res) => {
   try {
-    const documents = await Document.find({ uploadedBy: req.user.id })
-      .sort({ createdAt: -1 })
-      .select('-path -__v');
+    const documents = await Document.findAll({
+      where: { uploadedBy: req.user.id },
+      order: [['createdAt', 'DESC']]
+    });
       
     res.status(200).json({
       count: documents.length,
@@ -295,9 +310,11 @@ exports.getAllDocuments = async (req, res) => {
 exports.getDocumentById = async (req, res) => {
   try {
     const document = await Document.findOne({ 
-      _id: req.params.id,
-      uploadedBy: req.user.id
-    }).select('-path -__v');
+      where: {
+        id: req.params.id,
+        uploadedBy: req.user.id
+      }
+    });
     
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
@@ -314,8 +331,10 @@ exports.getDocumentById = async (req, res) => {
 exports.deleteDocument = async (req, res) => {
   try {
     const document = await Document.findOne({
-      _id: req.params.id,
-      uploadedBy: req.user.id
+      where: {
+        id: req.params.id,
+        uploadedBy: req.user.id
+      }
     });
     
     if (!document) {
@@ -346,7 +365,7 @@ exports.deleteDocument = async (req, res) => {
       }
     }
     
-    await Document.deleteOne({ _id: document._id });
+    await document.destroy();
     
     res.status(200).json({ message: 'Document deleted successfully' });
   } catch (error) {
