@@ -1,0 +1,92 @@
+# docker-compose.yml for context-hub module
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: context-hub-db
+    environment:
+      POSTGRES_USER: pulse360
+      POSTGRES_PASSWORD: pulse360password
+      POSTGRES_DB: context_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - context_hub_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse360"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - context_hub_network
+
+  redis:
+    image: redis:7
+    container_name: context-hub-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - context_hub_redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - context_hub_network
+
+  minio:
+    image: minio/minio
+    container_name: context-hub-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - context_hub_minio_data:/data
+    environment:
+      MINIO_ROOT_USER: pulse360
+      MINIO_ROOT_PASSWORD: pulse360password
+    command: server /data --console-address ":9001"
+    networks:
+      - context_hub_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: context-hub-backend
+    volumes:
+      - ./backend:/app
+      - ../shared:/shared
+    ports:
+      - "8000:8000"
+    environment:
+      MODULE_NAME: context_hub
+      DATABASE_URL: postgresql://pulse360:pulse360password@db:5432/context_hub
+      REDIS_URL: redis://redis:6379/0
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: pulse360
+      MINIO_SECRET_KEY: pulse360password
+      FLUX_AI_API_KEY: dummy-api-key-for-testing
+      SECRET_KEY: this-is-a-very-secure-secret-key-that-is-at-least-32-chars
+      DEBUG: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - context_hub_network
+
+volumes:
+  context_hub_postgres_data:
+  context_hub_redis_data:
+  context_hub_minio_data:
+
+networks:
+  context_hub_network:
+    driver: bridge
