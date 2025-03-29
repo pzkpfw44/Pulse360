@@ -22,6 +22,19 @@ app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/templates', templatesRoutes);
 
+app.get('/api/test', (req, res) => {
+    res.status(200).json({ message: 'API is working!' });
+  });
+  
+  app.post('/api/test/upload', (req, res) => {
+    res.status(200).json({ 
+      message: 'Upload test endpoint is working!',
+      body: req.body,
+      files: req.files,
+      headers: req.headers
+    });
+  });
+
 // Health check route
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'API is running' });

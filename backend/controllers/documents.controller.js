@@ -10,15 +10,19 @@ const fluxAiConfig = require('../config/flux-ai');
 
 // Upload document(s)
 exports.uploadDocuments = async (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: 'No files uploaded' });
-    }
-
-    const { documentType } = req.body;
-    if (!documentType) {
-      return res.status(400).json({ message: 'Document type is required' });
-    }
+    try {
+      console.log("Upload documents request received");
+      console.log("Files:", req.files ? req.files.length : "No files");
+      console.log("Document type:", req.body.documentType || "Not provided");
+      
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No files uploaded' });
+      }
+  
+      const { documentType } = req.body;
+      if (!documentType) {
+        return res.status(400).json({ message: 'Document type is required' });
+      }
 
     const uploadedDocuments = [];
     
