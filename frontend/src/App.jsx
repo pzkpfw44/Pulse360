@@ -2,16 +2,17 @@ import React, { useState, useEffect } from "react";
 import api from "./services/api";
 import {
   Box,
-  Button,
   CircularProgress,
   Container,
   Typography,
   Alert,
+  Button,
 } from '@mui/material';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import ContextHub from './pages/ContextHub';
 import TemplateReview from './components/contexthub/TemplateReview';
+import { MainLayout } from './components/layout/MainLayout';
 
 function App() {
   const [loading, setLoading] = useState(true);
@@ -58,14 +59,14 @@ function App() {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <MainLayout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/contexthub" element={<ContextHub />} />
         <Route path="/contexthub/templates/:id" element={<TemplateReview />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Box>
+    </MainLayout>
   );
 }
 
