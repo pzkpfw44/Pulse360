@@ -13,5 +13,8 @@ setup(
         "passlib>=1.7.4",
         "httpx>=0.24.1",
         "redis>=4.6.0",
+        "loguru>=0.7.0",
+        "minio>=7.1.15",
+        "tenacity>=8.2.2",
     ],
 )
