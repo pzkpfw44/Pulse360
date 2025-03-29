@@ -1,5 +1,3 @@
-# Content for context-hub/backend/app/models/documents.py
-@"
 """
 Document models for ContextHub.
 """
@@ -32,4 +30,3 @@ class Document(Base):
     
     def __repr__(self) -> str:
         return f"<Document {self.title}>"
-"@ | Out-File -FilePath "context-hub/backend/app/models/documents.py" -Encoding utf8
