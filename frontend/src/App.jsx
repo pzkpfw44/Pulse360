@@ -6,6 +6,7 @@ import ContextHub from './pages/ContextHub';
 import TemplateReview from './components/contexthub/TemplateReview';
 import TemplateList from './components/contexthub/TemplateList';
 import CommunicationTemplates from './pages/CommunicationTemplates';
+import CampaignCreate from './pages/CampaignCreate';
 import Settings from './pages/Settings';
 import Integration from './pages/Integration';
 import { MainLayout } from './components/layout/MainLayout';
@@ -70,7 +71,8 @@ function App() {
         <Route path="/communication-templates" element={<WorkInProgress title="Communication Templates" />} />
         
         {/* ControlHub */}
-        <Route path="/start-360" element={<WorkInProgress title="Start 360 Feedback" />} />
+        <Route path="/start-360" element={<CampaignCreate />} />
+        <Route path="/campaign/edit/:id" element={<CampaignCreate />} />
         <Route path="/monitor-360" element={<WorkInProgress title="Monitor 360 Feedback" />} />
         
         {/* FeedbackHub */}

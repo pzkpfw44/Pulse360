@@ -81,12 +81,17 @@ export const authApi = {
   getProfile: () => api.get('/auth/profile'),
 };
 
-// API endpoints for settings
-export const settingsApi = {
-  getSettings: () => api.get('/settings'),
-  updateSettings: (data) => api.put('/settings', data),
-  getFluxModels: () => api.get('/settings/flux/models'),
-  getFluxBalance: () => api.get('/settings/flux/balance'),
+// API endpoints for campaigns
+export const campaignsApi = {
+  getAll: () => api.get('/campaigns'),
+  getById: (id) => api.get(`/campaigns/${id}`),
+  create: (data) => api.post('/campaigns', data),
+  update: (id, data) => api.put(`/campaigns/${id}`, data),
+  launch: (id) => api.post(`/campaigns/${id}/launch`),
+  cancel: (id) => api.post(`/campaigns/${id}/cancel`),
+  delete: (id) => api.delete(`/campaigns/${id}`),
+  suggestAssessors: (data) => api.post('/campaigns/suggest-assessors', data),
+  generateEmailTemplates: () => api.post('/campaigns/generate-email-templates')
 };
 
 export default api;

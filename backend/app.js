@@ -31,6 +31,7 @@ app.use('/api/templates', templatesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/settings/email', emailSettingsRoutes);
+app.use('/api/campaigns', require('./routes/campaigns.routes'));
 
 // Add direct endpoint for document upload
 app.post('/api/documents/upload', upload.array('files'), documentsController.uploadDocuments);

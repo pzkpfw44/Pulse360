@@ -61,7 +61,7 @@ const Campaign = sequelize.define('Campaign', {
   },
   targetEmployeeId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true, // Change this from false to true
     references: {
       model: 'Employees',
       key: 'id'
