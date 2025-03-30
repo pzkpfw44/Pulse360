@@ -9,7 +9,8 @@ import {
   Info, 
   HelpCircle, 
   ChevronsDown, 
-  ArrowRight 
+  ArrowRight,
+  Database
 } from 'lucide-react';
 import api from "../../services/api";
 
@@ -579,7 +580,7 @@ const EmployeeImport = () => {
         </button>
         
         <button
-          onClick={() => window.location.href = '/integration?tab=1'}
+          onClick={() => window.location.href = '/integration?section=employee-management'}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
           Go to Employee Management
