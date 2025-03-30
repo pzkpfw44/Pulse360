@@ -1,22 +1,6 @@
 import React, { useState } from 'react';
 import api from "../../services/api";
-import { 
-  Box, 
-  Button, 
-  Card, 
-  CircularProgress, 
-  Container, 
-  Divider, 
-  FormControl, 
-  Grid, 
-  InputLabel, 
-  MenuItem, 
-  Select, 
-  Typography, 
-  Alert,
-  Snackbar
-} from '@mui/material';
-import { CloudUpload, Check, ErrorOutline } from '@mui/icons-material';
+import { CloudUpload, Check, X } from 'lucide-react';
 
 const DocumentUpload = ({ onDocumentUploaded }) => {
   const [files, setFiles] = useState([]);
@@ -118,37 +102,31 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
   };
 
   return (
-    <Container maxWidth="md" sx={{ py: 3 }}>
-      <Grid container spacing={3}>
-        <Grid item xs={12}>
-          <FormControl fullWidth required>
-            <InputLabel>Document Type</InputLabel>
-            <Select
-              value={documentType}
-              onChange={handleDocumentTypeChange}
-              label="Document Type"
-            >
-              <MenuItem value="leadership_model">Leadership Model</MenuItem>
-              <MenuItem value="job_description">Job Description</MenuItem>
-              <MenuItem value="competency_framework">Competency Framework</MenuItem>
-              <MenuItem value="company_values">Company Values</MenuItem>
-              <MenuItem value="performance_criteria">Performance Criteria</MenuItem>
-            </Select>
-          </FormControl>
-        </Grid>
+    <div className="max-w-3xl mx-auto py-6 px-4">
+      <div className="grid grid-cols-1 gap-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="documentType">
+            Document Type <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="documentType"
+            value={documentType}
+            onChange={handleDocumentTypeChange}
+            className="w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            required
+          >
+            <option value="">Select document type</option>
+            <option value="leadership_model">Leadership Model</option>
+            <option value="job_description">Job Description</option>
+            <option value="competency_framework">Competency Framework</option>
+            <option value="company_values">Company Values</option>
+            <option value="performance_criteria">Performance Criteria</option>
+          </select>
+        </div>
         
-        <Grid item xs={12}>
-          <Box
-            sx={{
-              border: '2px dashed #ccc',
-              borderRadius: 2,
-              p: 3,
-              textAlign: 'center',
-              cursor: 'pointer',
-              '&:hover': {
-                backgroundColor: 'rgba(0, 0, 0, 0.02)'
-              }
-            }}
+        <div>
+          <div
+            className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors"
             onClick={() => document.getElementById('file-input').click()}
             onDragOver={handleDragOver}
             onDragEnter={handleDragEnter}
@@ -160,67 +138,106 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
               type="file"
               multiple
               onChange={handleFileChange}
-              style={{ display: 'none' }}
+              className="hidden"
               accept=".pdf,.doc,.docx,.txt"
             />
-            <CloudUpload sx={{ fontSize: 40, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h6" gutterBottom>
+            <CloudUpload className="h-12 w-12 text-blue-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
               Drag and drop files here or click to browse
-            </Typography>
-            <Typography variant="body2" color="textSecondary">
+            </h3>
+            <p className="text-sm text-gray-500">
               Supported formats: PDF, Word, Text (max 10MB per file)
-            </Typography>
+            </p>
             
             {files.length > 0 && (
-              <Box sx={{ mt: 2, textAlign: 'left' }}>
-                <Typography variant="subtitle2" gutterBottom>
+              <div className="mt-4 text-left">
+                <p className="text-sm font-medium text-gray-700 mb-1">
                   Selected files ({files.length}):
-                </Typography>
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                </p>
+                <ul className="pl-5 list-disc text-sm text-gray-600">
                   {files.map((file, index) => (
-                    <li key={index}>
-                      <Typography variant="body2">{file.name}</Typography>
+                    <li key={index} className="mb-0.5">
+                      {file.name}
                     </li>
                   ))}
                 </ul>
-              </Box>
+              </div>
             )}
-          </Box>
-        </Grid>
+          </div>
+        </div>
         
-        <Grid item xs={12}>
-          <Button
-            variant="contained"
-            color="primary"
-            size="large"
+        <div>
+          <button
             onClick={handleUpload}
             disabled={isUploading || files.length === 0 || !documentType}
-            startIcon={isUploading ? <CircularProgress size={20} color="inherit" /> : <CloudUpload />}
-            fullWidth
+            className={`w-full py-2 px-4 flex items-center justify-center rounded-md shadow-sm text-white font-medium ${
+              isUploading || files.length === 0 || !documentType
+                ? 'bg-blue-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            } transition-colors`}
           >
-            {isUploading ? 'Uploading...' : 'Upload Documents'}
-          </Button>
-        </Grid>
+            {isUploading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Uploading...
+              </>
+            ) : (
+              <>
+                <CloudUpload className="h-5 w-5 mr-2" />
+                Upload Documents
+              </>
+            )}
+          </button>
+        </div>
         
         {uploadStatus && (
-          <Grid item xs={12}>
-            <Alert 
-              severity={uploadStatus.success ? 'success' : 'error'}
-              icon={uploadStatus.success ? <Check /> : <ErrorOutline />}
-              onClose={handleAlertClose}
-            >
-              {uploadStatus.message}
-              
-              {!uploadStatus.success && (
-                <Typography variant="caption" component="div" sx={{ mt: 1 }}>
-                  Note: In development mode, the system will generate mock questions without using the Flux AI API.
-                </Typography>
-              )}
-            </Alert>
-          </Grid>
+          <div className={`rounded-md p-4 ${
+            uploadStatus.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+          }`}>
+            <div className="flex">
+              <div className="flex-shrink-0">
+                {uploadStatus.success ? (
+                  <Check className="h-5 w-5 text-green-500" />
+                ) : (
+                  <X className="h-5 w-5 text-red-500" />
+                )}
+              </div>
+              <div className="ml-3">
+                <h3 className={`text-sm font-medium ${
+                  uploadStatus.success ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {uploadStatus.message}
+                </h3>
+                
+                {!uploadStatus.success && (
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>Note: In development mode, the system will generate mock questions without using the Flux AI API.</p>
+                  </div>
+                )}
+              </div>
+              <div className="ml-auto pl-3">
+                <div className="-mx-1.5 -my-1.5">
+                  <button
+                    onClick={handleAlertClose}
+                    className={`inline-flex rounded-md p-1.5 ${
+                      uploadStatus.success 
+                        ? 'text-green-500 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500'
+                        : 'text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500'
+                    }`}
+                  >
+                    <span className="sr-only">Dismiss</span>
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
-      </Grid>
-    </Container>
+      </div>
+    </div>
   );
 };
 

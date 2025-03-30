@@ -1,12 +1,5 @@
 import React, { useState, useEffect } from "react";
 import api from "./services/api";
-import {
-  CircularProgress,
-  Container,
-  Typography,
-  Alert,
-  Button,
-} from '@mui/material';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import ContextHub from './pages/ContextHub';
@@ -38,25 +31,27 @@ function App() {
 
   if (loading) {
     return (
-      <Container sx={{ textAlign: 'center', mt: 10 }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Loading Pulse360...</Typography>
-      </Container>
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p className="mt-4 text-gray-600">Loading Pulse360...</p>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Container sx={{ mt: 10 }}>
-        <Alert severity="error">{error}</Alert>
-        <Button 
-          variant="outlined" 
-          sx={{ mt: 2 }}
+      <div className="max-w-md mx-auto mt-20 p-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <p className="font-medium">Connection Error</p>
+          <p className="text-sm">{error}</p>
+        </div>
+        <button 
           onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors"
         >
           Retry
-        </Button>
-      </Container>
+        </button>
+      </div>
     );
   }
 

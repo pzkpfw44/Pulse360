@@ -1,25 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  CircularProgress,
-  Container,
-  Divider,
-  FormControl,
-  Grid,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  TextField,
-  Typography,
-  Alert,
-  IconButton,
-  InputAdornment
-} from '@mui/material';
-import { Save, Refresh, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Save, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import api from '../../services/api';
 
 const Settings = () => {
@@ -138,131 +118,147 @@ const Settings = () => {
 
   if (loading) {
     return (
-      <Container sx={{ textAlign: 'center', py: 4 }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Loading settings...</Typography>
-      </Container>
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p className="mt-4 text-gray-600">Loading settings...</p>
+      </div>
     );
   }
 
   return (
-    <Box>
-      <Box className="mb-6">
-        <Typography variant="h4" component="h1" fontWeight="bold">
-          Settings
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-sm text-gray-500">
           Configure your Pulse360 application settings
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <p>{error}</p>
+        </div>
       )}
 
       {success && (
-        <Alert severity="success" sx={{ mb: 3 }}>
-          {success}
-        </Alert>
+        <div className="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative" role="alert">
+          <p>{success}</p>
+        </div>
       )}
 
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h5" component="h2" gutterBottom>
-          Flux AI Integration
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-1">Flux AI Integration</h2>
+        <p className="text-sm text-gray-500 mb-4">
           Configure your connection to the Flux AI platform for AI-assisted 360-degree feedback.
-        </Typography>
+        </p>
 
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <TextField
-              label="Flux AI API Key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              fullWidth
-              type={showApiKey ? 'text' : 'password'}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={handleToggleShowApiKey} edge="end">
-                      {showApiKey ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                )
-              }}
-              helperText="Your Flux AI API key. Keep this secure."
-            />
-          </Grid>
-
-          <Grid item xs={12}>
-            <FormControl fullWidth>
-              <InputLabel>AI Model</InputLabel>
-              <Select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                label="AI Model"
+        <div className="space-y-6">
+          <div>
+            <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-1">
+              Flux AI API Key
+            </label>
+            <div className="relative rounded-md shadow-sm">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                id="apiKey"
+                name="apiKey"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="block w-full pr-10 focus:ring-blue-500 focus:border-blue-500 rounded-md border-gray-300 text-gray-900 placeholder-gray-400"
+                placeholder="Enter your API key"
+              />
+              <button
+                type="button"
+                onClick={handleToggleShowApiKey}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-500"
               >
-                {availableModels.map((model) => (
-                  <MenuItem key={model.model_name} value={model.model_name}>
-                    {model.nickname}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-        </Grid>
+                {showApiKey ? 
+                  <EyeOff className="h-5 w-5" /> : 
+                  <Eye className="h-5 w-5" />
+                }
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">Your Flux AI API key. Keep this secure.</p>
+          </div>
 
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-          <Button
-            variant="outlined"
-            color="error"
+          <div>
+            <label htmlFor="aiModel" className="block text-sm font-medium text-gray-700 mb-1">
+              AI Model
+            </label>
+            <select
+              id="aiModel"
+              name="aiModel"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="block w-full focus:ring-blue-500 focus:border-blue-500 rounded-md border-gray-300 text-gray-900"
+            >
+              <option value="">Select AI model</option>
+              {availableModels.map((model) => (
+                <option key={model.model_name} value={model.model_name}>
+                  {model.nickname}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-between">
+          <button
+            type="button"
             onClick={handleClearApiKey}
+            className="inline-flex items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
           >
             Clear API Key
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
+          </button>
+          <button
+            type="button"
             onClick={handleSaveSettings}
             disabled={saveLoading}
-            startIcon={saveLoading ? <CircularProgress size={20} color="inherit" /> : <Save />}
+            className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white ${
+              saveLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
           >
-            Save Settings
-          </Button>
-        </Box>
-      </Paper>
+            {saveLoading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                Save Settings
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h5" component="h2" gutterBottom>
-          Account Status
-        </Typography>
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold mb-4">Account Status</h2>
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-              <Typography variant="subtitle1" gutterBottom>
-                API Credit Balance
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="h4" component="div">
-                  {apiCredit !== null ? `${apiCredit}` : 'Not available'}
-                </Typography>
-                <Button
-                  startIcon={<Refresh />}
-                  onClick={handleRefreshBalance}
-                  size="small"
-                >
-                  Refresh
-                </Button>
-              </Box>
-            </Box>
-          </Grid>
-        </Grid>
-      </Paper>
-    </Box>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="p-4 border border-gray-200 rounded-md">
+            <h3 className="text-sm font-medium mb-2">API Credit Balance</h3>
+            <div className="flex items-center justify-between">
+              <p className="text-2xl font-semibold">
+                {apiCredit !== null ? apiCredit : 'Not available'}
+              </p>
+              <button
+                type="button"
+                onClick={handleRefreshBalance}
+                className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

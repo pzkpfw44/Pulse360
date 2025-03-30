@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
-  Home, Upload, BookOpen, FileText, PieChart, 
-  BarChart, MessageSquare, Users, Database, Settings 
+  Home, Upload, FileText, PieChart, 
+  BarChart, MessageSquare, Users, Database, Settings,
+  Menu, X, BellIcon
 } from 'lucide-react';
 import fluxLogo from "../../../assets/Flux_white_symbol.png";
 
@@ -61,29 +62,30 @@ export function MainLayout({ children }) {
         <div className="flex items-center justify-between w-full px-4">
           <button
             onClick={toggleSidebar}
-            className="rounded-md p-2 text-gray-500"
+            className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            {isSidebarOpen ? (
+              <X className="h-6 w-6" />
+            ) : (
+              <Menu className="h-6 w-6" />
+            )}
           </button>
           
           <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white">
-              <span className="text-xl font-bold">P</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+              <span className="text-lg font-bold">P</span>
             </div>
-            <span 
-              className="text-xl font-bold"
-              style={{
-                background: "linear-gradient(90deg, #0ea5e9, #0284c7)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text"
-              }}
-            >
+            <span className="text-xl font-bold bg-gradient-to-r from-blue-500 to-blue-600 bg-clip-text text-transparent">
               Pulse360
             </span>
           </div>
+
+          <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full">
+            <BellIcon className="h-6 w-6" />
+            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
+              3
+            </span>
+          </button>
         </div>
       </header>
 
@@ -91,20 +93,20 @@ export function MainLayout({ children }) {
         {/* Sidebar */}
         <aside 
           id="sidebar-container"
-          className={`fixed inset-y-0 left-0 z-20 flex w-64 flex-col bg-gradient-to-b from-blue-450 to-blue-550 transition-transform duration-300 ease-in-out ${
+          className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gradient-to-b from-blue-500 to-blue-600 transition-transform duration-300 ease-in-out ${
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          } md:translate-x-0`}
+          } md:relative md:translate-x-0 md:z-0`}
         >
           <div className="flex h-16 items-center border-b border-white/10 px-6">
             <Link to="/" className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-blue-500">
-                <span className="text-xl font-bold">P</span>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-blue-500">
+                <span className="text-lg font-bold">P</span>
               </div>
               <span className="text-xl font-bold text-white">Pulse360</span>
             </Link>
           </div>
           
-          <div className="flex-1 overflow-auto pt-6 px-4">
+          <div className="flex-1 overflow-auto py-6 px-4">
             <nav className="flex flex-col gap-1">
               <SidebarNavItem href="/" icon={Home} title="Dashboard" />
               
@@ -134,8 +136,8 @@ export function MainLayout({ children }) {
             </nav>
           </div>
           
-          {/* Flux AI branding footer - Made taller and removed redundant text */}
-          <div className="mt-auto border-t border-white/10 p-6 flex justify-center items-center">
+          {/* Flux AI branding footer */}
+          <div className="mt-auto border-t border-white/10 p-4 flex justify-center items-center">
             <div className="text-white/80 text-sm flex items-center">
               <span className="mr-2">AI powered by</span>
               <a href="https://runonflux.com" target="_blank" rel="noopener noreferrer" className="flex items-center">
@@ -146,12 +148,38 @@ export function MainLayout({ children }) {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 md:ml-64 pt-4">
-          <div className="container mx-auto px-4 py-4">
+        <main className="flex-1 md:ml-64">
+          {/* Desktop header */}
+          <header className="hidden md:flex h-16 items-center justify-between bg-white border-b border-gray-200 px-6">
+            <h1 className="text-lg font-semibold text-gray-800">
+              {/* This would be dynamic based on current page */}
+            </h1>
+            <div className="flex items-center gap-4">
+              <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full">
+                <BellIcon className="h-5 w-5" />
+                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
+                  3
+                </span>
+              </button>
+              <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
+                AU
+              </div>
+            </div>
+          </header>
+          
+          <div className="container mx-auto px-4 py-6">
             {children}
           </div>
         </main>
       </div>
+      
+      {/* Mobile sidebar backdrop */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Grid, Button, Container } from '@mui/material';
-import { Upload, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import DocumentUpload from '../components/contexthub/DocumentUpload';
 import DocumentList from '../components/contexthub/DocumentList';
 import { useNavigate } from 'react-router-dom';
@@ -17,58 +16,51 @@ const ContextHub = () => {
   };
 
   return (
-    <Box>
-      <Box className="mb-6">
-        <Typography variant="h4" component="h1" fontWeight="bold">
-          ContextHub
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">ContextHub</h1>
+        <p className="text-sm text-gray-500">
           Manage organizational documents and feedback templates
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
       {/* Action buttons section */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
-        <Button
-          variant="outlined"
-          startIcon={<FileText size={18} />}
+      <div className="flex justify-end mb-4">
+        <button
           onClick={() => navigate('/templates')}
-          sx={{ ml: 2 }}
+          className="flex items-center px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 transition-colors"
         >
+          <FileText size={18} className="mr-2" />
           Manage Templates
-        </Button>
-      </Box>
+        </button>
+      </div>
 
       {/* Document Library Section (Top) */}
-      <Paper sx={{ mb: 4, p: 0, overflow: 'hidden' }}>
-        <Box sx={{ p: 3, borderBottom: '1px solid #e0e0e0', bgcolor: '#f9f9f9' }}>
-          <Typography variant="h5" component="h2" fontWeight="bold">
-            Document Library
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
+      <div className="bg-white rounded-lg shadow mb-6 overflow-hidden">
+        <div className="p-5 border-b border-gray-200 bg-gray-50">
+          <h2 className="text-lg font-semibold">Document Library</h2>
+          <p className="text-sm text-gray-500">
             Manage your uploaded organizational documents
-          </Typography>
-        </Box>
-        <Box>
+          </p>
+        </div>
+        <div>
           <DocumentList key={refreshTrigger} /> {/* Key prop ensures re-render on upload */}
-        </Box>
-      </Paper>
+        </div>
+      </div>
 
       {/* Upload Documents Section (Bottom) */}
-      <Paper sx={{ p: 0, overflow: 'hidden' }}>
-        <Box sx={{ p: 3, borderBottom: '1px solid #e0e0e0', bgcolor: '#f9f9f9' }}>
-          <Typography variant="h5" component="h2" fontWeight="bold">
-            Upload Documents
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="p-5 border-b border-gray-200 bg-gray-50">
+          <h2 className="text-lg font-semibold">Upload Documents</h2>
+          <p className="text-sm text-gray-500">
             Upload organizational documents to generate feedback templates
-          </Typography>
-        </Box>
-        <Box>
+          </p>
+        </div>
+        <div>
           <DocumentUpload onDocumentUploaded={handleDocumentUploaded} />
-        </Box>
-      </Paper>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 };
 

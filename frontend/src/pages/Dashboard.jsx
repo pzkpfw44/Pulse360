@@ -1,256 +1,216 @@
 import React from 'react';
-import { Typography, Box, Grid, Paper, Button, Chip } from '@mui/material';
+import { Link } from 'react-router-dom';
 import { 
   Users, MessageSquare, FileText, BarChart2, 
-  CheckCircle, Clock, AlertTriangle 
+  CheckCircle, Clock, AlertTriangle, 
+  ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
 const MetricCard = ({ title, value, subtitle, icon: Icon, trend }) => {
   return (
-    <Paper className="metric-card p-4">
-      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Box>
-          <Typography variant="body2" color="text.secondary">
-            {title}
-          </Typography>
-          <Typography variant="h4" component="div" sx={{ mt: 1, fontWeight: 'bold' }}>
-            {value}
-          </Typography>
+    <div className="bg-white rounded-lg shadow p-5">
+      <div className="flex justify-between">
+        <div>
+          <p className="text-sm text-gray-500">{title}</p>
+          <p className="mt-1 text-2xl font-bold">{value}</p>
           {subtitle && (
-            <Typography variant="caption" color="text.secondary">
-              {subtitle}
-            </Typography>
+            <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
           )}
           
           {trend && (
-            <Box 
-              sx={{ 
-                mt: 1, 
-                display: 'flex', 
-                alignItems: 'center',
-                color: trend.isPositive ? 'success.main' : 'error.main',
-                fontSize: '0.75rem'
-              }}
-            >
-              {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}% vs last period
-            </Box>
+            <div className={`mt-2 flex items-center text-xs font-medium ${
+              trend.isPositive ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {trend.isPositive ? (
+                <ArrowUpRight className="h-3 w-3 mr-1" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3 mr-1" />
+              )}
+              {Math.abs(trend.value)}% vs last period
+            </div>
           )}
-        </Box>
+        </div>
         
-        <Box 
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            bgcolor: 'primary.light', 
-            color: 'primary.main',
-            borderRadius: '50%',
-            width: 48,
-            height: 48
-          }}
-        >
-          <Icon size={24} />
-        </Box>
-      </Box>
-    </Paper>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600`}>
+          <Icon size={20} />
+        </div>
+      </div>
+    </div>
   );
 };
 
 const StatusIndicator = ({ label, status }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-      <Box
-        sx={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          bgcolor: status === 'active' ? 'success.main' : 'warning.main',
-          mr: 1
-        }}
+    <div className="flex items-center mb-1">
+      <div
+        className={`w-2 h-2 rounded-full mr-2 ${
+          status === 'active' ? 'bg-green-500' : 'bg-amber-500'
+        }`}
       />
-      <Typography variant="body2">{label}</Typography>
-    </Box>
+      <span className="text-sm">{label}</span>
+    </div>
   );
 };
 
 const Dashboard = () => {
   return (
-    <Box>
-      <Box className="page-title">
-        <Typography variant="h4" component="h1" fontWeight="bold">
-          Dashboard
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-gray-500 text-sm">
           Welcome to Pulse360, your AI-assisted 360-degree feedback platform.
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
       {/* Metrics Row */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} lg={3}>
-          <MetricCard 
-            title="Active Participants" 
-            value="126" 
-            subtitle="Across 4 feedback cycles"
-            icon={Users}
-            trend={{ value: 12, isPositive: true }}
-          />
-        </Grid>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <MetricCard 
+          title="Active Participants" 
+          value="126" 
+          subtitle="Across 4 feedback cycles"
+          icon={Users}
+          trend={{ value: 12, isPositive: true }}
+        />
         
-        <Grid item xs={12} sm={6} lg={3}>
-          <MetricCard 
-            title="Feedback Responses" 
-            value="843" 
-            subtitle="78% completion rate"
-            icon={MessageSquare}
-            trend={{ value: 8, isPositive: true }}
-          />
-        </Grid>
+        <MetricCard 
+          title="Feedback Responses" 
+          value="843" 
+          subtitle="78% completion rate"
+          icon={MessageSquare}
+          trend={{ value: 8, isPositive: true }}
+        />
         
-        <Grid item xs={12} sm={6} lg={3}>
-          <MetricCard 
-            title="Active Templates" 
-            value="12" 
-            subtitle="3 pending approval"
-            icon={FileText}
-          />
-        </Grid>
+        <MetricCard 
+          title="Active Templates" 
+          value="12" 
+          subtitle="3 pending approval"
+          icon={FileText}
+        />
         
-        <Grid item xs={12} sm={6} lg={3}>
-          <MetricCard 
-            title="Reports Generated" 
-            value="38" 
-            subtitle="Last 30 days"
-            icon={BarChart2}
-            trend={{ value: 5, isPositive: false }}
-          />
-        </Grid>
-      </Grid>
+        <MetricCard 
+          title="Reports Generated" 
+          value="38" 
+          subtitle="Last 30 days"
+          icon={BarChart2}
+          trend={{ value: 5, isPositive: false }}
+        />
+      </div>
 
       {/* System Status */}
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>System Status</Typography>
-        <Grid container spacing={4}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>ContextHub</Typography>
+      <div className="bg-white rounded-lg shadow p-5 mb-6">
+        <h2 className="text-lg font-semibold mb-4">System Status</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div>
+            <h3 className="text-sm font-medium mb-2">ContextHub</h3>
             <StatusIndicator status="active" label="Operational" />
-          </Grid>
+          </div>
           
-          <Grid item xs={12} sm={6} md={3}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>ControlHub</Typography>
+          <div>
+            <h3 className="text-sm font-medium mb-2">ControlHub</h3>
             <StatusIndicator status="active" label="Operational" />
-          </Grid>
+          </div>
           
-          <Grid item xs={12} sm={6} md={3}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>FeedbackHub</Typography>
+          <div>
+            <h3 className="text-sm font-medium mb-2">FeedbackHub</h3>
             <StatusIndicator status="active" label="Operational" />
-          </Grid>
+          </div>
           
-          <Grid item xs={12} sm={6} md={3}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Flux AI Integration</Typography>
+          <div>
+            <h3 className="text-sm font-medium mb-2">Flux AI Integration</h3>
             <StatusIndicator status="active" label="Operational" />
-          </Grid>
-        </Grid>
-      </Paper>
+          </div>
+        </div>
+      </div>
 
       {/* Bottom Sections */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={7}>
-          <Paper sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" sx={{ mb: 2 }}>Upcoming Deadlines</Typography>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="md:col-span-7">
+          <div className="bg-white rounded-lg shadow p-5 h-full">
+            <h2 className="text-lg font-semibold mb-4">Upcoming Deadlines</h2>
             
-            <Box sx={{ mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="subtitle2">Q2 Performance Cycle</Typography>
-                <Chip 
-                  label="High Priority" 
-                  size="small" 
-                  sx={{ bgcolor: 'error.light', color: 'error.dark' }} 
-                />
-              </Box>
-              <Typography variant="body2" color="text.secondary">Ends in 5 days</Typography>
-            </Box>
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="text-sm font-medium">Q2 Performance Cycle</h3>
+                <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
+                  High Priority
+                </span>
+              </div>
+              <p className="text-sm text-gray-500">Ends in 5 days</p>
+            </div>
             
-            <Box sx={{ mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="subtitle2">Leadership Assessment</Typography>
-                <Chip 
-                  label="Medium Priority" 
-                  size="small" 
-                  sx={{ bgcolor: 'primary.light', color: 'primary.main' }} 
-                />
-              </Box>
-              <Typography variant="body2" color="text.secondary">Ends in 12 days</Typography>
-            </Box>
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="text-sm font-medium">Leadership Assessment</h3>
+                <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                  Medium Priority
+                </span>
+              </div>
+              <p className="text-sm text-gray-500">Ends in 12 days</p>
+            </div>
             
-            <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="subtitle2">Product Team 360</Typography>
-                <Chip 
-                  label="Upcoming" 
-                  size="small" 
-                  sx={{ bgcolor: 'success.light', color: 'success.dark' }} 
-                />
-              </Box>
-              <Typography variant="body2" color="text.secondary">Starts in 3 days</Typography>
-            </Box>
-          </Paper>
-        </Grid>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="text-sm font-medium">Product Team 360</h3>
+                <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                  Upcoming
+                </span>
+              </div>
+              <p className="text-sm text-gray-500">Starts in 3 days</p>
+            </div>
+          </div>
+        </div>
         
-        <Grid item xs={12} md={5}>
-          <Paper sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" sx={{ mb: 2 }}>Recent Activity</Typography>
+        <div className="md:col-span-5">
+          <div className="bg-white rounded-lg shadow p-5 h-full">
+            <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
             
-            <Box sx={{ display: 'flex', mb: 3 }}>
-              <FileText size={18} style={{ marginRight: 12, marginTop: 2 }} />
-              <Box>
-                <Typography variant="subtitle2">New template added</Typography>
-                <Typography variant="body2" color="text.secondary">Technical Leadership Review</Typography>
-                <Typography variant="caption" color="text.secondary">2 hours ago</Typography>
-              </Box>
-            </Box>
+            <div className="flex mb-4">
+              <FileText size={16} className="mt-0.5 mr-3 text-gray-400 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-medium">New template added</h3>
+                <p className="text-sm text-gray-500">Technical Leadership Review</p>
+                <p className="text-xs text-gray-400 mt-0.5">2 hours ago</p>
+              </div>
+            </div>
             
-            <Box sx={{ display: 'flex', mb: 3 }}>
-              <Users size={18} style={{ marginRight: 12, marginTop: 2 }} />
-              <Box>
-                <Typography variant="subtitle2">15 users added to cycle</Typography>
-                <Typography variant="body2" color="text.secondary">Q2 Performance Review</Typography>
-                <Typography variant="caption" color="text.secondary">Yesterday</Typography>
-              </Box>
-            </Box>
+            <div className="flex mb-4">
+              <Users size={16} className="mt-0.5 mr-3 text-gray-400 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-medium">15 users added to cycle</h3>
+                <p className="text-sm text-gray-500">Q2 Performance Review</p>
+                <p className="text-xs text-gray-400 mt-0.5">Yesterday</p>
+              </div>
+            </div>
             
-            <Box sx={{ display: 'flex' }}>
-              <BarChart2 size={18} style={{ marginRight: 12, marginTop: 2 }} />
-              <Box>
-                <Typography variant="subtitle2">5 reports generated</Typography>
-                <Typography variant="body2" color="text.secondary">Leadership Assessment</Typography>
-                <Typography variant="caption" color="text.secondary">2 days ago</Typography>
-              </Box>
-            </Box>
-          </Paper>
-        </Grid>
-      </Grid>
+            <div className="flex">
+              <BarChart2 size={16} className="mt-0.5 mr-3 text-gray-400 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-medium">5 reports generated</h3>
+                <p className="text-sm text-gray-500">Leadership Assessment</p>
+                <p className="text-xs text-gray-400 mt-0.5">2 days ago</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       
       {/* Quick Action Buttons */}
-      <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
-        <Button 
-          variant="contained" 
-          component={Link} 
+      <div className="mt-6 flex flex-wrap gap-3 justify-center">
+        <Link 
           to="/contexthub"
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors text-sm font-medium"
         >
           Go to ContextHub
-        </Button>
+        </Link>
         
-        <Button 
-          variant="outlined" 
-          component={Link} 
+        <Link 
           to="/feedback"
+          className="px-4 py-2 border border-blue-600 bg-white hover:bg-blue-50 text-blue-600 rounded-md shadow-sm transition-colors text-sm font-medium"
         >
           Provide Feedback
-        </Button>
-      </Box>
-    </Box>
+        </Link>
+      </div>
+    </div>
   );
 };
 
