@@ -7,11 +7,8 @@ import {
   Trash2,
   Pencil,
   Save,
-  ArrowUp,
-  ArrowDown,
   Check,
   X,
-  ExternalLink,
   RefreshCw,
   Settings,
   FileText,
@@ -772,7 +769,7 @@ const TemplateReview = () => {
           <div className="mt-4 sm:mt-0">
             <button 
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 mr-2"
-              onClick={() => navigate('/contexthub?tab=2')}
+              onClick={() => navigate('/templates')}
             >
               Cancel
             </button>
@@ -1102,7 +1099,7 @@ const TemplateReview = () => {
                 </p>
                 <button
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  onClick={() => navigate('/contexthub?tab=0')}
+                  onClick={() => navigate('/contexthub')}
                 >
                   Upload Documents
                 </button>
@@ -1596,7 +1593,7 @@ const TemplateReview = () => {
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 flex justify-between z-10">
         <button
           className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          onClick={() => navigate('/contexthub?tab=2')}
+          onClick={() => navigate('/templates')}
         >
           Cancel
         </button>
