@@ -188,7 +188,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
           
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label htmlFor="scaleName" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="scaleName" className="block text-sm font-medium text-gray-500 mb-1">
                 Scale Name
               </label>
               <input
@@ -202,7 +202,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="minValue" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="minValue" className="block text-sm font-medium text-gray-500 mb-1">
                   Minimum Value
                 </label>
                 <input
@@ -218,7 +218,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
               </div>
               
               <div>
-                <label htmlFor="maxValue" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="maxValue" className="block text-sm font-medium text-gray-500 mb-1">
                   Maximum Value
                 </label>
                 <input
@@ -235,7 +235,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
             </div>
             
             <div>
-              <label htmlFor="defaultPerspective" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="defaultPerspective" className="block text-sm font-medium text-gray-500 mb-1">
                 Default For Perspective
               </label>
               <select
@@ -257,7 +257,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
             </div>
             
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">
+              <h3 className="text-sm font-medium text-gray-500 mb-2">
                 Rating Labels
               </h3>
               <div className="border border-gray-200 rounded p-4">
@@ -651,7 +651,7 @@ const TemplateReview = () => {
       });
       
       // Navigate back to templates list
-      navigate('/contexthub?tab=2');
+      navigate('/templates');
     } catch (err) {
       console.error('Error saving template:', err);
       setError(err.response?.data?.message || 'Failed to save template');
@@ -702,7 +702,7 @@ const TemplateReview = () => {
       console.log('Template approved successfully:', response.data);
       
       // Navigate back to templates list
-      navigate('/contexthub?tab=2');
+      navigate('/templates');
     } catch (err) {
       console.error('Error approving template:', err);
       setError(err.response?.data?.message || 'Failed to approve template');
@@ -728,7 +728,7 @@ const TemplateReview = () => {
         </div>
         <button 
           className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-          onClick={() => navigate('/contexthub?tab=2')}
+          onClick={() => navigate('/templates')}
         >
           Back to Templates
         </button>
@@ -756,7 +756,7 @@ const TemplateReview = () => {
         
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
           <div>
-            <p className="text-gray-600">
+            <p className="text-gray-500">
               {template.documentType.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Template
             </p>
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2
@@ -768,14 +768,14 @@ const TemplateReview = () => {
           
           <div className="mt-4 sm:mt-0">
             <button 
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 mr-2"
+              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
               onClick={() => navigate('/templates')}
             >
               Cancel
             </button>
             
             <button
-              className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center inline-flex
+              className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center inline-flex
                 ${(savingTemplate || template.questions.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={() => setConfirmDialogOpen(true)}
               disabled={savingTemplate || template.questions.length === 0}
@@ -803,7 +803,7 @@ const TemplateReview = () => {
         {/* Template Base Info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
-            <label htmlFor="templateName" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="templateName" className="block text-sm font-medium text-gray-500 mb-1">
               Template Name
             </label>
             <input
@@ -811,12 +811,12 @@ const TemplateReview = () => {
               type="text"
               value={template.name}
               onChange={(e) => setTemplate({ ...template, name: e.target.value })}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
           
           <div>
-            <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="department" className="block text-sm font-medium text-gray-500 mb-1">
               Department / Function
             </label>
             <input
@@ -824,34 +824,34 @@ const TemplateReview = () => {
               type="text"
               value={template.department || ''}
               onChange={(e) => setTemplate({ ...template, department: e.target.value })}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               placeholder="e.g., Finance, Engineering, Marketing"
             />
           </div>
           
           <div className="md:col-span-2">
-            <label htmlFor="purpose" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="purpose" className="block text-sm font-medium text-gray-500 mb-1">
               Template Purpose
             </label>
             <textarea
               id="purpose"
               value={template.purpose || ''}
               onChange={(e) => setTemplate({ ...template, purpose: e.target.value })}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               placeholder="e.g., 360 Assessment for Finance Controller Manager"
               rows={2}
             />
           </div>
           
           <div className="md:col-span-2">
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="description" className="block text-sm font-medium text-gray-500 mb-1">
               Description
             </label>
             <textarea
               id="description"
               value={template.description || ''}
               onChange={(e) => setTemplate({ ...template, description: e.target.value })}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               rows={2}
             />
           </div>
@@ -860,7 +860,7 @@ const TemplateReview = () => {
         {/* Template Actions */}
         <div className="flex justify-between items-center mb-6">
           <button
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center"
+            className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 flex items-center"
             onClick={() => setShowSettings(!showSettings)}
           >
             <Settings className="h-4 w-4 mr-1" />
@@ -869,7 +869,7 @@ const TemplateReview = () => {
           
           {!showSettings && (
             <button
-              className={`px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center
+              className={`px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 flex items-center
                 ${reAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={handleReAnalyze}
               disabled={reAnalyzing}
@@ -1002,7 +1002,7 @@ const TemplateReview = () => {
                     </div>
                     
                     <div>
-                      <label htmlFor={`${perspective}-count`} className="block text-sm font-medium text-gray-700 mb-1">
+                      <label htmlFor={`${perspective}-count`} className="block text-sm font-medium text-gray-500 mb-1">
                         Question Count
                       </label>
                       <input
@@ -1017,7 +1017,7 @@ const TemplateReview = () => {
                           parseInt(e.target.value) || 0
                         )}
                         disabled={!template.perspectiveSettings[perspective]?.enabled}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                        className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                       />
                     </div>
                     
@@ -1055,7 +1055,7 @@ const TemplateReview = () => {
                     </h3>
                     
                     <button
-                      className={`px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center text-sm
+                      className={`px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 flex items-center text-sm
                         ${reAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
                       onClick={handleReAnalyze}
                       disabled={reAnalyzing}
@@ -1098,7 +1098,7 @@ const TemplateReview = () => {
                   No source documents attached to this template.
                 </p>
                 <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                   onClick={() => navigate('/contexthub')}
                 >
                   Upload Documents
@@ -1116,7 +1116,7 @@ const TemplateReview = () => {
             </h2>
             
             <button
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
               onClick={() => setShowNewQuestionForm(true)}
             >
               <Plus className="h-4 w-4 mr-1" />
@@ -1169,7 +1169,7 @@ const TemplateReview = () => {
                         No questions defined for this perspective yet.
                       </p>
                       <button
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center mx-auto"
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center mx-auto"
                         onClick={() => {
                           setNewQuestion({
                             ...newQuestion,
@@ -1219,7 +1219,7 @@ const TemplateReview = () => {
                                           // Edit mode
                                           <div>
                                             <div className="mb-4">
-                                              <label htmlFor="questionText" className="block text-sm font-medium text-gray-700 mb-1">
+                                              <label htmlFor="questionText" className="block text-sm font-medium text-gray-500 mb-1">
                                                 Question Text
                                               </label>
                                               <textarea
@@ -1229,14 +1229,14 @@ const TemplateReview = () => {
                                                   ...editingQuestion,
                                                   text: e.target.value
                                                 })}
-                                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                                 rows={2}
                                               />
                                             </div>
                                             
                                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                               <div>
-                                                <label htmlFor="questionType" className="block text-sm font-medium text-gray-700 mb-1">
+                                                <label htmlFor="questionType" className="block text-sm font-medium text-gray-500 mb-1">
                                                   Question Type
                                                 </label>
                                                 <select
@@ -1246,7 +1246,7 @@ const TemplateReview = () => {
                                                     ...editingQuestion,
                                                     type: e.target.value
                                                   })}
-                                                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                  className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                                 >
                                                   <option value="rating">Rating Scale</option>
                                                   <option value="open_ended">Open Ended</option>
@@ -1255,7 +1255,7 @@ const TemplateReview = () => {
                                               </div>
                                               
                                               <div>
-                                                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                                                <label htmlFor="category" className="block text-sm font-medium text-gray-500 mb-1">
                                                   Category
                                                 </label>
                                                 <select
@@ -1272,7 +1272,7 @@ const TemplateReview = () => {
                                                       handleAddCategory(categoryValue);
                                                     }
                                                   }}
-                                                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                  className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                                 >
                                                   <option value="">None</option>
                                                   {categories.map((cat) => (
@@ -1285,7 +1285,7 @@ const TemplateReview = () => {
                                               
                                               {editingQuestion.type === 'rating' && ratingScales.length > 0 && (
                                                 <div>
-                                                  <label htmlFor="ratingScale" className="block text-sm font-medium text-gray-700 mb-1">
+                                                  <label htmlFor="ratingScale" className="block text-sm font-medium text-gray-500 mb-1">
                                                     Rating Scale
                                                   </label>
                                                   <select
@@ -1295,7 +1295,7 @@ const TemplateReview = () => {
                                                       ...editingQuestion,
                                                       ratingScaleId: e.target.value
                                                     })}
-                                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                    className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                                   >
                                                     <option value="">Default for Perspective</option>
                                                     {ratingScales.map((scale) => (
@@ -1326,13 +1326,13 @@ const TemplateReview = () => {
                                             
                                             <div className="flex justify-end mt-4">
                                               <button
-                                                className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 mr-2"
+                                                className="px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
                                                 onClick={() => setEditingQuestion(null)}
                                               >
                                                 Cancel
                                               </button>
                                               <button
-                                                className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+                                                className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
                                                 onClick={handleSaveQuestion}
                                               >
                                                 <Save className="h-4 w-4 mr-1" />
@@ -1374,7 +1374,7 @@ const TemplateReview = () => {
                                                 </div>
                                               </div>
                                               
-                                              <div className="ml-4 flex-shrink-0">
+                                              <div className="ml-4 flex-shrink-0 flex">
                                                 <button
                                                   className="text-gray-400 hover:text-blue-600 p-1"
                                                   onClick={() => handleEditQuestion(question)}
@@ -1408,7 +1408,7 @@ const TemplateReview = () => {
                   {Object.keys(questionsByCategory).length > 0 && (
                     <div className="mt-6 text-center">
                       <button
-                        className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center mx-auto"
+                        className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 flex items-center mx-auto"
                         onClick={() => {
                           setNewQuestion({
                             ...newQuestion,
@@ -1438,7 +1438,7 @@ const TemplateReview = () => {
               
               <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="mb-4">
-                  <label htmlFor="newQuestionText" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="newQuestionText" className="block text-sm font-medium text-gray-500 mb-1">
                     Question Text <span className="text-red-500">*</span>
                   </label>
                   <textarea
@@ -1448,7 +1448,7 @@ const TemplateReview = () => {
                       ...newQuestion,
                       text: e.target.value
                     })}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     rows={2}
                     required
                   />
@@ -1456,7 +1456,7 @@ const TemplateReview = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
-                    <label htmlFor="newQuestionType" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="newQuestionType" className="block text-sm font-medium text-gray-500 mb-1">
                       Question Type
                     </label>
                     <select
@@ -1466,7 +1466,7 @@ const TemplateReview = () => {
                         ...newQuestion,
                         type: e.target.value
                       })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     >
                       <option value="rating">Rating Scale</option>
                       <option value="open_ended">Open Ended</option>
@@ -1475,7 +1475,7 @@ const TemplateReview = () => {
                   </div>
                   
                   <div>
-                    <label htmlFor="newQuestionPerspective" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="newQuestionPerspective" className="block text-sm font-medium text-gray-500 mb-1">
                       Perspective
                     </label>
                     <select
@@ -1485,7 +1485,7 @@ const TemplateReview = () => {
                         ...newQuestion,
                         perspective: e.target.value
                       })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-100"
+                      className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-100"
                       disabled // Perspective is determined by current tab
                     >
                       {Object.keys(perspectiveMap).map(perspective => (
@@ -1497,7 +1497,7 @@ const TemplateReview = () => {
                   </div>
                   
                   <div>
-                    <label htmlFor="newCategory" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="newCategory" className="block text-sm font-medium text-gray-500 mb-1">
                       Category
                     </label>
                     <select
@@ -1514,7 +1514,7 @@ const TemplateReview = () => {
                           handleAddCategory(categoryValue);
                         }
                       }}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     >
                       <option value="">None</option>
                       {categories.map((category) => (
@@ -1527,7 +1527,7 @@ const TemplateReview = () => {
                   
                   {newQuestion.type === 'rating' && ratingScales.length > 0 && (
                     <div>
-                      <label htmlFor="newRatingScale" className="block text-sm font-medium text-gray-700 mb-1">
+                      <label htmlFor="newRatingScale" className="block text-sm font-medium text-gray-500 mb-1">
                         Rating Scale
                       </label>
                       <select
@@ -1537,7 +1537,7 @@ const TemplateReview = () => {
                           ...newQuestion,
                           ratingScaleId: e.target.value
                         })}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                       >
                         <option value="">Default for Perspective</option>
                         {ratingScales.map((scale) => (
@@ -1568,13 +1568,13 @@ const TemplateReview = () => {
                 
                 <div className="flex justify-end mt-4">
                   <button
-                    className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 mr-2"
+                    className="px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
                     onClick={() => setShowNewQuestionForm(false)}
                   >
                     Cancel
                   </button>
                   <button
-                    className={`px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center
+                    className={`px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center
                       ${!newQuestion.text.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={handleAddQuestion}
                     disabled={!newQuestion.text.trim()}
@@ -1592,7 +1592,7 @@ const TemplateReview = () => {
       {/* Floating action bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 flex justify-between z-10">
         <button
-          className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+          className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
           onClick={() => navigate('/templates')}
         >
           Cancel
@@ -1600,7 +1600,7 @@ const TemplateReview = () => {
         
         <div>
           <button
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 mr-2"
+            className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
             onClick={handleSaveTemplate}
             disabled={savingTemplate}
           >
@@ -1608,7 +1608,7 @@ const TemplateReview = () => {
           </button>
           
           <button
-            className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center inline-flex
+            className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center inline-flex
               ${(savingTemplate || template.questions.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
             onClick={() => setConfirmDialogOpen(true)}
             disabled={savingTemplate || template.questions.length === 0}
@@ -1657,14 +1657,14 @@ const TemplateReview = () => {
               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 <button 
                   type="button" 
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                  className="w-full inline-flex justify-center rounded border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
                   onClick={handleApproveTemplate}
                 >
                   Approve
                 </button>
                 <button 
                   type="button" 
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                  className="mt-3 w-full inline-flex justify-center rounded border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
                   onClick={() => setConfirmDialogOpen(false)}
                 >
                   Cancel
