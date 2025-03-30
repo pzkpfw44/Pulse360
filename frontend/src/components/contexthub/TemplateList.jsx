@@ -1,35 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from "../../services/api";
 import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  CardActions,
-  Chip,
-  CircularProgress,
-  Container,
-  Grid,
-  IconButton,
-  Paper,
-  Typography,
-  Alert,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-} from '@mui/material';
-import {
   Delete,
   Edit,
-  FileCopy,
-  Visibility,
+  Copy,
+  Eye,
   CheckCircle,
-  ErrorOutline,
-  HourglassEmpty,
-  Add
-} from '@mui/icons-material';
+  AlertTriangle,
+  Clock,
+  Plus
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const TemplateList = () => {
@@ -73,7 +53,6 @@ const TemplateList = () => {
 
   const handleViewTemplate = (templateId) => {
     console.log('Viewing template with ID:', templateId);
-    // Use navigate directly instead of window.location.href
     navigate(`/contexthub/templates/${templateId}`);
   };
 
@@ -97,22 +76,20 @@ const TemplateList = () => {
     }
   };
 
-  const getStatusChip = (status) => {
+  const getStatusBadge = (status) => {
     const statusConfig = {
-      pending_review: { color: 'warning', label: 'Pending Review', icon: <HourglassEmpty fontSize="small" /> },
-      approved: { color: 'success', label: 'Approved', icon: <CheckCircle fontSize="small" /> },
-      archived: { color: 'default', label: 'Archived', icon: <FileCopy fontSize="small" /> },
+      pending_review: { color: 'bg-yellow-100 text-yellow-800', icon: <Clock className="h-3 w-3" />, label: 'Pending Review' },
+      approved: { color: 'bg-green-100 text-green-800', icon: <CheckCircle className="h-3 w-3" />, label: 'Approved' },
+      archived: { color: 'bg-gray-100 text-gray-800', icon: <Copy className="h-3 w-3" />, label: 'Archived' },
     };
 
     const config = statusConfig[status] || statusConfig.pending_review;
 
     return (
-      <Chip
-        size="small"
-        color={config.color}
-        icon={config.icon}
-        label={config.label}
-      />
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color}`}>
+        <span className="mr-1">{config.icon}</span>
+        {config.label}
+      </span>
     );
   };
 
@@ -125,147 +102,157 @@ const TemplateList = () => {
 
   if (loading) {
     return (
-      <Container sx={{ textAlign: 'center', py: 4 }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Loading templates...</Typography>
-      </Container>
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p className="mt-4 text-gray-600">Loading templates...</p>
+      </div>
     );
   }
 
   return (
-    <Box>
-      <Box className="mb-6">
-        <Typography variant="h4" component="h1" fontWeight="bold">
-          Manage Templates
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Manage Templates</h1>
+        <p className="text-sm text-gray-500">
           Review and manage feedback templates generated from your documents
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
       {/* Action buttons */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<Add />}
+      <div className="flex justify-end mb-6">
+        <button
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
           onClick={() => navigate('/contexthub')}
         >
+          <Plus className="h-4 w-4 mr-2" />
           Upload New Document
-        </Button>
-      </Box>
+        </button>
+      </div>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-          <Button variant="text" size="small" onClick={fetchTemplates} sx={{ ml: 2 }}>
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
+          <p>{error}</p>
+          <button 
+            className="text-red-700 underline ml-2"
+            onClick={fetchTemplates}
+          >
             Retry
-          </Button>
-        </Alert>
+          </button>
+        </div>
       )}
 
       {templates.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: '#f5f5f5' }}>
-          <Typography variant="h6" gutterBottom>
+        <div className="p-8 text-center bg-gray-50 rounded-lg">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
             No Templates Found
-          </Typography>
-          <Typography variant="body1" sx={{ mb: 3 }}>
+          </h3>
+          <p className="text-gray-500 mb-4">
             Upload documents to generate feedback templates, or create templates manually.
-          </Typography>
-          <Button
-            variant="contained"
-            color="primary"
+          </p>
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
             onClick={() => navigate('/contexthub')}
           >
             Upload Documents
-          </Button>
-        </Paper>
+          </button>
+        </div>
       ) : (
-        <Grid container spacing={3}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {templates.map((template) => (
-            <Grid item xs={12} md={6} lg={4} key={template.id}>
-              <Card elevation={2}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="h6" component="h3" noWrap>
-                      {template.name}
-                    </Typography>
-                    {getStatusChip(template.status)}
-                  </Box>
+            <div 
+              key={template.id} 
+              className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
+            >
+              <div className="p-5">
+                <div className="flex justify-between items-start mb-3">
+                  <h3 className="text-lg font-medium text-gray-900 truncate mr-2">
+                    {template.name}
+                  </h3>
+                  {getStatusBadge(template.status)}
+                </div>
 
-                  <Box sx={{ mb: 2 }}>
-                    <Chip
-                      size="small"
-                      label={formatDocumentType(template.documentType)}
-                      sx={{ mr: 1 }}
-                    />
-                    <Chip
-                      size="small"
-                      label={`${template.questions?.length || 0} Questions`}
-                      variant="outlined"
-                    />
-                  </Box>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    {formatDocumentType(template.documentType)}
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                    {template.questions?.length || 0} Questions
+                  </span>
+                </div>
 
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {template.description || 'No description provided.'}
-                  </Typography>
+                <p className="text-sm text-gray-500 mb-3 line-clamp-2">
+                  {template.description || 'No description provided.'}
+                </p>
 
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Created: {new Date(template.createdAt).toLocaleDateString()}
-                  </Typography>
-                </CardContent>
-                
-                <CardActions>
-                  <Button
-                    size="small"
-                    startIcon={<Visibility />}
+                <p className="text-xs text-gray-400">
+                  Created: {new Date(template.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              
+              <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex justify-between">
+                <div className="flex space-x-2">
+                  <button
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
                     onClick={() => handleViewTemplate(template.id)}
                   >
+                    <Eye className="h-4 w-4 mr-1" />
                     View
-                  </Button>
+                  </button>
                   {template.status === 'pending_review' && (
-                    <Button
-                      size="small"
-                      startIcon={<Edit />}
+                    <button
+                      className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
                       onClick={() => handleViewTemplate(template.id)}
                     >
+                      <Edit className="h-4 w-4 mr-1" />
                       Edit
-                    </Button>
+                    </button>
                   )}
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => handleDeleteClick(template)}
-                    sx={{ ml: 'auto' }}
-                  >
-                    <Delete fontSize="small" />
-                  </IconButton>
-                </CardActions>
-              </Card>
-            </Grid>
+                </div>
+                <button
+                  className="text-sm text-red-600 hover:text-red-800"
+                  onClick={() => handleDeleteClick(template)}
+                >
+                  <Delete className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           ))}
-        </Grid>
+        </div>
       )}
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={() => setDeleteDialogOpen(false)}
-      >
-        <DialogTitle>Delete Template</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete "{templateToDelete?.name}"? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteConfirm} color="error" autoFocus>
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+      {deleteDialogOpen && (
+        <>
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setDeleteDialogOpen(false)}></div>
+          <div className="fixed inset-0 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-medium text-gray-900">Delete Template</h3>
+              </div>
+              <div className="px-6 py-4">
+                <p className="text-gray-700">
+                  Are you sure you want to delete "{templateToDelete?.name}"? This action cannot be undone.
+                </p>
+              </div>
+              <div className="px-6 py-3 bg-gray-50 flex justify-end space-x-3">
+                <button
+                  onClick={() => setDeleteDialogOpen(false)}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 };
 
