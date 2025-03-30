@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { Mail, Plus } from 'lucide-react';
-import WorkInProgress from '../components/WorkInProgress';
 
 const CommunicationTemplates = () => {
   return (

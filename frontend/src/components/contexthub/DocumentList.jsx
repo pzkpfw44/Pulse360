@@ -138,7 +138,7 @@ const DocumentList = () => {
     <div className="px-4 py-5">
       <div className="mb-4">
         <h3 className="text-lg font-medium text-gray-900">
-          Document Library
+          Company Knowledge
         </h3>
         <p className="text-sm text-gray-500">
           Manage your uploaded organizational documents
@@ -182,7 +182,7 @@ const DocumentList = () => {
                     <button
                       className="text-blue-600 hover:text-blue-900 inline-flex items-center mr-3"
                       onClick={() => {
-                        window.location.href = `/contexthub?tab=2`;
+                        window.location.href = `/templates`;
                         console.log("Navigating to templates tab");
                       }}
                       title="View Template"
@@ -208,7 +208,7 @@ const DocumentList = () => {
         <div className="mt-6 text-right">
           <button 
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            onClick={() => window.location.href = '/contexthub?tab=2'}
+            onClick={() => window.location.href = '/templates'}
           >
             View All Templates
           </button>

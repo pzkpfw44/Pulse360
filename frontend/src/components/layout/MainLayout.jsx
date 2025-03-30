@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
-  Home, Upload, FileText, PieChart, 
-  BarChart2, MessageSquare, Users, Database, Settings,
-  Menu, X, Bell, User
+  Home, Upload, FileText, 
+  BarChart2, MessageSquare, Database, Settings,
+  Menu, X, Bell, User, BookOpen, PieChart, 
+  PlayCircle, Activity, ChartBar, Briefcase
 } from 'lucide-react';
 import fluxLogo from "../../../assets/Flux_white_symbol.png";
 
@@ -80,25 +81,26 @@ export function MainLayout({ children }) {
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               ContextHub
             </div>
-            <SidebarNavItem href="/contexthub" icon={Upload} title="Content Management" />
-            <SidebarNavItem href="/templates" icon={FileText} title="Manage Templates" />
+            <SidebarNavItem href="/contexthub" icon={BookOpen} title="Company Knowledge" />
+            <SidebarNavItem href="/templates" icon={FileText} title="Questionnaire Templates" />
+            <SidebarNavItem href="/communication-templates" icon={MessageSquare} title="Communication Templates" />
             
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               ControlHub
             </div>
-            <SidebarNavItem href="/cycles" icon={PieChart} title="Feedback Cycles" />
-            <SidebarNavItem href="/reports" icon={BarChart2} title="Reports" badge={2} />
+            <SidebarNavItem href="/start-360" icon={PlayCircle} title="Start 360 Feedback" />
+            <SidebarNavItem href="/monitor-360" icon={Activity} title="Monitor 360 Feedback" badge={2} />
             
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               FeedbackHub
             </div>
-            <SidebarNavItem href="/feedback" icon={MessageSquare} title="Provide Feedback" />
-            <SidebarNavItem href="/team" icon={Users} title="Team Management" />
+            <SidebarNavItem href="/results-360" icon={BarChart2} title="Results 360" />
+            <SidebarNavItem href="/insights-360" icon={ChartBar} title="Insights 360" />
             
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               System
             </div>
-            <SidebarNavItem href="/integration" icon={Database} title="Integration" />
+            <SidebarNavItem href="/integration" icon={Briefcase} title="Integrations" />
             <SidebarNavItem href="/settings" icon={Settings} title="Settings" />
           </nav>
         </div>

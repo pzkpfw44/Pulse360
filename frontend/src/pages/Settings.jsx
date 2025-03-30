@@ -5,7 +5,6 @@ import {
   Settings as SettingsIcon, 
   Mail, 
   Database, 
-  Users, 
   Shield,
   Palette,
   Globe
@@ -14,7 +13,6 @@ import {
 import GeneralSettings from '../components/settings/GeneralSettings';
 import FluxAiSettings from '../components/settings/FluxAiSettings';
 import EmailSettings from '../components/settings/EmailSettings';
-import IntegrationSettings from '../components/settings/IntegrationSettings';
 import SecuritySettings from '../components/settings/SecuritySettings';
 import BrandingSettings from '../components/settings/BrandingSettings';
 
@@ -37,15 +35,9 @@ const Settings = () => {
     },
     {
       id: 'email',
-      label: 'Email',
+      label: 'Email Configuration',
       icon: Mail,
-      description: 'Email server configuration and settings'
-    },
-    {
-      id: 'integration',
-      label: 'Integrations',
-      icon: Globe,
-      description: 'External system integrations'
+      description: 'Email server and notification settings'
     },
     {
       id: 'security',
@@ -70,8 +62,6 @@ const Settings = () => {
         return <FluxAiSettings />;
       case 'email':
         return <EmailSettings />;
-      case 'integration':
-        return <IntegrationSettings />;
       case 'security':
         return <SecuritySettings />;
       case 'branding':

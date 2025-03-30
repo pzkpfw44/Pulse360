@@ -1,5 +1,3 @@
-// frontend/src/App.jsx
-
 import React, { useState, useEffect } from "react";
 import api from "./services/api";
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -7,8 +5,9 @@ import Dashboard from './pages/Dashboard';
 import ContextHub from './pages/ContextHub';
 import TemplateReview from './components/contexthub/TemplateReview';
 import TemplateList from './components/contexthub/TemplateList';
+import CommunicationTemplates from './pages/CommunicationTemplates';
 import Settings from './pages/Settings';
-import Integration from './pages/Integration'; // Import our new Integration page
+import Integration from './pages/Integration';
 import { MainLayout } from './components/layout/MainLayout';
 import WorkInProgress from './components/WorkInProgress';
 
@@ -61,16 +60,28 @@ function App() {
   return (
     <MainLayout>
       <Routes>
+        {/* Dashboard */}
         <Route path="/" element={<Dashboard />} />
+        
+        {/* ContextHub */}
         <Route path="/contexthub" element={<ContextHub />} />
         <Route path="/contexthub/templates/:id" element={<TemplateReview />} />
         <Route path="/templates" element={<TemplateList />} />
-        <Route path="/cycles" element={<WorkInProgress title="Feedback Cycles" />} />
-        <Route path="/reports" element={<WorkInProgress title="Reports" />} />
-        <Route path="/feedback" element={<WorkInProgress title="Provide Feedback" />} />
-        <Route path="/team" element={<WorkInProgress title="Team Management" />} />
-        <Route path="/integration" element={<Integration />} /> {/* Use our new Integration component */}
+        <Route path="/communication-templates" element={<WorkInProgress title="Communication Templates" />} />
+        
+        {/* ControlHub */}
+        <Route path="/start-360" element={<WorkInProgress title="Start 360 Feedback" />} />
+        <Route path="/monitor-360" element={<WorkInProgress title="Monitor 360 Feedback" />} />
+        
+        {/* FeedbackHub */}
+        <Route path="/results-360" element={<WorkInProgress title="Results 360" />} />
+        <Route path="/insights-360" element={<WorkInProgress title="Insights 360" />} />
+        
+        {/* System */}
+        <Route path="/integration" element={<Integration />} />
         <Route path="/settings" element={<Settings />} />
+        
+        {/* Redirect any unknown routes to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </MainLayout>

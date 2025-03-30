@@ -38,7 +38,7 @@ const ContextHub = () => {
       {/* Document Library Section (Top) */}
       <div className="bg-white rounded-lg shadow mb-6 overflow-hidden">
         <div className="p-5 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-lg font-semibold">Document Library</h2>
+          <h2 className="text-lg font-semibold">Company Knowledge</h2>
           <p className="text-sm text-gray-500">
             Manage your uploaded organizational documents
           </p>
