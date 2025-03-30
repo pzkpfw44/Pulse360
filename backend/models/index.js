@@ -1,6 +1,12 @@
+// backend/models/index.js
+
 const { sequelize, testConnection } = require('../config/database');
 const User = require('./user.model');
 const Document = require('./document.model');
+const Employee = require('./employee.model');
+const Campaign = require('./campaign.model');
+const CampaignParticipant = require('./campaign-participant.model');
+const Response = require('./response.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 
 // Define associations between models
@@ -12,6 +18,30 @@ Template.belongsTo(User, { foreignKey: 'createdBy' });
 
 Document.belongsTo(Template, { foreignKey: 'associatedTemplateId' });
 Template.hasMany(Document, { foreignKey: 'associatedTemplateId' });
+
+// Campaign associations
+User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'campaigns' });
+Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+
+Template.hasMany(Campaign, { foreignKey: 'templateId' });
+Campaign.belongsTo(Template, { foreignKey: 'templateId' });
+
+Employee.hasMany(Campaign, { foreignKey: 'targetEmployeeId', as: 'targetedCampaigns' });
+Campaign.belongsTo(Employee, { foreignKey: 'targetEmployeeId', as: 'targetEmployee' });
+
+// Campaign Participant associations
+Campaign.hasMany(CampaignParticipant, { foreignKey: 'campaignId', as: 'participants' });
+CampaignParticipant.belongsTo(Campaign, { foreignKey: 'campaignId' });
+
+Employee.hasMany(CampaignParticipant, { foreignKey: 'employeeId', as: 'participations' });
+CampaignParticipant.belongsTo(Employee, { foreignKey: 'employeeId', as: 'employee' });
+
+// Response associations
+CampaignParticipant.hasMany(Response, { foreignKey: 'participantId', as: 'responses' });
+Response.belongsTo(CampaignParticipant, { foreignKey: 'participantId' });
+
+Question.hasMany(Response, { foreignKey: 'questionId' });
+Response.belongsTo(Question, { foreignKey: 'questionId' });
 
 // Function to sync all models with the database
 const syncDatabase = async (force = false) => {
@@ -43,8 +73,12 @@ module.exports = {
   syncDatabase,
   User,
   Document,
+  Employee,
   Template,
   Question,
   SourceDocument,
-  RatingScale
+  RatingScale,
+  Campaign,
+  CampaignParticipant,
+  Response
 };

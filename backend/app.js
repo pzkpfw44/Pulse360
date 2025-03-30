@@ -1,3 +1,5 @@
+// backend/app.js
+
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -8,6 +10,7 @@ const { router: authRoutes } = require('./routes/auth.routes');
 const documentsRoutes = require('./routes/documents.routes');
 const templatesRoutes = require('./routes/templates.routes');
 const settingsRoutes = require('./routes/settings.routes');
+const employeesRoutes = require('./routes/employees.routes');
 const documentsController = require('./controllers/documents.controller');
 const upload = require('./middleware/upload.middleware');
 
@@ -25,22 +28,23 @@ app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/employees', employeesRoutes);
 
 // Add direct endpoint for document upload
 app.post('/api/documents/upload', upload.array('files'), documentsController.uploadDocuments);
 
 app.get('/api/test', (req, res) => {
-    res.status(200).json({ message: 'API is working!' });
+  res.status(200).json({ message: 'API is working!' });
+});
+
+app.post('/api/test/upload', (req, res) => {
+  res.status(200).json({ 
+    message: 'Upload test endpoint is working!',
+    body: req.body,
+    files: req.files,
+    headers: req.headers
   });
-  
-  app.post('/api/test/upload', (req, res) => {
-    res.status(200).json({ 
-      message: 'Upload test endpoint is working!',
-      body: req.body,
-      files: req.files,
-      headers: req.headers
-    });
-  });
+});
 
 // Health check route
 app.get('/api/health', (req, res) => {

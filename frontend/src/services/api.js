@@ -1,3 +1,5 @@
+// frontend/src/services/api.js
+
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -53,6 +55,23 @@ export const templatesApi = {
   approve: (id, data) => api.put(`/templates/${id}/approve`, data),
   reanalyze: (id) => api.post(`/templates/${id}/reanalyze`),
   delete: (id) => api.delete(`/templates/${id}`),
+};
+
+// API endpoints for employees
+export const employeesApi = {
+  getAll: (params) => api.get('/employees', { params }),
+  getById: (id) => api.get(`/employees/${id}`),
+  create: (data) => api.post('/employees', data),
+  update: (id, data) => api.put(`/employees/${id}`, data),
+  delete: (id) => api.delete(`/employees/${id}`),
+  import: (formData) => api.post('/employees/import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }),
+  purge: (confirmation) => api.delete('/employees', { 
+    data: { confirmation } 
+  }),
 };
 
 // API endpoints for auth
