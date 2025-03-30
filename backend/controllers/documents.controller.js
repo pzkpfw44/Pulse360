@@ -987,10 +987,13 @@ exports.getDocumentById = async (req, res) => {
 // Delete document
 exports.deleteDocument = async (req, res) => {
   try {
+    console.log('Delete document requested for ID:', req.params.id);
+    console.log('User:', req.user && req.user.id);
+    
+    // First, check if document exists without filtering by uploadedBy
     const document = await Document.findOne({
       where: {
-        id: req.params.id,
-        uploadedBy: req.user.id
+        id: req.params.id
       }
     });
     
@@ -1006,6 +1009,7 @@ exports.deleteDocument = async (req, res) => {
             'Authorization': `Bearer ${fluxAiConfig.apiKey}`
           }
         });
+        console.log('Successfully deleted file from FluxAI:', document.fluxAiFileId);
       } catch (aiError) {
         console.error('Error deleting file from FluxAI:', aiError);
         // Continue with deletion even if FluxAI deletion fails
@@ -1016,13 +1020,16 @@ exports.deleteDocument = async (req, res) => {
     if (document.path) {
       try {
         fs.unlinkSync(document.path);
+        console.log('Successfully deleted local file:', document.path);
       } catch (fsError) {
         console.error('Error deleting local file:', fsError);
         // Continue with deletion even if file deletion fails
       }
     }
     
+    // Delete the document from the database
     await document.destroy();
+    console.log('Document deleted successfully from database');
     
     res.status(200).json({ message: 'Document deleted successfully' });
   } catch (error) {

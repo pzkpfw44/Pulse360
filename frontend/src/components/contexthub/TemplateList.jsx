@@ -28,6 +28,7 @@ import {
   CheckCircle,
   ErrorOutline,
   HourglassEmpty,
+  Add
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -131,112 +132,120 @@ const TemplateList = () => {
     );
   }
 
-  if (error) {
-    return (
-      <Container sx={{ py: 4 }}>
-        <Alert severity="error">{error}</Alert>
-        <Button variant="outlined" sx={{ mt: 2 }} onClick={fetchTemplates}>
-          Retry
-        </Button>
-      </Container>
-    );
-  }
-
-  if (templates.length === 0) {
-    return (
-      <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: '#f5f5f5' }}>
-        <Typography variant="h6" gutterBottom>
-          No Templates Found
-        </Typography>
-        <Typography variant="body1" sx={{ mb: 3 }}>
-          Upload documents to generate feedback templates, or create templates manually.
-        </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={() => navigate('/contexthub')}
-        >
-          Upload Documents
-        </Button>
-      </Paper>
-    );
-  }
-
   return (
-    <Container>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" component="h2" gutterBottom>
-          Feedback Templates
+    <Box>
+      <Box className="mb-6">
+        <Typography variant="h4" component="h1" fontWeight="bold">
+          Manage Templates
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Review and manage feedback templates generated from your documents
         </Typography>
       </Box>
 
-      <Grid container spacing={3}>
-        {templates.map((template) => (
-          <Grid item xs={12} md={6} lg={4} key={template.id}>
-            <Card elevation={2}>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6" component="h3" noWrap>
-                    {template.name}
+      {/* Action buttons */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<Add />}
+          onClick={() => navigate('/contexthub')}
+        >
+          Upload New Document
+        </Button>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+          <Button variant="text" size="small" onClick={fetchTemplates} sx={{ ml: 2 }}>
+            Retry
+          </Button>
+        </Alert>
+      )}
+
+      {templates.length === 0 ? (
+        <Paper sx={{ p: 4, textAlign: 'center', backgroundColor: '#f5f5f5' }}>
+          <Typography variant="h6" gutterBottom>
+            No Templates Found
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 3 }}>
+            Upload documents to generate feedback templates, or create templates manually.
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => navigate('/contexthub')}
+          >
+            Upload Documents
+          </Button>
+        </Paper>
+      ) : (
+        <Grid container spacing={3}>
+          {templates.map((template) => (
+            <Grid item xs={12} md={6} lg={4} key={template.id}>
+              <Card elevation={2}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                    <Typography variant="h6" component="h3" noWrap>
+                      {template.name}
+                    </Typography>
+                    {getStatusChip(template.status)}
+                  </Box>
+
+                  <Box sx={{ mb: 2 }}>
+                    <Chip
+                      size="small"
+                      label={formatDocumentType(template.documentType)}
+                      sx={{ mr: 1 }}
+                    />
+                    <Chip
+                      size="small"
+                      label={`${template.questions?.length || 0} Questions`}
+                      variant="outlined"
+                    />
+                  </Box>
+
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    {template.description || 'No description provided.'}
                   </Typography>
-                  {getStatusChip(template.status)}
-                </Box>
 
-                <Box sx={{ mb: 2 }}>
-                  <Chip
-                    size="small"
-                    label={formatDocumentType(template.documentType)}
-                    sx={{ mr: 1 }}
-                  />
-                  <Chip
-                    size="small"
-                    label={`${template.questions?.length || 0} Questions`}
-                    variant="outlined"
-                  />
-                </Box>
-
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {template.description || 'No description provided.'}
-                </Typography>
-
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Created: {new Date(template.createdAt).toLocaleDateString()}
-                </Typography>
-              </CardContent>
-              
-              <CardActions>
-                <Button
-                  size="small"
-                  startIcon={<Visibility />}
-                  onClick={() => handleViewTemplate(template.id)}
-                >
-                  View
-                </Button>
-                {template.status === 'pending_review' && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Created: {new Date(template.createdAt).toLocaleDateString()}
+                  </Typography>
+                </CardContent>
+                
+                <CardActions>
                   <Button
                     size="small"
-                    startIcon={<Edit />}
+                    startIcon={<Visibility />}
                     onClick={() => handleViewTemplate(template.id)}
                   >
-                    Edit
+                    View
                   </Button>
-                )}
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => handleDeleteClick(template)}
-                  sx={{ ml: 'auto' }}
-                >
-                  <Delete fontSize="small" />
-                </IconButton>
-              </CardActions>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+                  {template.status === 'pending_review' && (
+                    <Button
+                      size="small"
+                      startIcon={<Edit />}
+                      onClick={() => handleViewTemplate(template.id)}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleDeleteClick(template)}
+                    sx={{ ml: 'auto' }}
+                  >
+                    <Delete fontSize="small" />
+                  </IconButton>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog
@@ -256,7 +265,7 @@ const TemplateList = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 

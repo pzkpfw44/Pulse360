@@ -134,13 +134,12 @@ export function MainLayout({ children }) {
             </nav>
           </div>
           
-          {/* Flux AI branding footer */}
-          <div className="mt-auto border-t border-white/10 p-4 flex justify-center items-center">
-            <div className="text-white/80 text-xs flex items-center">
+          {/* Flux AI branding footer - Made taller and removed redundant text */}
+          <div className="mt-auto border-t border-white/10 p-6 flex justify-center items-center">
+            <div className="text-white/80 text-sm flex items-center">
               <span className="mr-2">AI powered by</span>
               <a href="https://runonflux.com" target="_blank" rel="noopener noreferrer" className="flex items-center">
-                <img src={fluxLogo} alt="Flux" className="h-4 w-auto" />
-                <span className="font-semibold text-white ml-1">Flux</span>
+                <img src={fluxLogo} alt="Flux" className="h-6 w-auto" />
               </a>
             </div>
           </div>

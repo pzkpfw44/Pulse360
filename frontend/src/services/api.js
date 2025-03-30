@@ -62,4 +62,12 @@ export const authApi = {
   getProfile: () => api.get('/auth/profile'),
 };
 
+// API endpoints for settings
+export const settingsApi = {
+  getSettings: () => api.get('/settings'),
+  updateSettings: (data) => api.put('/settings', data),
+  getFluxModels: () => api.get('/settings/flux/models'),
+  getFluxBalance: () => api.get('/settings/flux/balance'),
+};
+
 export default api;

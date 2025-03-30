@@ -7,6 +7,7 @@ require('dotenv').config();
 const { router: authRoutes } = require('./routes/auth.routes');
 const documentsRoutes = require('./routes/documents.routes');
 const templatesRoutes = require('./routes/templates.routes');
+const settingsRoutes = require('./routes/settings.routes');
 const documentsController = require('./controllers/documents.controller');
 const upload = require('./middleware/upload.middleware');
 
@@ -23,6 +24,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/templates', templatesRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Add direct endpoint for document upload
 app.post('/api/documents/upload', upload.array('files'), documentsController.uploadDocuments);

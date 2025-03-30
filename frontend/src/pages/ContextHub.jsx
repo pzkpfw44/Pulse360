@@ -1,49 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Tabs, Tab, Paper } from '@mui/material';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Box, Typography, Paper, Grid, Button, Container } from '@mui/material';
+import { Upload, FileText } from 'lucide-react';
 import DocumentUpload from '../components/contexthub/DocumentUpload';
 import DocumentList from '../components/contexthub/DocumentList';
-import TemplateList from '../components/contexthub/TemplateList';
-import { Upload, BookOpen, FileText } from 'lucide-react';
-
-function TabPanel(props) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`contexthub-tabpanel-${index}`}
-      aria-labelledby={`contexthub-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box sx={{ py: 3 }}>
-          {children}
-        </Box>
-      )}
-    </div>
-  );
-}
+import { useNavigate } from 'react-router-dom';
 
 const ContextHub = () => {
-  const location = useLocation();
+  // State to control auto-refresh when a document is uploaded
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const navigate = useNavigate();
-  const [tabValue, setTabValue] = useState(0);
 
-  // Check URL for tab parameter
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const tabParam = params.get('tab');
-    if (tabParam !== null) {
-      setTabValue(parseInt(tabParam, 10));
-    }
-  }, [location]);
-
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
-    // Update URL with tab parameter
-    navigate(`/contexthub?tab=${newValue}`);
+  // Function to be called after successful document upload
+  const handleDocumentUploaded = () => {
+    // Increment trigger to cause DocumentList to refresh
+    setRefreshTrigger(prev => prev + 1);
   };
 
   return (
@@ -57,41 +27,47 @@ const ContextHub = () => {
         </Typography>
       </Box>
 
-      <Paper sx={{ mb: 3 }}>
-        <Tabs 
-          value={tabValue} 
-          onChange={handleTabChange} 
-          aria-label="contexthub tabs"
-          variant="fullWidth"
-          sx={{
-            '& .MuiTab-root': {
-              minHeight: '56px',
-              textTransform: 'none',
-              fontSize: '0.9rem',
-              fontWeight: 500
-            }
-          }}
+      {/* Action buttons section */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+        <Button
+          variant="outlined"
+          startIcon={<FileText size={18} />}
+          onClick={() => navigate('/templates')}
+          sx={{ ml: 2 }}
         >
-          <Tab 
-            icon={<Upload size={18} />} 
-            iconPosition="start" 
-            label="Upload Documents" 
-          />
-          <Tab 
-            icon={<BookOpen size={18} />} 
-            iconPosition="start" 
-            label="Document Library" 
-          />
-        </Tabs>
+          Manage Templates
+        </Button>
+      </Box>
+
+      {/* Document Library Section (Top) */}
+      <Paper sx={{ mb: 4, p: 0, overflow: 'hidden' }}>
+        <Box sx={{ p: 3, borderBottom: '1px solid #e0e0e0', bgcolor: '#f9f9f9' }}>
+          <Typography variant="h5" component="h2" fontWeight="bold">
+            Document Library
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage your uploaded organizational documents
+          </Typography>
+        </Box>
+        <Box>
+          <DocumentList key={refreshTrigger} /> {/* Key prop ensures re-render on upload */}
+        </Box>
       </Paper>
 
-      <TabPanel value={tabValue} index={0}>
-        <DocumentUpload />
-      </TabPanel>
-
-      <TabPanel value={tabValue} index={1}>
-        <DocumentList />
-      </TabPanel>
+      {/* Upload Documents Section (Bottom) */}
+      <Paper sx={{ p: 0, overflow: 'hidden' }}>
+        <Box sx={{ p: 3, borderBottom: '1px solid #e0e0e0', bgcolor: '#f9f9f9' }}>
+          <Typography variant="h5" component="h2" fontWeight="bold">
+            Upload Documents
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Upload organizational documents to generate feedback templates
+          </Typography>
+        </Box>
+        <Box>
+          <DocumentUpload onDocumentUploaded={handleDocumentUploaded} />
+        </Box>
+      </Paper>
     </Box>
   );
 };
