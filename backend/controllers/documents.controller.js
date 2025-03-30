@@ -988,22 +988,37 @@ exports.getDocumentById = async (req, res) => {
 exports.deleteDocument = async (req, res) => {
   try {
     console.log('Delete document requested for ID:', req.params.id);
-    console.log('User:', req.user && req.user.id);
+    
+    // Import required models
+    const { Document, SourceDocument, Template } = require('../models');
+    const fluxAiConfig = require('../config/flux-ai');
+    const fs = require('fs');
     
     // First, check if document exists without filtering by uploadedBy
-    const document = await Document.findOne({
-      where: {
-        id: req.params.id
-      }
-    });
+    const document = await Document.findByPk(req.params.id);
     
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
     }
     
+    // Check if the document is referenced by any templates
+    const sourceDocuments = await SourceDocument.findAll({
+      where: { documentId: document.id }
+    });
+    
+    // If document is referenced by templates, delete those references first
+    if (sourceDocuments && sourceDocuments.length > 0) {
+      console.log(`Found ${sourceDocuments.length} references to this document in source_documents table`);
+      for (const sourceDoc of sourceDocuments) {
+        console.log(`Deleting source document reference: ${sourceDoc.id}`);
+        await sourceDoc.destroy();
+      }
+    }
+    
     // If document was uploaded to FluxAI and we have an API key, delete it there too
     if (document.fluxAiFileId && fluxAiConfig.isConfigured() && !document.fluxAiFileId.startsWith('dev-mode-')) {
       try {
+        const axios = require('axios');
         await axios.delete(`${fluxAiConfig.baseUrl}/v1/files/${document.fluxAiFileId}`, {
           headers: {
             'Authorization': `Bearer ${fluxAiConfig.apiKey}`
@@ -1016,11 +1031,15 @@ exports.deleteDocument = async (req, res) => {
       }
     }
     
-    // Delete local file if it exists
+    // Delete local file if it exists (use try/catch for robustness)
     if (document.path) {
       try {
-        fs.unlinkSync(document.path);
-        console.log('Successfully deleted local file:', document.path);
+        if (fs.existsSync(document.path)) {
+          fs.unlinkSync(document.path);
+          console.log('Successfully deleted local file:', document.path);
+        } else {
+          console.log('Local file not found (already deleted):', document.path);
+        }
       } catch (fsError) {
         console.error('Error deleting local file:', fsError);
         // Continue with deletion even if file deletion fails

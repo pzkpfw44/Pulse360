@@ -1,8 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { Setting } = require('../models/setting.model');
-const fluxAiConfig = require('../config/flux-ai');
+// Remove the Setting model requirement
 require('dotenv').config();
 
 // Get current settings
@@ -62,8 +61,7 @@ exports.updateSettings = async (req, res) => {
         // Continue anyway to return success to the client
       }
     } else {
-      // In production, update settings in database
-      // This would require a settings table implementation
+      // In production, we'd typically use a database
       console.log('Production settings update would be saved to database');
     }
     
@@ -77,6 +75,9 @@ exports.updateSettings = async (req, res) => {
 // Get available Flux AI models
 exports.getFluxModels = async (req, res) => {
   try {
+    // Import the fluxAiConfig here to avoid circular dependencies
+    const fluxAiConfig = require('../config/flux-ai');
+    
     // Check if Flux AI is configured
     if (!fluxAiConfig.isConfigured()) {
       // Return mock data in development mode
@@ -127,6 +128,9 @@ exports.getFluxModels = async (req, res) => {
 // Get Flux AI balance
 exports.getFluxBalance = async (req, res) => {
   try {
+    // Import the fluxAiConfig here to avoid circular dependencies
+    const fluxAiConfig = require('../config/flux-ai');
+    
     // Check if Flux AI is configured
     if (!fluxAiConfig.isConfigured()) {
       // Return mock data in development mode
