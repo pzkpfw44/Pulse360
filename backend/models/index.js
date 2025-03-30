@@ -7,6 +7,7 @@ const Employee = require('./employee.model');
 const Campaign = require('./campaign.model');
 const CampaignParticipant = require('./campaign-participant.model');
 const Response = require('./response.model');
+const EmailSettings = require('./email-settings.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 
 // Define associations between models
@@ -42,6 +43,10 @@ Response.belongsTo(CampaignParticipant, { foreignKey: 'participantId' });
 
 Question.hasMany(Response, { foreignKey: 'questionId' });
 Response.belongsTo(Question, { foreignKey: 'questionId' });
+
+// Email Settings associations
+User.hasMany(EmailSettings, { foreignKey: 'updatedBy' });
+EmailSettings.belongsTo(User, { foreignKey: 'updatedBy' });
 
 // Function to sync all models with the database
 const syncDatabase = async (force = false) => {
@@ -80,5 +85,6 @@ module.exports = {
   RatingScale,
   Campaign,
   CampaignParticipant,
-  Response
+  Response,
+  EmailSettings
 };

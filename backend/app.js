@@ -11,6 +11,7 @@ const documentsRoutes = require('./routes/documents.routes');
 const templatesRoutes = require('./routes/templates.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const employeesRoutes = require('./routes/employees.routes');
+const emailSettingsRoutes = require('./routes/email-settings.routes');
 const documentsController = require('./controllers/documents.controller');
 const upload = require('./middleware/upload.middleware');
 
@@ -29,6 +30,7 @@ app.use('/api/documents', documentsRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/employees', employeesRoutes);
+app.use('/api/settings/email', emailSettingsRoutes);
 
 // Add direct endpoint for document upload
 app.post('/api/documents/upload', upload.array('files'), documentsController.uploadDocuments);
