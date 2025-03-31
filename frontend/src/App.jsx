@@ -7,6 +7,8 @@ import TemplateReview from './components/contexthub/TemplateReview';
 import TemplateList from './components/contexthub/TemplateList';
 import CommunicationTemplates from './pages/CommunicationTemplates';
 import CampaignCreate from './pages/CampaignCreate';
+import CampaignList from './components/campaigns/CampaignList';
+import CampaignView from './pages/CampaignView';
 import Settings from './pages/Settings';
 import Integration from './pages/Integration';
 import { MainLayout } from './components/layout/MainLayout';
@@ -73,7 +75,8 @@ function App() {
         {/* ControlHub */}
         <Route path="/start-360" element={<CampaignCreate />} />
         <Route path="/campaign/edit/:id" element={<CampaignCreate />} />
-        <Route path="/monitor-360" element={<WorkInProgress title="Monitor 360 Feedback" />} />
+        <Route path="/campaign/view/:id" element={<CampaignView />} />
+        <Route path="/monitor-360" element={<CampaignList />} />
         
         {/* FeedbackHub */}
         <Route path="/results-360" element={<WorkInProgress title="Results 360" />} />

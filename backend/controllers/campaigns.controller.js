@@ -169,7 +169,7 @@ exports.createCampaign = async (req, res) => {
         include: [
           { 
             model: Template, 
-            as: 'Template',  // Changed to match the model definition
+            as: 'template',  // Changed to lowercase
             attributes: ['id', 'name', 'documentType']
           },
           { 

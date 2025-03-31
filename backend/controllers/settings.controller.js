@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-// Remove the Setting model requirement
 require('dotenv').config();
 
 // Get current settings
@@ -34,7 +33,7 @@ exports.updateSettings = async (req, res) => {
     // Update the .env file in development mode
     if (process.env.NODE_ENV === 'development') {
       try {
-        const envPath = path.resolve(__dirname, '../../.env');
+        const envPath = path.resolve(__dirname, '../.env');
         let envContent = fs.readFileSync(envPath, 'utf8');
         
         // Update API key if provided and different from placeholder
@@ -78,9 +77,24 @@ exports.getFluxModels = async (req, res) => {
     // Import the fluxAiConfig here to avoid circular dependencies
     const fluxAiConfig = require('../config/flux-ai');
     
-    // Check if Flux AI is configured
-    if (!fluxAiConfig.isConfigured()) {
-      // Return mock data in development mode
+    // Check if Flux AI is configured - if API key exists
+    if (!fluxAiConfig.apiKey) {
+      return res.status(400).json({ message: 'Flux AI API key not configured' });
+    }
+    
+    try {
+      // Always try to make a real API call
+      const response = await axios.get(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.llms}`, {
+        headers: {
+          'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+        }
+      });
+      
+      res.status(200).json(response.data);
+    } catch (apiError) {
+      console.error('Error calling Flux API:', apiError);
+      
+      // Fallback to mock data if real API call fails
       if (fluxAiConfig.isDevelopment) {
         return res.status(200).json({
           success: true,
@@ -106,19 +120,10 @@ exports.getFluxModels = async (req, res) => {
           ],
           count: 3
         });
+      } else {
+        throw apiError;
       }
-      
-      return res.status(400).json({ message: 'Flux AI API key not configured' });
     }
-    
-    // Make request to Flux AI API
-    const response = await axios.get(`${fluxAiConfig.baseUrl}/v1/llms`, {
-      headers: {
-        'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-      }
-    });
-    
-    res.status(200).json(response.data);
   } catch (error) {
     console.error('Error fetching Flux AI models:', error);
     res.status(500).json({ message: 'Failed to fetch Flux AI models', error: error.message });
@@ -131,26 +136,32 @@ exports.getFluxBalance = async (req, res) => {
     // Import the fluxAiConfig here to avoid circular dependencies
     const fluxAiConfig = require('../config/flux-ai');
     
-    // Check if Flux AI is configured
-    if (!fluxAiConfig.isConfigured()) {
-      // Return mock data in development mode
+    // Check if Flux AI is configured - if API key exists
+    if (!fluxAiConfig.apiKey) {
+      return res.status(400).json({ message: 'Flux AI API key not configured' });
+    }
+    
+    try {
+      // Always try to make a real API call
+      const response = await axios.get(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.balance}`, {
+        headers: {
+          'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+        }
+      });
+      
+      res.status(200).json(response.data);
+    } catch (apiError) {
+      console.error('Error calling Flux API:', apiError);
+      
+      // Fallback to mock data if real API call fails
       if (fluxAiConfig.isDevelopment) {
         return res.status(200).json({
           api_credit: "-0.6"
         });
+      } else {
+        throw apiError;
       }
-      
-      return res.status(400).json({ message: 'Flux AI API key not configured' });
     }
-    
-    // Make request to Flux AI API
-    const response = await axios.get(`${fluxAiConfig.baseUrl}/v1/balance`, {
-      headers: {
-        'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-      }
-    });
-    
-    res.status(200).json(response.data);
   } catch (error) {
     console.error('Error fetching Flux AI balance:', error);
     res.status(500).json({ message: 'Failed to fetch Flux AI balance', error: error.message });

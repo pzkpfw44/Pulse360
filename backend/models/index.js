@@ -25,7 +25,7 @@ User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'campaigns' });
 Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
 
 Template.hasMany(Campaign, { foreignKey: 'templateId' });
-Campaign.belongsTo(Template, { foreignKey: 'templateId' });
+Campaign.belongsTo(Template, { foreignKey: 'templateId', as: 'template' });
 
 Employee.hasMany(Campaign, { foreignKey: 'targetEmployeeId', as: 'targetedCampaigns' });
 Campaign.belongsTo(Employee, { foreignKey: 'targetEmployeeId', as: 'targetEmployee' });
