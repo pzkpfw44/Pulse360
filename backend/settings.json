@@ -1,0 +1,9 @@
+{
+  "aiSettings": {
+    "analysisDepth": "deep",
+    "enableBiasDetection": true,
+    "enableContentFiltering": true,
+    "maxTokensPerRequest": 2000,
+    "feedbackAnalysis": true
+  }
+}

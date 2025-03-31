@@ -24,6 +24,7 @@ const FluxAiSettings = () => {
   const [availableModels, setAvailableModels] = useState([]);
   const [apiCredit, setApiCredit] = useState(null);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
+  const [lastEnteredKey, setLastEnteredKey] = useState('');
   
   // Additional AI settings
   const [aiSettings, setAiSettings] = useState({
@@ -49,13 +50,13 @@ const FluxAiSettings = () => {
           setSelectedModel(settings.fluxAiModel || '');
           
           // Set AI settings if available
-          if (settings.ai) {
+          if (settings.aiSettings) {
             setAiSettings({
-              analysisDepth: settings.ai.analysisDepth || 'medium',
-              enableBiasDetection: settings.ai.enableBiasDetection !== false,
-              enableContentFiltering: settings.ai.enableContentFiltering !== false,
-              maxTokensPerRequest: settings.ai.maxTokensPerRequest || 2000,
-              feedbackAnalysis: settings.ai.feedbackAnalysis !== false
+              analysisDepth: settings.aiSettings.analysisDepth || 'medium',
+              enableBiasDetection: settings.aiSettings.enableBiasDetection !== false,
+              enableContentFiltering: settings.aiSettings.enableContentFiltering !== false,
+              maxTokensPerRequest: settings.aiSettings.maxTokensPerRequest || 2000,
+              feedbackAnalysis: settings.aiSettings.feedbackAnalysis !== false
             });
           }
         }
@@ -114,8 +115,17 @@ const FluxAiSettings = () => {
       const data = {
         fluxApiKey: apiKey === '••••••••' ? undefined : apiKey,
         fluxAiModel: selectedModel,
-        ai: aiSettings
+        // Properly structure the AI settings
+        aiSettings: {  // Use aiSettings as a property name
+          analysisDepth: aiSettings.analysisDepth,
+          enableBiasDetection: aiSettings.enableBiasDetection,
+          enableContentFiltering: aiSettings.enableContentFiltering,
+          maxTokensPerRequest: aiSettings.maxTokensPerRequest,
+          feedbackAnalysis: aiSettings.feedbackAnalysis
+        }
       };
+      
+      console.log('Saving correct settings format:', data);
       
       const response = await api.put('/settings', data);
       
@@ -124,6 +134,8 @@ const FluxAiSettings = () => {
         
         // If the API key was changed, mask it again
         if (apiKey !== '••••••••') {
+          // Store the last entered key before masking it
+          setLastEnteredKey(apiKey);
           setApiKey('••••••••');
         }
       }
@@ -137,10 +149,19 @@ const FluxAiSettings = () => {
 
   const handleClearApiKey = () => {
     setApiKey('');
+    setLastEnteredKey('');
   };
 
   const handleToggleShowApiKey = () => {
     setShowApiKey(!showApiKey);
+  };
+
+  const handleApiKeyChange = (e) => {
+    const newValue = e.target.value;
+    setApiKey(newValue);
+    if (newValue !== '••••••••') {
+      setLastEnteredKey(newValue);
+    }
   };
 
   const handleAiSettingChange = (e) => {
@@ -202,15 +223,16 @@ const FluxAiSettings = () => {
                 type={showApiKey ? 'text' : 'password'}
                 id="apiKey"
                 name="apiKey"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                value={apiKey === '••••••••' && showApiKey && lastEnteredKey ? lastEnteredKey : apiKey}
+                onChange={handleApiKeyChange}
                 className="block w-full pr-10 focus:ring-blue-500 focus:border-blue-500 rounded-md border-gray-300 text-gray-900 placeholder-gray-400"
                 placeholder="Enter your API key"
               />
               <button
                 type="button"
                 onClick={handleToggleShowApiKey}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-500"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-500 z-20 cursor-pointer"
+                title={showApiKey ? "Hide API key" : "Show API key"}
               >
                 {showApiKey ? 
                   <EyeOff className="h-5 w-5" /> : 
@@ -218,7 +240,10 @@ const FluxAiSettings = () => {
                 }
               </button>
             </div>
-            <p className="mt-1 text-xs text-gray-500">Your Flux AI API key. Keep this secure.</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Your Flux AI API key. Keep this secure.
+              {apiKey === '••••••••' && !lastEnteredKey && <span className="italic ml-1">(Hidden for security)</span>}
+            </p>
           </div>
 
           <div>

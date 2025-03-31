@@ -10,8 +10,29 @@ exports.getSettings = async (req, res) => {
     const settings = {
       fluxApiKey: process.env.FLUX_AI_API_KEY ? '••••••••' : '', // Mask the API key
       fluxAiModel: process.env.FLUX_AI_MODEL || 'Llama 3.1',
-      fluxAiBaseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com/api'
+      fluxAiBaseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com'
     };
+    
+    // Load AI settings from storage (for development mode)
+    try {
+      const settingsPath = path.resolve(__dirname, '../settings.json');
+      if (fs.existsSync(settingsPath)) {
+        const storedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        if (storedSettings.aiSettings) {
+          settings.aiSettings = storedSettings.aiSettings;
+        }
+      }
+    } catch (error) {
+      console.warn('Error reading settings file:', error);
+      // Provide default AI settings if not found
+      settings.aiSettings = {
+        analysisDepth: 'medium',
+        enableBiasDetection: true,
+        enableContentFiltering: true,
+        maxTokensPerRequest: 2000,
+        feedbackAnalysis: true
+      };
+    }
     
     res.status(200).json(settings);
   } catch (error) {
@@ -23,7 +44,13 @@ exports.getSettings = async (req, res) => {
 // Update settings
 exports.updateSettings = async (req, res) => {
   try {
-    const { fluxApiKey, fluxAiModel } = req.body;
+    const { fluxApiKey, fluxAiModel, aiSettings } = req.body;
+
+    console.log('Saving settings:', {
+      fluxApiKey: fluxApiKey ? '(provided)' : '(not provided)',
+      fluxAiModel,
+      aiSettings
+    });
 
     // Only administrators should be able to update settings
     if (req.user.role !== 'admin') {
@@ -55,8 +82,30 @@ exports.updateSettings = async (req, res) => {
         if (fluxAiModel) {
           process.env.FLUX_AI_MODEL = fluxAiModel;
         }
+        
+        // Save AI settings to a JSON file
+        if (aiSettings) {
+          const settingsPath = path.resolve(__dirname, '../settings.json');
+          let settings = {};
+          
+          // Try to read existing settings
+          try {
+            if (fs.existsSync(settingsPath)) {
+              settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+            }
+          } catch (error) {
+            console.warn('Error reading settings file:', error);
+          }
+          
+          // Update settings
+          settings.aiSettings = aiSettings;
+          
+          // Write back
+          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+          console.log('Saved AI settings to file');
+        }
       } catch (fsError) {
-        console.error('Error updating .env file:', fsError);
+        console.error('Error updating settings files:', fsError);
         // Continue anyway to return success to the client
       }
     } else {
