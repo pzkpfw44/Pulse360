@@ -7,6 +7,8 @@ import TemplateReview from './components/contexthub/TemplateReview';
 import TemplateList from './components/contexthub/TemplateList';
 import CommunicationTemplates from './pages/CommunicationTemplates';
 import CampaignCreate from './pages/CampaignCreate';
+import CampaignMonitoringDashboard from './pages/CampaignMonitoringDashboard';
+import CampaignDetailMonitoring from './pages/CampaignDetailMonitoring';
 import CampaignList from './components/campaigns/CampaignList';
 import CampaignView from './pages/CampaignView';
 import Settings from './pages/Settings';
@@ -76,7 +78,8 @@ function App() {
         <Route path="/start-360" element={<CampaignCreate />} />
         <Route path="/campaign/edit/:id" element={<CampaignCreate />} />
         <Route path="/campaign/view/:id" element={<CampaignView />} />
-        <Route path="/monitor-360" element={<CampaignList />} />
+        <Route path="/monitor-360" element={<CampaignMonitoringDashboard />} />
+        <Route path="/monitor-360/campaign/:id" element={<CampaignDetailMonitoring />} />
         
         {/* FeedbackHub */}
         <Route path="/results-360" element={<WorkInProgress title="Results 360" />} />

@@ -11,6 +11,7 @@ router.use(authMiddleware);
 // Special endpoints that might conflict with /:id routes should be defined first
 router.post('/suggest-assessors', campaignsController.suggestAssessors);
 router.post('/generate-email-templates', campaignsController.generateEmailTemplates);
+router.post('/send-reminders', campaignsController.sendReminders);
 
 // Get all campaigns
 router.get('/', campaignsController.getAllCampaigns);

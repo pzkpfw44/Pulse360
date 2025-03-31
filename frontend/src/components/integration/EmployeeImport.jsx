@@ -13,6 +13,7 @@ import {
   Database
 } from 'lucide-react';
 import api from "../../services/api";
+import * as XLSX from 'xlsx';
 
 // Define required and optional fields for employee data
 const REQUIRED_FIELDS = [
@@ -57,7 +58,6 @@ const EmployeeImport = () => {
     setLoading(true);
     setError(null);
 
-    // Simple file preview - in a real app, you'd use more robust parsing
     const reader = new FileReader();
     
     reader.onload = (e) => {
@@ -86,14 +86,36 @@ const EmployeeImport = () => {
             autoMapColumns(headers);
           }
         }
-        // For Excel files - this is just a placeholder, real implementation would use xlsx.js
+        // For Excel files
         else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-          setFileData({
-            headers: ['Preview not available for Excel files'],
-            rows: [['Please proceed to mapping step']],
-            type: 'excel'
-          });
-          setError('Excel preview is limited. Continue to column mapping to process the file.');
+          // Parse Excel file using SheetJS
+          const workbook = XLSX.read(content, { type: 'binary' });
+          
+          // Get the first sheet
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          // Convert sheet to JSON
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
+          if (jsonData.length > 0) {
+            // First row contains headers
+            const headers = jsonData[0].map(h => h?.toString().trim() || '');
+            
+            // Next few rows for preview
+            const dataRows = jsonData.slice(1, Math.min(6, jsonData.length));
+            
+            setFileData({
+              headers,
+              rows: dataRows,
+              type: 'excel'
+            });
+            
+            // Auto-map columns if possible
+            autoMapColumns(headers);
+          } else {
+            setError('No data found in the Excel file.');
+          }
         } else {
           setError('Unsupported file format. Please upload a CSV or Excel file.');
         }
@@ -110,7 +132,17 @@ const EmployeeImport = () => {
       setLoading(false);
     };
     
-    reader.readAsText(file);
+    // For CSV files, read as text
+    if (file.name.endsWith('.csv')) {
+      reader.readAsText(file);
+    } 
+    // For Excel files, read as binary string
+    else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      reader.readAsBinaryString(file);
+    } else {
+      setError('Unsupported file format. Please upload a CSV or Excel file.');
+      setLoading(false);
+    }
   };
 
   // Auto-map columns based on header names
@@ -300,38 +332,40 @@ const EmployeeImport = () => {
       {fileData && (
         <div className="mb-6">
           <h3 className="font-medium mb-2">File Preview</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Row
-                  </th>
-                  {fileData.headers.map((header, index) => (
-                    <th 
-                      key={index} 
-                      className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      {header || `Column ${index + 1}`}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
+              <table className="min-w-max divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Row
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {fileData.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex} className={rowIndex === 0 ? 'bg-blue-50' : ''}>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                      {rowIndex + 1}
-                    </td>
-                    {row.map((cell, cellIndex) => (
-                      <td key={cellIndex} className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                        {cell || <span className="text-gray-400">empty</span>}
-                      </td>
+                    {fileData.headers.map((header, index) => (
+                      <th 
+                        key={index} 
+                        className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                      >
+                        {header || `Column ${index + 1}`}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {fileData.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className={rowIndex === 0 ? 'bg-blue-50' : ''}>
+                      <td className="sticky left-0 z-10 px-3 py-2 whitespace-nowrap text-sm text-gray-500 bg-white">
+                        {rowIndex + 1}
+                      </td>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex} className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                          {cell || <span className="text-gray-400">empty</span>}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
           
           <div className="mt-4 flex items-center">

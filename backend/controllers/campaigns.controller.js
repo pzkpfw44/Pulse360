@@ -843,3 +843,156 @@ exports.createCampaign = async (req, res) => {
     
     return content;
   }
+
+  // Send reminders to specific participants
+exports.sendReminders = async (req, res) => {
+  try {
+    const { participantIds } = req.body;
+    
+    if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+      return res.status(400).json({ 
+        message: 'Participant IDs are required' 
+      });
+    }
+    
+    // Get the campaign from the first participant
+    const firstParticipant = await CampaignParticipant.findByPk(participantIds[0], {
+      include: [
+        { model: Campaign, as: 'campaign' }
+      ]
+    });
+    
+    if (!firstParticipant) {
+      return res.status(404).json({ message: 'Participant not found' });
+    }
+    
+    // Check if the campaign belongs to the user
+    if (firstParticipant.campaign.createdBy !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to send reminders for this campaign' });
+    }
+    
+    // Check if campaign is active
+    if (firstParticipant.campaign.status !== 'active') {
+      return res.status(400).json({ message: 'Reminders can only be sent for active campaigns' });
+    }
+    
+    // Get all requested participants
+    const participants = await CampaignParticipant.findAll({
+      where: { 
+        id: participantIds,
+        campaignId: firstParticipant.campaignId
+      },
+      include: [
+        { model: Employee, as: 'employee' },
+        { 
+          model: Campaign, 
+          as: 'campaign',
+          include: [
+            { model: Employee, as: 'targetEmployee' }
+          ]
+        }
+      ]
+    });
+    
+    // Check if all participants belong to the same campaign
+    if (participants.some(p => p.campaignId !== firstParticipant.campaignId)) {
+      return res.status(400).json({ message: 'All participants must belong to the same campaign' });
+    }
+    
+    // Send reminder emails
+    const campaign = firstParticipant.campaign;
+    const emailSettings = await EmailSettings.findOne();
+    const sentReminders = [];
+    
+    for (const participant of participants) {
+      // Skip completed or declined participants
+      if (participant.status === 'completed' || participant.status === 'declined') {
+        continue;
+      }
+      
+      // Update participant status to invited and increment reminder count
+      await participant.update({
+        status: participant.status === 'pending' ? 'invited' : participant.status,
+        lastInvitedAt: new Date(),
+        reminderCount: (participant.reminderCount || 0) + 1
+      });
+      
+      sentReminders.push({
+        participantId: participant.id,
+        email: participant.employee.email,
+        timestamp: new Date()
+      });
+      
+      // Only send actual emails if email settings are configured and not in dev mode
+      if (emailSettings && !emailSettings.devMode) {
+        try {
+          // Create feedback URL with token
+          const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
+          
+          // Get appropriate email template
+          const emailTemplate = getEmailTemplate('reminder');
+          
+          // Replace placeholders in template
+          const emailContent = replaceEmailPlaceholders(emailTemplate, {
+            assessorName: participant.employee.firstName,
+            targetName: campaign.targetEmployee.firstName + ' ' + campaign.targetEmployee.lastName,
+            campaignName: campaign.name,
+            deadline: new Date(campaign.endDate).toLocaleDateString(),
+            feedbackUrl
+          });
+          
+          // Send email
+          await emailService.sendEmail({
+            to: participant.employee.email,
+            subject: `Reminder: 360 Feedback for ${campaign.name}`,
+            html: emailContent
+          });
+        } catch (emailError) {
+          console.error('Error sending reminder email:', emailError);
+          // Continue with other reminders even if this one fails
+        }
+      }
+    }
+    
+    // Update campaign's lastReminderSent timestamp
+    await campaign.update({
+      lastReminderSent: new Date()
+    });
+    
+    res.status(200).json({
+      message: `Reminders sent to ${sentReminders.length} participants`,
+      sentReminders
+    });
+  } catch (error) {
+    console.error('Error sending reminders:', error);
+    res.status(500).json({ 
+      message: 'Failed to send reminders', 
+      error: error.message 
+    });
+  }
+};
+
+// Helper function to get email template for reminders
+function getEmailTemplate(templateType) {
+  const reminderTemplate = `
+    <p>Hello {assessorName},</p>
+    <p>This is a friendly reminder to provide your feedback for {targetName} as part of the "{campaignName}" feedback campaign.</p>
+    <p>Your input is valuable and will help support {targetName}'s professional development.</p>
+    <p>Please complete your feedback by {deadline}.</p>
+    <p><a href="{feedbackUrl}">Click here to provide feedback</a></p>
+    <p>Thank you for your participation!</p>
+  `;
+  
+  return reminderTemplate;
+}
+
+// Helper function to replace placeholders in email templates
+function replaceEmailPlaceholders(template, data) {
+  let content = template;
+  
+  for (const [key, value] of Object.entries(data)) {
+    content = content.replace(new RegExp(`{${key}}`, 'g'), value);
+  }
+  
+  return content;
+}
