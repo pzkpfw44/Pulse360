@@ -8,7 +8,7 @@ const config = {
   model: process.env.FLUX_AI_MODEL || 'Llama 3.1',
   maxUploadSize: parseInt(process.env.MAX_UPLOAD_SIZE || '10485760', 10), // 10MB default max size
   
-  // API endpoint paths
+  // API endpoint paths - ensure these match the Flux AI API exactly
   endpoints: {
     balance: '/v1/balance',
     llms: '/v1/llms',
@@ -18,7 +18,7 @@ const config = {
   
   // Helper function to check if Flux AI is properly configured
   isConfigured: function() {
-    return !!this.apiKey; // Remove the development check to force real API calls
+    return !!this.apiKey;
   },
   
   // Are we in development mode?

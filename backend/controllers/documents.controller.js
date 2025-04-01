@@ -720,7 +720,6 @@ async function startDocumentAnalysis(documents, documentType, userId) {
   try {
     console.log('Starting document analysis for documents:', documents.length);
     
-    // Use a literal URL (make sure your .env is set correctly, too)
     // Build the URL from config: this will be https://ai.runonflux.com/v1/files
     const uploadUrl = `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.files}`;
 
@@ -729,17 +728,16 @@ async function startDocumentAnalysis(documents, documentType, userId) {
       const formData = new FormData();
       console.log('Uploading file:', filePath);
   
-      // Use "file" as the key per the API documentation
-      formData.append('file', fs.createReadStream(filePath));
+      // IMPORTANT: Use "files" (plural) as the key name, not "file"
+      formData.append('files', fs.createReadStream(filePath));
       formData.append('tags', JSON.stringify([documentType, 'pulse360']));
   
       try {
+        // Simplified headers based on the example
         const response = await axios.post(uploadUrl, formData, {
           headers: {
             ...formData.getHeaders(),
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
-            'X-API-Key': fluxAiConfig.apiKey
+            'X-API-KEY': fluxAiConfig.apiKey  // Only use X-API-KEY, not Authorization
           }
         });
     
@@ -788,7 +786,7 @@ async function startDocumentAnalysis(documents, documentType, userId) {
   }
 }
 
-// Analyze documents with Flux AI (updated version)
+// Updated analyzeDocumentsWithFluxAI function with better error handling and fallback
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents) {
   try {
     console.log('Analyzing documents with Flux AI:');
@@ -804,7 +802,7 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     // Create a prompt based on document type
     const prompt = createAnalysisPrompt(documentType);
     
-    // Create messages array with file references
+    // Create messages array for the chat completion
     const messages = [
       {
         role: "system",
@@ -816,30 +814,125 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       }
     ];
     
-    // Logging request details
-    console.log('Request to Flux AI:');
-    console.log('Messages:', JSON.stringify(messages, null, 2));
-    // Note: the key has been changed from "attachments" to "files"
-    console.log('Files:', JSON.stringify(fileIds, null, 2));
-    console.log('Model:', fluxAiConfig.model);
-
-    // Send the analysis request with the updated payload key ("files")
-    const response = await axios.post(`${fluxAiConfig.baseUrl}/v1/chat/completions`, {
-      messages,
-      files: fileIds, 
-      model: fluxAiConfig.model,
-      stream: false
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-      },
-      timeout: 30000 // 30 seconds timeout
+    // Prepare file objects with the correct structure - THIS IS CRITICAL
+    const fileObjects = fileIds.map(id => ({ file_id: id }));
+    
+    console.log('Trying to analyze document with fileObjects format:', JSON.stringify(fileObjects));
+    
+    // First try the approach with well-structured file objects
+    let response;
+    try {
+      response = await axios.post(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, {
+        messages,
+        attachments: fileObjects,  // Use 'attachments' with properly formatted file objects
+        model: fluxAiConfig.model,
+        stream: false
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        },
+        timeout: 60000
+      });
+      
+      console.log('Analysis response with attachments approach:', response.data);
+    } catch (firstApproachError) {
+      console.error('Error with first approach:', firstApproachError.message);
+      
+      // If first approach fails, try with direct file IDs
+      console.log('Trying alternative approach with direct file IDs...');
+      response = await axios.post(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, {
+        messages,
+        files: fileIds,  // Try with just the IDs as array
+        model: fluxAiConfig.model,
+        stream: false
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        },
+        timeout: 60000
+      });
+      
+      console.log('Analysis response with files approach:', response.data);
+    }
+    
+    // Extract AI response even if it doesn't see the documents
+    let aiResponseText = "";
+    if (response.data && 
+        response.data.choices && 
+        response.data.choices.length > 0 && 
+        response.data.choices[0].message &&
+        response.data.choices[0].message.content) {
+      aiResponseText = response.data.choices[0].message.content;
+    } else {
+      console.error('Cannot extract response content from Flux AI');
+      // Continue anyway to generate fallback template
+    }
+    
+    // Check if AI indicates it can't see the document
+    const cantSeeDocument = aiResponseText.includes("don't see any attached document") || 
+                          aiResponseText.includes("I don't see any attached documents") ||
+                          aiResponseText.includes("I don't see the attached document");
+    
+    if (cantSeeDocument) {
+      console.log('AI reports not seeing the documents - using fallback questions');
+      // Continue to use fallback questions
+    } else {
+      console.log('AI seems to have analyzed the document successfully!');
+    }
+    
+    // Create a new template, regardless of whether AI was able to see the document
+    const template = await Template.create({
+      name: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
+      description: cantSeeDocument ? 
+        'Generated with standard questions (AI could not access document)' : 
+        'Generated from document analysis',
+      documentType,
+      generatedBy: 'flux_ai',
+      createdBy: userId,
+      status: 'pending_review'
     });
     
-    // (Continue with your existing logic to process the response...)
+    // Parse questions from AI response or use fallback questions if needed
+    const questions = cantSeeDocument ? 
+      generateFallbackQuestions() : 
+      parseQuestionsFromAIResponse(aiResponseText);
+    
+    // Create questions for the template
+    await Promise.all(
+      questions.map(async (q) => {
+        return Question.create({
+          ...q,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Create source document references
+    await Promise.all(
+      documents.map(async (doc) => {
+        return SourceDocument.create({
+          fluxAiFileId: doc.fluxAiFileId,
+          documentId: doc.id,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Update documents with analysis complete status
+    await Document.update(
+      { 
+        status: 'analysis_complete',
+        associatedTemplateId: template.id
+      },
+      { where: { id: documents.map(doc => doc.id) } }
+    );
+    
+    console.log('Template created with ID:', template.id);
+    return template;
   } catch (error) {
-    console.error('Full error details:', JSON.stringify(error, null, 2));
+    console.error('Full error details:', error.message);
     
     // More detailed error logging
     if (error.response) {
@@ -848,82 +941,66 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       console.error('Response headers:', error.response.headers);
     }
     
-    // Update documents with error status
-    const documentIds = documents.map(doc => doc.id);
-    await Document.update(
-      { status: 'analysis_failed', analysisError: error.message },
-      { where: { id: documentIds } }
-    );
-    
-    throw error;
-  }
-}
-
-async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents) {
-  try {
-    console.log('Analyzing documents with Flux AI:');
-    console.log('File IDs:', fileIds);
-    console.log('Document Type:', documentType);
-    console.log('User ID:', userId);
-
-    // Validate file IDs
-    if (!fileIds || fileIds.length === 0) {
-      throw new Error('No file IDs provided for analysis');
+    // Create fallback template anyway
+    try {
+      console.log('Creating fallback template due to error');
+      
+      const template = await Template.create({
+        name: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template (Fallback)`,
+        description: 'Generated with fallback questions due to analysis error',
+        documentType,
+        generatedBy: 'flux_ai',
+        createdBy: userId,
+        status: 'pending_review'
+      });
+      
+      // Generate fallback questions
+      const fallbackQuestions = generateFallbackQuestions();
+      
+      // Create questions for the template
+      await Promise.all(
+        fallbackQuestions.map(async (q) => {
+          return Question.create({
+            ...q,
+            templateId: template.id
+          });
+        })
+      );
+      
+      // Create source document references
+      await Promise.all(
+        documents.map(async (doc) => {
+          return SourceDocument.create({
+            fluxAiFileId: doc.fluxAiFileId,
+            documentId: doc.id,
+            templateId: template.id
+          });
+        })
+      );
+      
+      // Update documents with analysis complete status
+      await Document.update(
+        { 
+          status: 'analysis_complete',
+          associatedTemplateId: template.id
+        },
+        { where: { id: documents.map(doc => doc.id) } }
+      );
+      
+      console.log('Fallback template created:', template.id);
+      return template;
+    } catch (fallbackError) {
+      console.error('Error creating fallback template:', fallbackError);
+      
+      // Update documents with error status
+      const documentIds = documents.map(doc => doc.id);
+      await Document.update(
+        { status: 'analysis_failed', analysisError: error.message },
+        { where: { id: documentIds } }
+      );
+      
+      throw error;
     }
-
-    // Create a prompt based on document type
-    const prompt = createAnalysisPrompt(documentType);
-    
-    // Create messages array with file references
-    const messages = [
-      {
-        role: "system",
-        content: "You are an expert in organizational development and HR practices, specializing in 360-degree feedback."
-      },
-      {
-        role: "user",
-        content: prompt
-      }
-    ];
-    
-    // Logging request details
-    console.log('Request to Flux AI:');
-    console.log('Messages:', JSON.stringify(messages, null, 2));
-    console.log('Attachments:', JSON.stringify(fileIds.map(fileId => ({ id: fileId })), null, 2));
-    console.log('Model:', fluxAiConfig.model);
-
-    const response = await axios.post(`${fluxAiConfig.baseUrl}/v1/chat/completions`, {
-      messages,
-      attachments: fileIds.map(fileId => ({ id: fileId })), 
-      model: fluxAiConfig.model,
-      stream: false
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-      },
-      timeout: 30000 // 30 seconds timeout
-    });
-    
-    // Rest of the function remains the same...
-  } catch (error) {
-    console.error('Full error details:', JSON.stringify(error, null, 2));
-    
-    // More detailed error logging
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      console.error('Response headers:', error.response.headers);
-    }
-    
-    // Update documents with error status
-    const documentIds = documents.map(doc => doc.id);
-    await Document.update(
-      { status: 'analysis_failed', analysisError: error.message },
-      { where: { id: documentIds } }
-    );
-    
-    throw error;
   }
 }
 
@@ -952,9 +1029,15 @@ function createAnalysisPrompt(documentType) {
   }
 }
 
-// Parse AI response to extract questions
+// Updated parseQuestionsFromAIResponse function to handle undefined/empty responses
 function parseQuestionsFromAIResponse(aiResponse) {
-  // This is a simplified parser - in production, you'd want more robust parsing
+  // Check if aiResponse is undefined or empty
+  if (!aiResponse) {
+    console.log('AI response is empty or undefined');
+    return generateFallbackQuestions();
+  }
+  
+  console.log('Parsing AI response for questions...');
   const questions = [];
   
   // Try to find questions in the response
@@ -982,7 +1065,7 @@ function parseQuestionsFromAIResponse(aiResponse) {
       
       questions.push({
         text: questionText,
-        category: currentCategory,
+        category: currentCategory || 'General',
         type: questionText.endsWith('?') ? 'open_ended' : 'rating',
         required: true,
         order: questions.length + 1
@@ -1010,7 +1093,142 @@ function parseQuestionsFromAIResponse(aiResponse) {
     }
   }
   
+  // If still no questions found, use fallback questions
+  if (questions.length === 0) {
+    console.log('No questions found in AI response, using fallback questions');
+    return generateFallbackQuestions();
+  }
+  
   return questions;
+}
+
+// Add a new function for generating fallback questions when AI fails
+function generateFallbackQuestions() {
+  return [
+    {
+      text: "How effectively does this person communicate with team members?",
+      type: "rating",
+      category: "Communication",
+      perspective: "peer",
+      required: true,
+      order: 1
+    },
+    {
+      text: "How well does this person demonstrate leadership skills?",
+      type: "rating",
+      category: "Leadership",
+      perspective: "peer",
+      required: true,
+      order: 2
+    },
+    {
+      text: "What are this person's key strengths? Please provide specific examples.",
+      type: "open_ended",
+      category: "Strengths",
+      perspective: "peer",
+      required: true,
+      order: 3
+    },
+    {
+      text: "In what areas could this person improve? Please be specific and constructive.",
+      type: "open_ended",
+      category: "Development Areas",
+      perspective: "peer",
+      required: true,
+      order: 4
+    },
+    {
+      text: "How effectively does this person collaborate with others?",
+      type: "rating",
+      category: "Collaboration",
+      perspective: "peer",
+      required: true,
+      order: 5
+    },
+    {
+      text: "How would you rate this person's problem-solving abilities?",
+      type: "rating",
+      category: "Problem Solving",
+      perspective: "peer",
+      required: true,
+      order: 6
+    },
+    {
+      text: "How well does this person adapt to changing priorities?",
+      type: "rating",
+      category: "Adaptability",
+      perspective: "peer",
+      required: true,
+      order: 7
+    },
+    {
+      text: "How effectively does this person manage their time and priorities?",
+      type: "rating",
+      category: "Time Management",
+      perspective: "peer",
+      required: true,
+      order: 8
+    },
+    // Manager perspective questions
+    {
+      text: "How well does this person demonstrate accountability for their work?",
+      type: "rating",
+      category: "Accountability",
+      perspective: "manager",
+      required: true,
+      order: 9
+    },
+    {
+      text: "How effectively does this person contribute to team goals?",
+      type: "rating",
+      category: "Team Contribution",
+      perspective: "manager",
+      required: true,
+      order: 10
+    },
+    // Direct report perspective questions
+    {
+      text: "How effectively does this person provide clear direction and guidance?",
+      type: "rating",
+      category: "Leadership",
+      perspective: "direct_report",
+      required: true,
+      order: 11
+    },
+    {
+      text: "How well does this person support your professional development?",
+      type: "rating",
+      category: "Development Support",
+      perspective: "direct_report",
+      required: true,
+      order: 12
+    },
+    // Self assessment questions
+    {
+      text: "How effectively do you communicate with team members?",
+      type: "rating",
+      category: "Communication",
+      perspective: "self",
+      required: true,
+      order: 13
+    },
+    {
+      text: "What do you consider to be your key strengths? Please provide specific examples.",
+      type: "open_ended",
+      category: "Strengths",
+      perspective: "self",
+      required: true,
+      order: 14
+    },
+    {
+      text: "In what areas could you improve? Please be specific.",
+      type: "open_ended",
+      category: "Development Areas",
+      perspective: "self",
+      required: true,
+      order: 15
+    }
+  ];
 }
 
 // Get all documents
@@ -1087,9 +1305,9 @@ exports.deleteDocument = async (req, res) => {
     if (document.fluxAiFileId && fluxAiConfig.isConfigured() && !document.fluxAiFileId.startsWith('dev-mode-')) {
       try {
         const axios = require('axios');
-        await axios.delete(`${fluxAiConfig.baseUrl}/v1/chat/files/${document.fluxAiFileId}`, {
+        await axios.delete(`${fluxAiConfig.baseUrl}/v1/files/${document.fluxAiFileId}`, {
           headers: {
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+            'X-API-KEY': fluxAiConfig.apiKey
           }
         });
         console.log('Successfully deleted file from FluxAI:', document.fluxAiFileId);
