@@ -1,9 +1,11 @@
+// backend/middleware/employee-upload.middleware.js
+
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
 // Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../uploads');
+const uploadsDir = path.join(__dirname, '../uploads/employees');
 if (!fs.existsSync(uploadsDir)){
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -19,26 +21,26 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter
+// File filter for employee imports
 const fileFilter = (req, file, cb) => {
-  // Accept document file types
-  const allowedTypes = ['.pdf', '.doc', '.docx', '.txt'];
+  // Accept spreadsheet file types
+  const allowedTypes = ['.csv', '.xlsx', '.xls'];
   const ext = path.extname(file.originalname).toLowerCase();
   
   if (allowedTypes.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only PDF, Word and Text files are allowed.'), false);
+    cb(new Error('Invalid file type. Only CSV and Excel files are allowed.'), false);
   }
 };
 
 // Create multer upload middleware
-const upload = multer({ 
+const employeeUpload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 15 * 1024 * 1024, // 15MB max file size
+    fileSize: 10 * 1024 * 1024, // 10MB max file size
   },
   fileFilter: fileFilter
 });
 
-module.exports = upload;
+module.exports = employeeUpload;

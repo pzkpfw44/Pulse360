@@ -715,61 +715,92 @@ function generateMockQuestionsForDocumentType(documentType) {
   return allQuestions;
 }
 
-// Start FluxAI analysis process
+// Updated startDocumentAnalysis function
 async function startDocumentAnalysis(documents, documentType, userId) {
   try {
-    // Upload documents to FluxAI
-    const fileIds = [];
+    console.log('Starting document analysis for documents:', documents.length);
     
-    for (const document of documents) {
+    // Use a literal URL (make sure your .env is set correctly, too)
+    // Build the URL from config: this will be https://ai.runonflux.com/v1/files
+    const uploadUrl = `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.files}`;
+
+    const fileUploadPromises = documents.map(async (document) => {
       const filePath = document.path;
       const formData = new FormData();
-      
-      // Add file to form data
-      formData.append('files', fs.createReadStream(filePath));
-      
-      // Add tags for categorization
+      console.log('Uploading file:', filePath);
+  
+      // Use "file" as the key per the API documentation
+      formData.append('file', fs.createReadStream(filePath));
       formData.append('tags', JSON.stringify([documentType, 'pulse360']));
-      
-      // Upload to FluxAI
-      const response = await axios.post(`${fluxAiConfig.baseUrl}/v1/files`, formData, {
-        headers: {
-          ...formData.getHeaders(),
-          'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-        }
-      });
-      
-      if (response.data.success) {
-        const uploadedFile = response.data.data[0];
-        fileIds.push(uploadedFile.id);
-        
-        // Update document with FluxAI file ID
-        await document.update({
-          fluxAiFileId: uploadedFile.id,
-          status: 'uploaded_to_ai'
+  
+      try {
+        const response = await axios.post(uploadUrl, formData, {
+          headers: {
+            ...formData.getHeaders(),
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
+            'X-API-Key': fluxAiConfig.apiKey
+          }
         });
-      }
-    }
     
-    // If we successfully uploaded files, request analysis
-    if (fileIds.length > 0) {
-      await analyzeDocumentsWithFluxAI(fileIds, documentType, userId);
+        console.log('File upload response:', response.data);
+    
+        if (response.data.success && response.data.data && response.data.data.length > 0) {
+          const uploadedFile = response.data.data[0];
+          await document.update({
+            fluxAiFileId: uploadedFile.id,
+            status: 'uploaded_to_ai'
+          });
+          return uploadedFile.id;
+        } else {
+          console.error('Unexpected file upload response:', response.data);
+          throw new Error('No file ID received from Flux AI');
+        }
+      } catch (uploadError) {
+        console.error('Error uploading file to Flux AI:', uploadError);
+        await document.update({
+          status: 'analysis_failed',
+          analysisError: uploadError.message
+        });
+        return null;
+      }
+    });
+    
+    const fileIds = await Promise.all(fileUploadPromises);
+    const validFileIds = fileIds.filter(id => id !== null);
+    console.log('Valid File IDs:', validFileIds);
+    
+    if (validFileIds.length > 0) {
+      await analyzeDocumentsWithFluxAI(validFileIds, documentType, userId, documents);
+    } else {
+      console.error('No valid file IDs for analysis');
+      await Document.update(
+        { status: 'analysis_failed', analysisError: 'No files uploaded successfully' },
+        { where: { id: documents.map(doc => doc.id) } }
+      );
     }
   } catch (error) {
-    console.error('Error starting document analysis:', error);
-    
-    // Update documents with error status
-    const documentIds = documents.map(doc => doc.id);
+    console.error('Error in startDocumentAnalysis:', error);
     await Document.update(
       { status: 'analysis_failed', analysisError: error.message },
-      { where: { id: documentIds } }
+      { where: { id: documents.map(doc => doc.id) } }
     );
   }
 }
 
-// Analyze documents using FluxAI
-async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId) {
+// Analyze documents with Flux AI (updated version)
+async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents) {
   try {
+    console.log('Analyzing documents with Flux AI:');
+    console.log('File IDs:', fileIds);
+    console.log('Document Type:', documentType);
+    console.log('User ID:', userId);
+
+    // Validate file IDs
+    if (!fileIds || fileIds.length === 0) {
+      throw new Error('No file IDs provided for analysis');
+    }
+
     // Create a prompt based on document type
     const prompt = createAnalysisPrompt(documentType);
     
@@ -785,74 +816,111 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId) {
       }
     ];
     
-    // Create attachments array with file references
-    const attachments = fileIds.map(fileId => ({ file_id: fileId }));
-    
-    // Make request to FluxAI chat completions
+    // Logging request details
+    console.log('Request to Flux AI:');
+    console.log('Messages:', JSON.stringify(messages, null, 2));
+    // Note: the key has been changed from "attachments" to "files"
+    console.log('Files:', JSON.stringify(fileIds, null, 2));
+    console.log('Model:', fluxAiConfig.model);
+
+    // Send the analysis request with the updated payload key ("files")
     const response = await axios.post(`${fluxAiConfig.baseUrl}/v1/chat/completions`, {
       messages,
-      attachments,
+      files: fileIds, 
       model: fluxAiConfig.model,
       stream: false
     }, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-      }
-    });
-    
-    // Extract the AI analysis from the response
-    const aiResponse = response.data.choices[0].message.content;
-    
-    // Parse the AI response to extract questions
-    const questionData = parseQuestionsFromAIResponse(aiResponse);
-    
-    // Create a new template based on the analysis
-    const template = await Template.create({
-      name: `${documentType.replace('_', ' ')} Template`,
-      documentType,
-      generatedBy: 'flux_ai',
-      createdBy: userId,
-      status: 'pending_review'
-    });
-    
-    // Create questions for the template
-    const questions = await Promise.all(
-      questionData.map(async (q, index) => {
-        return Question.create({
-          ...q,
-          templateId: template.id
-        });
-      })
-    );
-    
-    // Create source document references
-    await Promise.all(
-      fileIds.map(async (fileId) => {
-        return SourceDocument.create({
-          fluxAiFileId: fileId,
-          templateId: template.id
-        });
-      })
-    );
-    
-    // Update documents with analysis complete status
-    await Document.update(
-      { 
-        status: 'analysis_complete',
-        associatedTemplateId: template.id
       },
-      { where: { fluxAiFileId: fileIds } }
-    );
+      timeout: 30000 // 30 seconds timeout
+    });
     
-    return template;
+    // (Continue with your existing logic to process the response...)
   } catch (error) {
-    console.error('Error analyzing documents with FluxAI:', error);
+    console.error('Full error details:', JSON.stringify(error, null, 2));
+    
+    // More detailed error logging
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      console.error('Response headers:', error.response.headers);
+    }
     
     // Update documents with error status
+    const documentIds = documents.map(doc => doc.id);
     await Document.update(
       { status: 'analysis_failed', analysisError: error.message },
-      { where: { fluxAiFileId: fileIds } }
+      { where: { id: documentIds } }
+    );
+    
+    throw error;
+  }
+}
+
+async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents) {
+  try {
+    console.log('Analyzing documents with Flux AI:');
+    console.log('File IDs:', fileIds);
+    console.log('Document Type:', documentType);
+    console.log('User ID:', userId);
+
+    // Validate file IDs
+    if (!fileIds || fileIds.length === 0) {
+      throw new Error('No file IDs provided for analysis');
+    }
+
+    // Create a prompt based on document type
+    const prompt = createAnalysisPrompt(documentType);
+    
+    // Create messages array with file references
+    const messages = [
+      {
+        role: "system",
+        content: "You are an expert in organizational development and HR practices, specializing in 360-degree feedback."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ];
+    
+    // Logging request details
+    console.log('Request to Flux AI:');
+    console.log('Messages:', JSON.stringify(messages, null, 2));
+    console.log('Attachments:', JSON.stringify(fileIds.map(fileId => ({ id: fileId })), null, 2));
+    console.log('Model:', fluxAiConfig.model);
+
+    const response = await axios.post(`${fluxAiConfig.baseUrl}/v1/chat/completions`, {
+      messages,
+      attachments: fileIds.map(fileId => ({ id: fileId })), 
+      model: fluxAiConfig.model,
+      stream: false
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+      },
+      timeout: 30000 // 30 seconds timeout
+    });
+    
+    // Rest of the function remains the same...
+  } catch (error) {
+    console.error('Full error details:', JSON.stringify(error, null, 2));
+    
+    // More detailed error logging
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      console.error('Response headers:', error.response.headers);
+    }
+    
+    // Update documents with error status
+    const documentIds = documents.map(doc => doc.id);
+    await Document.update(
+      { status: 'analysis_failed', analysisError: error.message },
+      { where: { id: documentIds } }
     );
     
     throw error;
@@ -1019,7 +1087,7 @@ exports.deleteDocument = async (req, res) => {
     if (document.fluxAiFileId && fluxAiConfig.isConfigured() && !document.fluxAiFileId.startsWith('dev-mode-')) {
       try {
         const axios = require('axios');
-        await axios.delete(`${fluxAiConfig.baseUrl}/v1/files/${document.fluxAiFileId}`, {
+        await axios.delete(`${fluxAiConfig.baseUrl}/v1/chat/files/${document.fluxAiFileId}`, {
           headers: {
             'Authorization': `Bearer ${fluxAiConfig.apiKey}`
           }

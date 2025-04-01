@@ -208,8 +208,12 @@ const EmployeeImport = () => {
       formData.append('startRow', startRow);
       formData.append('updateExisting', updateExisting);
       
-      // Send the import request
-      const response = await api.post('/employees/import', formData);
+      // Send the import request with the correct Content-Type header
+      const response = await api.post('/employees/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       
       setImportResult(response.data.result);
       setStep(3); // Move to results step

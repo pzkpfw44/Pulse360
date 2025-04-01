@@ -4,13 +4,13 @@ const express = require('express');
 const router = express.Router();
 const employeesController = require('../controllers/employees.controller');
 const { authMiddleware } = require('../middleware/auth.middleware');
-const upload = require('../middleware/upload.middleware');
+const employeeUpload = require('../middleware/employee-upload.middleware');
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
 // Import employees from file
-router.post('/import', upload.single('file'), employeesController.importEmployees);
+router.post('/import', employeeUpload.single('file'), employeesController.importEmployees);
 
 // Get all employees
 router.get('/', employeesController.getAllEmployees);

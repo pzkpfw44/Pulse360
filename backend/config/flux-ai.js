@@ -3,7 +3,7 @@
 require('dotenv').config();
 
 const config = {
-  baseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com/api',
+  baseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com',
   apiKey: process.env.FLUX_AI_API_KEY,
   model: process.env.FLUX_AI_MODEL || 'Llama 3.1',
   maxUploadSize: parseInt(process.env.MAX_UPLOAD_SIZE || '10485760', 10), // 10MB default max size
