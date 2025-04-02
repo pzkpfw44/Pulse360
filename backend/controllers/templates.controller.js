@@ -538,9 +538,17 @@ exports.reAnalyzeTemplate = async (req, res) => {
 // Delete template
 exports.deleteTemplate = async (req, res) => {
   try {
+    const { id } = req.params;
+    
+    console.log('Deleting template with ID:', id);
+    
+    // Import required models
+    const { sequelize, Template } = require('../models');
+    
+    // Check if template exists
     const template = await Template.findOne({
-      where: { 
-        id: req.params.id,
+      where: {
+        id,
         createdBy: req.user.id
       }
     });
@@ -548,12 +556,39 @@ exports.deleteTemplate = async (req, res) => {
     if (!template) {
       return res.status(404).json({ message: 'Template not found' });
     }
+
+    // Turn off foreign keys directly
+    await sequelize.query('PRAGMA foreign_keys = OFF;');
     
-    await template.destroy();
-    
-    res.status(200).json({ message: 'Template deleted successfully' });
+    try {
+      // Perform all operations without a transaction
+      // 1. Clear document references
+      await sequelize.query(`UPDATE documents SET associatedTemplateId = NULL WHERE associatedTemplateId = '${id}'`);
+      
+      // 2. Delete source documents
+      await sequelize.query(`DELETE FROM source_documents WHERE templateId = '${id}'`);
+      
+      // 3. Delete rating scales
+      await sequelize.query(`DELETE FROM rating_scales WHERE templateId = '${id}'`);
+      
+      // 4. Delete questions
+      await sequelize.query(`DELETE FROM questions WHERE templateId = '${id}'`);
+      
+      // 5. Delete the template
+      await sequelize.query(`DELETE FROM templates WHERE id = '${id}'`);
+      
+      // Turn foreign keys back on
+      await sequelize.query('PRAGMA foreign_keys = ON;');
+      
+      // Return success
+      res.status(200).json({ message: 'Template deleted successfully' });
+    } catch (error) {
+      // Re-enable foreign keys even after error
+      await sequelize.query('PRAGMA foreign_keys = ON;');
+      throw error;
+    }
   } catch (error) {
     console.error('Error deleting template:', error);
-    res.status(500).json({ message: 'Failed to delete template', error: error.message });
+    res.status(500).json({ message: 'Failed to delete template' });
   }
 };

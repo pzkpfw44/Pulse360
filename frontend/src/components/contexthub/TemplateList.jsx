@@ -63,16 +63,25 @@ const TemplateList = () => {
 
   const handleDeleteConfirm = async () => {
     if (!templateToDelete) return;
-
+  
     try {
-      await api.delete(`/templates/${templateToDelete.id}`);
+      setError(null); // Clear any previous errors
+      
+      const response = await api.delete(`/templates/${templateToDelete.id}`);
+      
       // Remove the deleted template from the list
       setTemplates(templates.filter(t => t.id !== templateToDelete.id));
       setDeleteDialogOpen(false);
       setTemplateToDelete(null);
+      
     } catch (err) {
       console.error('Error deleting template:', err);
-      setError('Failed to delete template. Please try again later.');
+      
+      // Extract detailed error message if available
+      const errorMessage = err.response?.data?.message || 'Failed to delete template. Please try again later.';
+      
+      setError(errorMessage);
+      // Keep the dialog open so the user can see the error
     }
   };
 

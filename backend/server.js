@@ -12,7 +12,7 @@ const startServer = async () => {
     
     if (isConnected) {
       // Sync database models (set force to true to reset database in development)
-      const force = process.env.NODE_ENV === 'development' && process.env.RESET_DB === 'true';
+      const force = false;
       await syncDatabase(force);
       
       // Start the server
