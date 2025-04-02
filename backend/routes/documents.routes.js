@@ -19,4 +19,6 @@ router.post('/upload', upload.array('files'), documentsController.uploadDocument
 // Delete document
 router.delete('/:id', documentsController.deleteDocument);
 
+router.get('/test-flux-api', documentsController.testFluxAiApi);
+
 module.exports = router;

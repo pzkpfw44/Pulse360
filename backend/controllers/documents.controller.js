@@ -720,24 +720,54 @@ async function startDocumentAnalysis(documents, documentType, userId) {
   try {
     console.log('Starting document analysis for documents:', documents.length);
     
-    // Build the URL from config: this will be https://ai.runonflux.com/v1/files
+    // Skip processing if no valid documents
+    if (!documents || documents.length === 0) {
+      console.error('No documents provided for analysis');
+      return;
+    }
+    
+    // Build the URL from config
     const uploadUrl = `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.files}`;
 
     const fileUploadPromises = documents.map(async (document) => {
       const filePath = document.path;
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        console.error(`File not found at path: ${filePath}`);
+        await document.update({
+          status: 'analysis_failed',
+          analysisError: 'File not found on server'
+        });
+        return null;
+      }
+      
+      // Check file extension
+      const ext = path.extname(filePath).toLowerCase();
+      const allowedTypes = ['.pdf', '.txt']; // Only use supported types
+      
+      if (!allowedTypes.includes(ext)) {
+        console.error(`Unsupported file type: ${ext}. Only ${allowedTypes.join(', ')} are supported.`);
+        await document.update({
+          status: 'analysis_failed',
+          analysisError: `Unsupported file type: ${ext}. Only ${allowedTypes.join(', ')} are supported.`
+        });
+        return null;
+      }
+      
       const formData = new FormData();
       console.log('Uploading file:', filePath);
   
-      // IMPORTANT: Use "files" (plural) as the key name, not "file"
+      // IMPORTANT: Use "files" (plural) as the key name
       formData.append('files', fs.createReadStream(filePath));
       formData.append('tags', JSON.stringify([documentType, 'pulse360']));
   
       try {
-        // Simplified headers based on the example
+        // Use X-API-KEY header as per documentation
         const response = await axios.post(uploadUrl, formData, {
           headers: {
             ...formData.getHeaders(),
-            'X-API-KEY': fluxAiConfig.apiKey  // Only use X-API-KEY, not Authorization
+            'X-API-KEY': fluxAiConfig.apiKey
           }
         });
     
@@ -745,6 +775,17 @@ async function startDocumentAnalysis(documents, documentType, userId) {
     
         if (response.data.success && response.data.data && response.data.data.length > 0) {
           const uploadedFile = response.data.data[0];
+          
+          // Check if the specific file had an error
+          if (!uploadedFile.success) {
+            console.error(`File upload failed: ${uploadedFile.error}`);
+            await document.update({
+              status: 'analysis_failed',
+              analysisError: uploadedFile.error || 'File upload failed'
+            });
+            return null;
+          }
+          
           await document.update({
             fluxAiFileId: uploadedFile.id,
             status: 'uploaded_to_ai'
@@ -786,19 +827,19 @@ async function startDocumentAnalysis(documents, documentType, userId) {
   }
 }
 
-// Updated analyzeDocumentsWithFluxAI function with better error handling and fallback
+// Analyze documents with Flux AI (updated version)
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents) {
   try {
     console.log('Analyzing documents with Flux AI:');
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);
-    console.log('User ID:', userId);
-
+    
     // Validate file IDs
     if (!fileIds || fileIds.length === 0) {
-      throw new Error('No file IDs provided for analysis');
+      console.error('No valid file IDs for analysis');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents);
     }
-
+    
     // Create a prompt based on document type
     const prompt = createAnalysisPrompt(documentType);
     
@@ -814,90 +855,120 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       }
     ];
     
-    // Prepare file objects with the correct structure - THIS IS CRITICAL
-    const fileObjects = fileIds.map(id => ({ file_id: id }));
+    // Wait for file processing
+    console.log('Waiting for file processing...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
-    console.log('Trying to analyze document with fileObjects format:', JSON.stringify(fileObjects));
+    // MATCH EXACTLY THE FORMAT FROM THE FLUX EXAMPLE
+    const requestPayload = {
+      messages: messages,
+      stream: false,
+      attachments: {
+        tags: [documentType],
+        files: fileIds
+      }
+    };
     
-    // First try the approach with well-structured file objects
-    let response;
-    try {
-      response = await axios.post(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, {
-        messages,
-        attachments: fileObjects,  // Use 'attachments' with properly formatted file objects
-        model: fluxAiConfig.model,
-        stream: false
-      }, {
+    console.log('Using exact example format:', JSON.stringify(requestPayload, null, 2));
+    
+    // Try all possible authentication methods
+    let response = null;
+    let authMethods = [
+      // Method 1: X-API-KEY
+      {
         headers: {
           'Content-Type': 'application/json',
           'X-API-KEY': fluxAiConfig.apiKey
-        },
-        timeout: 60000
-      });
-      
-      console.log('Analysis response with attachments approach:', response.data);
-    } catch (firstApproachError) {
-      console.error('Error with first approach:', firstApproachError.message);
-      
-      // If first approach fails, try with direct file IDs
-      console.log('Trying alternative approach with direct file IDs...');
-      response = await axios.post(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, {
-        messages,
-        files: fileIds,  // Try with just the IDs as array
-        model: fluxAiConfig.model,
-        stream: false
-      }, {
+        }
+      },
+      // Method 2: Bearer token
+      {
         headers: {
           'Content-Type': 'application/json',
-          'X-API-KEY': fluxAiConfig.apiKey
-        },
-        timeout: 60000
-      });
-      
-      console.log('Analysis response with files approach:', response.data);
+          'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+        }
+      },
+      // Method 3: No API-KEY prefix
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey.replace('SHqQ4nah.', '')  // Remove potential prefix
+        }
+      }
+    ];
+    
+    // Try each auth method
+    for (let i = 0; i < authMethods.length; i++) {
+      try {
+        console.log(`Trying auth method ${i+1}`);
+        response = await axios.post(
+          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
+          requestPayload, 
+          authMethods[i]
+        );
+        console.log(`Auth method ${i+1} succeeded!`);
+        break;  // Stop if successful
+      } catch (error) {
+        console.log(`Auth method ${i+1} failed:`, error.message);
+        if (i === authMethods.length - 1) {
+          // If all methods fail, return fallback
+          console.error('All authentication methods failed');
+          return createTemplateWithFallbackQuestions(documentType, userId, documents);
+        }
+      }
     }
     
-    // Extract AI response even if it doesn't see the documents
+    // Process the response
+    console.log('Analysis response:', response.data);
+    
+    // Extract the AI response text
     let aiResponseText = "";
     if (response.data && 
         response.data.choices && 
-        response.data.choices.length > 0 && 
-        response.data.choices[0].message &&
-        response.data.choices[0].message.content) {
-      aiResponseText = response.data.choices[0].message.content;
-    } else {
-      console.error('Cannot extract response content from Flux AI');
-      // Continue anyway to generate fallback template
+        response.data.choices.length > 0) {
+      
+      const message = response.data.choices[0].message;
+      
+      // Handle different response formats
+      if (typeof message === 'object' && message.content) {
+        aiResponseText = message.content;
+      } else if (typeof message === 'string') {
+        aiResponseText = message;
+      } else if (typeof response.data.choices[0].message === 'string') {
+        aiResponseText = response.data.choices[0].message;
+      }
+    }
+    
+    if (!aiResponseText) {
+      console.log('Cannot extract response content from Flux AI, using fallback questions');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents);
     }
     
     // Check if AI indicates it can't see the document
     const cantSeeDocument = aiResponseText.includes("don't see any attached document") || 
                           aiResponseText.includes("I don't see any attached documents") ||
-                          aiResponseText.includes("I don't see the attached document");
+                          aiResponseText.includes("I don't see the attached document") ||
+                          aiResponseText.includes("Could you please provide the document");
     
     if (cantSeeDocument) {
       console.log('AI reports not seeing the documents - using fallback questions');
-      // Continue to use fallback questions
-    } else {
-      console.log('AI seems to have analyzed the document successfully!');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents);
     }
     
-    // Create a new template, regardless of whether AI was able to see the document
+    console.log('AI seems to have analyzed the document successfully!');
+    
+    // Create a new template
     const template = await Template.create({
       name: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
-      description: cantSeeDocument ? 
-        'Generated with standard questions (AI could not access document)' : 
-        'Generated from document analysis',
+      description: 'Generated from document analysis',
       documentType,
       generatedBy: 'flux_ai',
       createdBy: userId,
       status: 'pending_review'
     });
     
-    // Parse questions from AI response or use fallback questions if needed
-    const questions = cantSeeDocument ? 
-      generateFallbackQuestions() : 
-      parseQuestionsFromAIResponse(aiResponseText);
+    // Parse questions from AI response
+    const questions = parseQuestionsFromAIResponse(aiResponseText);
     
     // Create questions for the template
     await Promise.all(
@@ -934,73 +1005,19 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
   } catch (error) {
     console.error('Full error details:', error.message);
     
-    // More detailed error logging
+    // Check for specific errors that might occur
     if (error.response) {
       console.error('Response status:', error.response.status);
       console.error('Response data:', error.response.data);
-      console.error('Response headers:', error.response.headers);
+      
+      // If there's a specific error about mode, log it
+      if (error.response.data && error.response.data.error) {
+        console.error('API Error:', error.response.data.error);
+      }
     }
     
-    // Create fallback template anyway
-    try {
-      console.log('Creating fallback template due to error');
-      
-      const template = await Template.create({
-        name: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template (Fallback)`,
-        description: 'Generated with fallback questions due to analysis error',
-        documentType,
-        generatedBy: 'flux_ai',
-        createdBy: userId,
-        status: 'pending_review'
-      });
-      
-      // Generate fallback questions
-      const fallbackQuestions = generateFallbackQuestions();
-      
-      // Create questions for the template
-      await Promise.all(
-        fallbackQuestions.map(async (q) => {
-          return Question.create({
-            ...q,
-            templateId: template.id
-          });
-        })
-      );
-      
-      // Create source document references
-      await Promise.all(
-        documents.map(async (doc) => {
-          return SourceDocument.create({
-            fluxAiFileId: doc.fluxAiFileId,
-            documentId: doc.id,
-            templateId: template.id
-          });
-        })
-      );
-      
-      // Update documents with analysis complete status
-      await Document.update(
-        { 
-          status: 'analysis_complete',
-          associatedTemplateId: template.id
-        },
-        { where: { id: documents.map(doc => doc.id) } }
-      );
-      
-      console.log('Fallback template created:', template.id);
-      return template;
-    } catch (fallbackError) {
-      console.error('Error creating fallback template:', fallbackError);
-      
-      // Update documents with error status
-      const documentIds = documents.map(doc => doc.id);
-      await Document.update(
-        { status: 'analysis_failed', analysisError: error.message },
-        { where: { id: documentIds } }
-      );
-      
-      throw error;
-    }
+    // Create fallback template
+    return createTemplateWithFallbackQuestions(documentType, userId, documents);
   }
 }
 
@@ -1029,68 +1046,107 @@ function createAnalysisPrompt(documentType) {
   }
 }
 
-// Updated parseQuestionsFromAIResponse function to handle undefined/empty responses
+// Parse AI response to extract questions
 function parseQuestionsFromAIResponse(aiResponse) {
   // Check if aiResponse is undefined or empty
   if (!aiResponse) {
-    console.log('AI response is empty or undefined');
+    console.log('AI response is empty or undefined, returning fallback questions');
     return generateFallbackQuestions();
   }
   
   console.log('Parsing AI response for questions...');
   const questions = [];
   
-  // Try to find questions in the response
-  // Look for numbered or bulleted items
-  const lines = aiResponse.split('\n');
-  
-  let currentCategory = null;
-  
-  for (const line of lines) {
-    const trimmedLine = line.trim();
+  try {
+    // Try to find questions in the response
+    // Look for numbered or bulleted items
+    const lines = aiResponse.split('\n');
     
-    // Check if line is a category header
-    if (trimmedLine.endsWith(':') && !trimmedLine.match(/^\d+\./)) {
-      currentCategory = trimmedLine.replace(':', '').trim();
-      continue;
+    let currentCategory = 'General';
+    let currentPerspective = 'peer'; // Default perspective
+    
+    // Look for perspective indicators
+    const perspectiveKeywords = {
+      'manager': ['manager', 'supervisor', 'boss', 'management'],
+      'peer': ['peer', 'colleague', 'coworker', 'peers'],
+      'direct_report': ['direct report', 'team member', 'subordinate', 'staff'],
+      'self': ['self', 'self-assessment', 'self-evaluation']
+    };
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      // Skip empty lines
+      if (!trimmedLine) continue;
+      
+      // Check if line indicates a perspective
+      for (const [perspective, keywords] of Object.entries(perspectiveKeywords)) {
+        if (keywords.some(keyword => trimmedLine.toLowerCase().includes(keyword))) {
+          currentPerspective = perspective;
+          break;
+        }
+      }
+      
+      // Check if line is a category header
+      if (trimmedLine.endsWith(':') && !trimmedLine.match(/^\d+\./) && trimmedLine.length < 50) {
+        currentCategory = trimmedLine.replace(':', '').trim();
+        continue;
+      }
+      
+      // Check if line is a question (starts with number, dash, bullet, or contains a question mark)
+      const questionMatch = trimmedLine.match(/^(\d+\.|\-|\*|\•|\–)\s+(.+)$/);
+      if (questionMatch) {
+        const questionText = questionMatch[2].trim();
+        
+        // Skip if it's too short to be a real question
+        if (questionText.length < 10) continue;
+        
+        questions.push({
+          text: questionText,
+          category: currentCategory || 'General',
+          type: questionText.endsWith('?') ? 'open_ended' : 'rating',
+          perspective: currentPerspective,
+          required: true,
+          order: questions.length + 1
+        });
+      } else if (trimmedLine.includes('?') && trimmedLine.length > 15) {
+        // If it's a standalone question without a bullet or number
+        questions.push({
+          text: trimmedLine,
+          category: currentCategory || 'General',
+          type: 'open_ended',
+          perspective: currentPerspective,
+          required: true,
+          order: questions.length + 1
+        });
+      }
     }
     
-    // Check if line is a question (starts with number or dash/bullet)
-    const questionMatch = trimmedLine.match(/^(\d+\.|\-|\*)\s+(.+)$/);
-    if (questionMatch) {
-      const questionText = questionMatch[2].trim();
+    // If we couldn't find structured questions, try to extract paragraphs
+    if (questions.length === 0) {
+      console.log('No structured questions found, trying to extract from paragraphs');
+      const paragraphs = aiResponse.split('\n\n');
       
-      // Skip if it's too short to be a real question
-      if (questionText.length < 10) continue;
-      
-      questions.push({
-        text: questionText,
-        category: currentCategory || 'General',
-        type: questionText.endsWith('?') ? 'open_ended' : 'rating',
-        required: true,
-        order: questions.length + 1
-      });
-    }
-  }
-  
-  // If we couldn't find structured questions, try to extract paragraphs
-  if (questions.length === 0) {
-    const paragraphs = aiResponse.split('\n\n');
-    
-    for (const paragraph of paragraphs) {
-      const sentences = paragraph.split(/(?<=[.!?])\s+/);
-      
-      for (const sentence of sentences) {
-        if (sentence.trim().endsWith('?') && sentence.length > 15) {
-          questions.push({
-            text: sentence.trim(),
-            type: 'open_ended',
-            required: true,
-            order: questions.length + 1
-          });
+      for (const paragraph of paragraphs) {
+        const sentences = paragraph.split(/(?<=[.!?])\s+/);
+        
+        for (const sentence of sentences) {
+          if (sentence.trim().endsWith('?') && sentence.length > 15) {
+            questions.push({
+              text: sentence.trim(),
+              type: 'open_ended',
+              category: 'General',
+              perspective: 'peer',
+              required: true,
+              order: questions.length + 1
+            });
+          }
         }
       }
     }
+  } catch (error) {
+    console.error('Error parsing AI response:', error);
+    // Continue execution, will return fallback questions
   }
   
   // If still no questions found, use fallback questions
@@ -1099,10 +1155,124 @@ function parseQuestionsFromAIResponse(aiResponse) {
     return generateFallbackQuestions();
   }
   
+  console.log(`Successfully parsed ${questions.length} questions from AI response`);
   return questions;
 }
 
-// Add a new function for generating fallback questions when AI fails
+// Get all documents
+exports.getAllDocuments = async (req, res) => {
+  try {
+    const documents = await Document.findAll({
+      where: { uploadedBy: req.user.id },
+      order: [['createdAt', 'DESC']]
+    });
+      
+    res.status(200).json({
+      count: documents.length,
+      documents
+    });
+  } catch (error) {
+    console.error('Error fetching documents:', error);
+    res.status(500).json({ message: 'Failed to fetch documents', error: error.message });
+  }
+};
+
+// Get document by ID
+exports.getDocumentById = async (req, res) => {
+  try {
+    const document = await Document.findOne({ 
+      where: {
+        id: req.params.id,
+        uploadedBy: req.user.id
+      }
+    });
+    
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+    
+    res.status(200).json(document);
+  } catch (error) {
+    console.error('Error fetching document:', error);
+    res.status(500).json({ message: 'Failed to fetch document', error: error.message });
+  }
+};
+
+// Delete document
+exports.deleteDocument = async (req, res) => {
+  try {
+    console.log('Delete document requested for ID:', req.params.id);
+    
+    // Import required models
+    const { Document, SourceDocument, Template } = require('../models');
+    const fluxAiConfig = require('../config/flux-ai');
+    const fs = require('fs');
+    
+    // First, check if document exists without filtering by uploadedBy
+    const document = await Document.findByPk(req.params.id);
+    
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+    
+    // Check if the document is referenced by any templates
+    const sourceDocuments = await SourceDocument.findAll({
+      where: { documentId: document.id }
+    });
+    
+    // If document is referenced by templates, delete those references first
+    if (sourceDocuments && sourceDocuments.length > 0) {
+      console.log(`Found ${sourceDocuments.length} references to this document in source_documents table`);
+      for (const sourceDoc of sourceDocuments) {
+        console.log(`Deleting source document reference: ${sourceDoc.id}`);
+        await sourceDoc.destroy();
+      }
+    }
+    
+    // If document was uploaded to FluxAI and we have an API key, delete it there too
+    if (document.fluxAiFileId && fluxAiConfig.isConfigured() && !document.fluxAiFileId.startsWith('dev-mode-')) {
+      try {
+        const axios = require('axios');
+        // Use the correct endpoint from the documentation: /v1/files/{file_id}
+        await axios.delete(`${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.files}/${document.fluxAiFileId}`, {
+          headers: {
+            'X-API-KEY': fluxAiConfig.apiKey  // Use X-API-KEY as per documentation
+          }
+        });
+        console.log('Successfully deleted file from FluxAI:', document.fluxAiFileId);
+      } catch (aiError) {
+        console.error('Error deleting file from FluxAI:', aiError);
+        // Continue with deletion even if FluxAI deletion fails
+      }
+    }
+    
+    // Delete local file if it exists (use try/catch for robustness)
+    if (document.path) {
+      try {
+        if (fs.existsSync(document.path)) {
+          fs.unlinkSync(document.path);
+          console.log('Successfully deleted local file:', document.path);
+        } else {
+          console.log('Local file not found (already deleted):', document.path);
+        }
+      } catch (fsError) {
+        console.error('Error deleting local file:', fsError);
+        // Continue with deletion even if file deletion fails
+      }
+    }
+    
+    // Delete the document from the database
+    await document.destroy();
+    console.log('Document deleted successfully from database');
+    
+    res.status(200).json({ message: 'Document deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    res.status(500).json({ message: 'Failed to delete document', error: error.message });
+  }
+};
+
+// Function to generate fallback questions
 function generateFallbackQuestions() {
   return [
     {
@@ -1231,114 +1401,206 @@ function generateFallbackQuestions() {
   ];
 }
 
-// Get all documents
-exports.getAllDocuments = async (req, res) => {
+// Function to create template with fallback questions
+async function createTemplateWithFallbackQuestions(documentType, userId, documents) {
   try {
-    const documents = await Document.findAll({
-      where: { uploadedBy: req.user.id },
-      order: [['createdAt', 'DESC']]
+    console.log('Creating template with fallback questions');
+    
+    const template = await Template.create({
+      name: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template (Fallback)`,
+      description: 'Generated with fallback questions due to analysis error',
+      documentType,
+      generatedBy: 'flux_ai',
+      createdBy: userId,
+      status: 'pending_review'
     });
-      
-    res.status(200).json({
-      count: documents.length,
-      documents
-    });
-  } catch (error) {
-    console.error('Error fetching documents:', error);
-    res.status(500).json({ message: 'Failed to fetch documents', error: error.message });
+    
+    // Generate fallback questions
+    const fallbackQuestions = generateFallbackQuestions();
+    
+    // Create questions for the template
+    await Promise.all(
+      fallbackQuestions.map(async (q) => {
+        return Question.create({
+          ...q,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Create source document references
+    await Promise.all(
+      documents.map(async (doc) => {
+        return SourceDocument.create({
+          fluxAiFileId: doc.fluxAiFileId,
+          documentId: doc.id,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Update documents with analysis complete status
+    await Document.update(
+      { 
+        status: 'analysis_complete',
+        associatedTemplateId: template.id
+      },
+      { where: { id: documents.map(doc => doc.id) } }
+    );
+    
+    console.log('Fallback template created:', template.id);
+    return template;
+  } catch (fallbackError) {
+    console.error('Error creating fallback template:', fallbackError);
+    
+    // Update documents with error status
+    const documentIds = documents.map(doc => doc.id);
+    await Document.update(
+      { status: 'analysis_failed', analysisError: fallbackError.message },
+      { where: { id: documentIds } }
+    );
+    
+    throw fallbackError;
   }
-};
+}
 
-// Get document by ID
-exports.getDocumentById = async (req, res) => {
-  try {
-    const document = await Document.findOne({ 
-      where: {
-        id: req.params.id,
-        uploadedBy: req.user.id
-      }
-    });
-    
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-    
-    res.status(200).json(document);
-  } catch (error) {
-    console.error('Error fetching document:', error);
-    res.status(500).json({ message: 'Failed to fetch document', error: error.message });
-  }
-};
+// Run it manually for testing API connectivity
 
-// Delete document
-exports.deleteDocument = async (req, res) => {
+// Test Flux AI API connectivity
+exports.testFluxAiApi = async (req, res) => {
   try {
-    console.log('Delete document requested for ID:', req.params.id);
-    
-    // Import required models
-    const { Document, SourceDocument, Template } = require('../models');
+    const axios = require('axios');
     const fluxAiConfig = require('../config/flux-ai');
-    const fs = require('fs');
     
-    // First, check if document exists without filtering by uploadedBy
-    const document = await Document.findByPk(req.params.id);
+    console.log('Testing Flux AI API connectivity...');
     
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-    
-    // Check if the document is referenced by any templates
-    const sourceDocuments = await SourceDocument.findAll({
-      where: { documentId: document.id }
-    });
-    
-    // If document is referenced by templates, delete those references first
-    if (sourceDocuments && sourceDocuments.length > 0) {
-      console.log(`Found ${sourceDocuments.length} references to this document in source_documents table`);
-      for (const sourceDoc of sourceDocuments) {
-        console.log(`Deleting source document reference: ${sourceDoc.id}`);
-        await sourceDoc.destroy();
-      }
-    }
-    
-    // If document was uploaded to FluxAI and we have an API key, delete it there too
-    if (document.fluxAiFileId && fluxAiConfig.isConfigured() && !document.fluxAiFileId.startsWith('dev-mode-')) {
-      try {
-        const axios = require('axios');
-        await axios.delete(`${fluxAiConfig.baseUrl}/v1/files/${document.fluxAiFileId}`, {
+    // First, try to get available models
+    let modelsResponse;
+    try {
+      modelsResponse = await axios.get(
+        `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.llms}`,
+        {
           headers: {
             'X-API-KEY': fluxAiConfig.apiKey
           }
-        });
-        console.log('Successfully deleted file from FluxAI:', document.fluxAiFileId);
-      } catch (aiError) {
-        console.error('Error deleting file from FluxAI:', aiError);
-        // Continue with deletion even if FluxAI deletion fails
-      }
-    }
-    
-    // Delete local file if it exists (use try/catch for robustness)
-    if (document.path) {
-      try {
-        if (fs.existsSync(document.path)) {
-          fs.unlinkSync(document.path);
-          console.log('Successfully deleted local file:', document.path);
-        } else {
-          console.log('Local file not found (already deleted):', document.path);
         }
-      } catch (fsError) {
-        console.error('Error deleting local file:', fsError);
-        // Continue with deletion even if file deletion fails
+      );
+      console.log('Models API response:', modelsResponse.data);
+    } catch (modelsError) {
+      console.error('Models API error:', modelsError.message);
+      
+      // Try with different auth
+      try {
+        modelsResponse = await axios.get(
+          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.llms}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+            }
+          }
+        );
+        console.log('Models API response with Bearer auth:', modelsResponse.data);
+      } catch (bearerError) {
+        console.error('Models API error with Bearer auth:', bearerError.message);
       }
     }
     
-    // Delete the document from the database
-    await document.destroy();
-    console.log('Document deleted successfully from database');
+    // Second, try to get balance
+    let balanceResponse;
+    try {
+      balanceResponse = await axios.get(
+        `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.balance}`,
+        {
+          headers: {
+            'X-API-KEY': fluxAiConfig.apiKey
+          }
+        }
+      );
+      console.log('Balance API response:', balanceResponse.data);
+    } catch (balanceError) {
+      console.error('Balance API error:', balanceError.message);
+      
+      // Try with different auth
+      try {
+        balanceResponse = await axios.get(
+          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.balance}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+            }
+          }
+        );
+        console.log('Balance API response with Bearer auth:', balanceResponse.data);
+      } catch (bearerError) {
+        console.error('Balance API error with Bearer auth:', bearerError.message);
+      }
+    }
     
-    res.status(200).json({ message: 'Document deleted successfully' });
+    // Third, make a simple chat request without files
+    let chatResponse;
+    try {
+      chatResponse = await axios.post(
+        `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+        {
+          messages: [
+            {
+              role: "user",
+              content: "Hello, can you tell me how to attach files to API requests?"
+            }
+          ],
+          stream: false
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': fluxAiConfig.apiKey
+          }
+        }
+      );
+      console.log('Chat API response:', chatResponse.data);
+    } catch (chatError) {
+      console.error('Chat API error:', chatError.message);
+      
+      // Try with different auth
+      try {
+        chatResponse = await axios.post(
+          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+          {
+            messages: [
+              {
+                role: "user",
+                content: "Hello, can you tell me how to attach files to API requests?"
+              }
+            ],
+            stream: false
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+            }
+          }
+        );
+        console.log('Chat API response with Bearer auth:', chatResponse.data);
+      } catch (bearerError) {
+        console.error('Chat API error with Bearer auth:', bearerError.message);
+      }
+    }
+    
+    // Return results
+    res.status(200).json({
+      message: 'API test completed',
+      endpoints: {
+        models: modelsResponse?.data || null,
+        balance: balanceResponse?.data || null,
+        chat: chatResponse?.data || null
+      }
+    });
   } catch (error) {
-    console.error('Error deleting document:', error);
-    res.status(500).json({ message: 'Failed to delete document', error: error.message });
+    console.error('API test error:', error);
+    res.status(500).json({ 
+      message: 'API test failed', 
+      error: error.message 
+    });
   }
 };

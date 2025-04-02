@@ -1,3 +1,4 @@
+// Enhanced file upload middleware with better validation
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -19,16 +20,20 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter
+// File filter with clear logging
 const fileFilter = (req, file, cb) => {
   // Accept document file types
-  const allowedTypes = ['.pdf', '.doc', '.docx', '.txt'];
+  const allowedTypes = ['.pdf', '.txt'];
   const ext = path.extname(file.originalname).toLowerCase();
   
+  console.log(`Checking file type for ${file.originalname}: ${ext}`);
+  
   if (allowedTypes.includes(ext)) {
+    console.log(`File type accepted: ${ext}`);
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only PDF, Word and Text files are allowed.'), false);
+    console.log(`File type rejected: ${ext} - Not in allowed types: ${allowedTypes.join(', ')}`);
+    cb(new Error(`Invalid file type. Only ${allowedTypes.join(', ')} files are allowed.`), false);
   }
 };
 
@@ -36,7 +41,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 15 * 1024 * 1024, // 15MB max file size
+    fileSize: 5 * 1024 * 1024, // 5MB max file size for reliable processing
   },
   fileFilter: fileFilter
 });
