@@ -10,23 +10,23 @@ const fluxAiConfig = require('../config/flux-ai');
 
 // Upload document(s)
 exports.uploadDocuments = async (req, res) => {
-    try {
-      console.log("Upload documents request received");
-      console.log("Files:", req.files ? req.files.length : "No files");
-      console.log("Document type:", req.body.documentType || "Not provided");
-      
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ message: 'No files uploaded' });
-      }
-  
-      const { documentType } = req.body;
-      if (!documentType) {
-        return res.status(400).json({ message: 'Document type is required' });
-      }
+  try {
+    console.log("Upload documents request received");
+    console.log("Files:", req.files ? req.files.length : "No files");
+    console.log("Document type:", req.body.documentType || "Not provided");
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'No files uploaded' });
+    }
+
+    const { documentType } = req.body;
+    if (!documentType) {
+      return res.status(400).json({ message: 'Document type is required' });
+    }
 
     const uploadedDocuments = [];
     
-    // Process each file
+    // Process each file - just store them, don't analyze
     for (const file of req.files) {
       // Create document record in database
       const document = await Document.create({
@@ -36,33 +36,14 @@ exports.uploadDocuments = async (req, res) => {
         path: file.path,
         documentType,
         uploadedBy: req.user.id,
+        status: 'uploaded' // Just mark as uploaded, not analyzed
       });
       
       uploadedDocuments.push(document);
     }
 
-    // Start analysis in the background
-    // This will be asynchronous to not block the response
-    if (fluxAiConfig.isConfigured()) {
-      startDocumentAnalysis(uploadedDocuments, documentType, req.user.id);
-    } else if (fluxAiConfig.isDevelopment) {
-      console.log('Running in development mode without Flux AI API key');
-      startDevelopmentModeAnalysis(uploadedDocuments, documentType, req.user.id);
-    } else {
-      console.error('Flux AI not configured and not in development mode');
-      // Update documents with error status
-      const documentIds = uploadedDocuments.map(doc => doc.id);
-      await Document.update(
-        { 
-          status: 'analysis_failed', 
-          analysisError: 'Flux AI API key not configured' 
-        },
-        { where: { id: documentIds } }
-      );
-    }
-
     res.status(201).json({
-      message: 'Documents uploaded successfully',
+      message: 'Documents uploaded successfully and ready for template creation',
       count: uploadedDocuments.length,
       documents: uploadedDocuments.map(doc => ({
         id: doc.id,
@@ -75,6 +56,69 @@ exports.uploadDocuments = async (req, res) => {
   } catch (error) {
     console.error('Error uploading documents:', error);
     res.status(500).json({ message: 'Failed to upload documents', error: error.message });
+  }
+};
+
+exports.generateConfiguredTemplate = async (req, res) => {
+  try {
+    const {
+      documentIds,
+      name,
+      description,
+      purpose,
+      department,
+      documentType,
+      perspectiveSettings
+    } = req.body;
+
+    // Validate required fields
+    if (!documentIds || !documentIds.length) {
+      return res.status(400).json({ message: 'At least one document ID is required' });
+    }
+
+    if (!documentType) {
+      return res.status(400).json({ message: 'Document type is required' });
+    }
+
+    // Find the documents
+    const documents = await Document.findAll({
+      where: { id: documentIds }
+    });
+
+    if (documents.length === 0) {
+      return res.status(404).json({ message: 'No documents found with the provided IDs' });
+    }
+
+    // Start the analysis with the configured settings
+    const analysisResult = await startDocumentAnalysis(documents, documentType, req.user.id, perspectiveSettings);
+    
+    // If we have a template from the analysis, update its metadata
+    if (analysisResult && analysisResult.id) {
+      await Template.update({
+        name: name || analysisResult.name,
+        description: description || analysisResult.description,
+        purpose: purpose || '',
+        department: department || '',
+        perspectiveSettings: perspectiveSettings || analysisResult.perspectiveSettings
+      }, {
+        where: { id: analysisResult.id }
+      });
+      
+      // Fetch the updated template
+      const updatedTemplate = await Template.findByPk(analysisResult.id, {
+        include: ['questions', 'sourceDocuments', 'ratingScales']
+      });
+      
+      res.status(200).json({
+        message: 'Template generated successfully',
+        template: updatedTemplate
+      });
+    } else {
+      res.status(500).json({ message: 'Failed to generate template' });
+    }
+  } catch (error) {
+    console.error('Error generating template:', error);
+    res.status(500).json({ message: 'Failed to generate template', error: error.message });
   }
 };
 

@@ -8,6 +8,7 @@ router.use(authMiddleware);
 
 // Template routes
 router.get('/', templatesController.getAllTemplates);
+router.post('/generate-configured', templatesController.generateConfiguredTemplate);
 router.get('/:id', templatesController.getTemplateById);
 router.post('/', templatesController.createTemplate);
 router.put('/:id', templatesController.updateTemplate);

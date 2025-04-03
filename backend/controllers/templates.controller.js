@@ -592,3 +592,87 @@ exports.deleteTemplate = async (req, res) => {
     res.status(500).json({ message: 'Failed to delete template' });
   }
 };
+
+exports.generateConfiguredTemplate = async (req, res) => {
+  try {
+    const {
+      documentIds,
+      name,
+      description,
+      purpose,
+      department,
+      documentType,
+      perspectiveSettings
+    } = req.body;
+
+    // Validate required fields
+    if (!documentIds || !documentIds.length) {
+      return res.status(400).json({ message: 'At least one document ID is required' });
+    }
+
+    if (!documentType) {
+      return res.status(400).json({ message: 'Document type is required' });
+    }
+
+    // Find the documents
+    const documents = await Document.findAll({
+      where: { id: documentIds }
+    });
+
+    if (documents.length === 0) {
+      return res.status(404).json({ message: 'No documents found with the provided IDs' });
+    }
+
+    // Use the existing startDocumentAnalysis function from documents.controller.js
+    // We need to import it or use it directly
+    const documentController = require('./documents.controller');
+    
+    // Start the analysis with the configured settings
+    console.log('Starting analysis with configured settings');
+    
+    // Update documents to mark them as being analyzed
+    for (const document of documents) {
+      await document.update({ status: 'analysis_in_progress' });
+    }
+    
+    // Use the existing function that creates templates
+    // This is a simplified version - you may need to adapt based on your implementation
+    let template;
+    
+    if (process.env.NODE_ENV === 'development') {
+      // In dev mode, use the development mock function
+      template = await documentController.startDevelopmentModeAnalysis(documents, documentType, req.user.id);
+    } else {
+      // In production, use the real function
+      template = await documentController.startDocumentAnalysis(documents, documentType, req.user.id);
+    }
+    
+    // If we have a template from the analysis, update its metadata
+    if (template && template.id) {
+      await Template.update({
+        name: name || template.name,
+        description: description || template.description,
+        purpose: purpose || '',
+        department: department || '',
+        perspectiveSettings: perspectiveSettings || template.perspectiveSettings
+      }, {
+        where: { id: template.id }
+      });
+      
+      // Fetch the updated template
+      const updatedTemplate = await Template.findByPk(template.id, {
+        include: ['questions', 'sourceDocuments', 'ratingScales']
+      });
+      
+      res.status(200).json({
+        message: 'Template generated successfully',
+        template: updatedTemplate
+      });
+    } else {
+      res.status(500).json({ message: 'Failed to generate template' });
+    }
+  } catch (error) {
+    console.error('Error generating template:', error);
+    res.status(500).json({ message: 'Failed to generate template', error: error.message });
+  }
+};

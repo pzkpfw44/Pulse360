@@ -43,7 +43,7 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
 
       setUploadStatus({
         success: true,
-        message: `Successfully uploaded ${files.length} document(s)`,
+        message: `Successfully uploaded ${files.length} document(s). Documents are ready for template creation.`,
         data: response.data
       });
       
