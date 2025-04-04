@@ -1051,6 +1051,469 @@ PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
   return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
 }
 
+// Function to create a strong prompt for the AI
+function createAnalysisPrompt(documentType, templateInfo = {}) {
+  // Extract template information if available
+  const { name, description, purpose, department, perspectiveSettings } = templateInfo || {};
+  
+  // Base prompt with clear instructions and EXAMPLES
+  const basePrompt = `Please analyze the attached document(s) and generate a comprehensive set of questions for a 360-degree feedback assessment.
+
+I NEED YOU TO GENERATE SPECIFIC QUESTIONS FOR A 360-DEGREE FEEDBACK ASSESSMENT. DO NOT SUMMARIZE THE DOCUMENT OR PROVIDE GENERAL INFORMATION ABOUT LEADERSHIP. I NEED ACTUAL QUESTIONS.
+
+FORMAT YOUR RESPONSE EXACTLY AS IN THE EXAMPLES BELOW:
+
+MANAGER ASSESSMENT:
+Question: How effectively does this person develop and articulate a clear vision for their team?
+Type: rating
+Category: Strategic Leadership
+
+Question: How well does this person prioritize and align team objectives with organizational goals?
+Type: rating
+Category: Strategic Thinking
+
+Question: What specific strengths have you observed in this person's leadership approach?
+Type: open_ended
+Category: Leadership Effectiveness
+
+PEER ASSESSMENT:
+Question: How effectively does this person collaborate across departments to achieve shared objectives?
+Type: rating
+Category: Collaboration
+
+Question: How would you rate this person's ability to communicate complex ideas clearly?
+Type: rating
+Category: Communication
+
+Question: What could this person do to be a more effective collaborator?
+Type: open_ended
+Category: Teamwork
+
+DIRECT REPORT ASSESSMENT:
+Question: How well does this person provide you with clear direction and guidance?
+Type: rating
+Category: Direction Setting
+
+Question: How effectively does this person recognize and acknowledge your contributions?
+Type: rating
+Category: Recognition
+
+Question: What specific actions could this person take to better support your professional development?
+Type: open_ended
+Category: Team Development
+
+SELF ASSESSMENT:
+Question: How effectively do you foster an environment where team members feel empowered to contribute ideas?
+Type: rating
+Category: Team Empowerment
+
+Question: What do you consider to be your greatest leadership strength? Provide specific examples.
+Type: open_ended
+Category: Leadership Strengths
+
+NOW FOLLOW THIS FORMAT AND GENERATE UNIQUE QUESTIONS FOR EACH PERSPECTIVE BASED ON THE DOCUMENT CONTENT.
+
+PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
+- Manager Assessment (how the person is evaluated by their manager)
+- Peer Assessment (how the person is evaluated by colleagues)
+- Direct Report Assessment (how the person is evaluated by those reporting to them)
+- Self Assessment (how the person evaluates themselves)
+- External Assessment (how the person is evaluated by external stakeholders, if applicable)`;
+
+  // Contextual information from the template settings
+  let contextPrompt = '';
+  if (purpose || department || name) {
+    contextPrompt = `\n\nADDITIONAL CONTEXT:`;
+    if (name) contextPrompt += `\n- Template Name: ${name}`;
+    if (department) contextPrompt += `\n- Department/Function: ${department}`;
+    if (purpose) contextPrompt += `\n- Purpose: ${purpose}`;
+  }
+
+  // Perspective-specific instructions
+  let perspectivePrompt = '';
+  if (perspectiveSettings) {
+    perspectivePrompt = '\n\nQUESTION COUNT REQUIREMENTS:';
+    Object.entries(perspectiveSettings).forEach(([perspective, settings]) => {
+      if (settings.enabled) {
+        const count = settings.questionCount || 10;
+        perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: ${count} questions`;
+      }
+    });
+  }
+
+  // Document type specific instructions
+  let typeSpecificPrompt = '';
+  switch (documentType) {
+    case 'leadership_model':
+      typeSpecificPrompt = `\n\nFOCUS AREAS:
+- Leadership qualities and behaviors described in the model
+- Decision-making and strategic thinking
+- Empowerment and delegation abilities
+- Communication and influence skills
+- Team development and coaching abilities`;
+      break;
+    
+    case 'job_description':
+      typeSpecificPrompt = `\n\nFOCUS AREAS:
+- Key responsibilities and job functions
+- Required skills and competencies
+- Performance expectations
+- Collaboration requirements
+- Technical expertise relevant to the role`;
+      break;
+    
+    case 'competency_framework':
+      typeSpecificPrompt = `\n\nFOCUS AREAS:
+- Core competencies from the framework
+- Observable behaviors for each competency
+- Skills application in different contexts
+- Development opportunities
+- Competency measurement criteria`;
+      break;
+    
+    case 'company_values':
+      typeSpecificPrompt = `\n\nFOCUS AREAS:
+- Alignment with company values
+- Demonstration of values in daily work
+- Value-based decision making
+- Promotion of values within teams
+- Ethical considerations related to values`;
+      break;
+    
+    case 'performance_criteria':
+      typeSpecificPrompt = `\n\nFOCUS AREAS:
+- Achievement against key performance indicators
+- Quality and consistency of work
+- Efficiency and productivity
+- Goal attainment
+- Performance improvement areas`;
+      break;
+    
+    default:
+      typeSpecificPrompt = `\n\nFOCUS AREAS:
+- Key professional competencies
+- Interpersonal and communication skills
+- Task and project management
+- Teamwork and collaboration
+- Professional development areas`;
+  }
+
+  // Final reminder to focus on questions
+  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that reflect the content of the document.`;
+
+  // Combine all prompt components
+  return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
+}
+
+// Function to parse questions from AI response
+function parseQuestionsFromAIResponse(aiResponse) {
+  // Check if aiResponse is undefined or empty
+  if (!aiResponse) {
+    console.log('AI response is empty or undefined, returning empty array');
+    return [];
+  }
+  
+  console.log('Parsing AI response for questions...');
+  const questions = [];
+  
+  try {
+    // First, try to identify perspective sections in the response
+    const perspectivePatterns = {
+      'manager': /manager assessment|manager perspective|manager feedback|manager evaluation/i,
+      'peer': /peer assessment|peer perspective|peer feedback|peer evaluation|colleague/i,
+      'direct_report': /direct report assessment|direct report perspective|direct report feedback|direct report evaluation|team member|subordinate/i,
+      'self': /self assessment|self perspective|self feedback|self evaluation/i,
+      'external': /external assessment|external perspective|external feedback|external evaluation|external stakeholder/i
+    };
+    
+    // Split by perspective sections
+    let currentPerspective = 'peer'; // Default perspective if none found
+    let currentCategory = 'General';
+    let questionCounter = 1;
+    
+    // Split response into lines for processing
+    const lines = aiResponse.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip empty lines
+      if (!line) continue;
+      
+      // Check if this line indicates a perspective section
+      let foundPerspective = false;
+      for (const [perspective, pattern] of Object.entries(perspectivePatterns)) {
+        if (pattern.test(line)) {
+          currentPerspective = perspective;
+          foundPerspective = true;
+          break;
+        }
+      }
+      if (foundPerspective) continue;
+      
+      // Check if this line indicates a category
+      if ((line.endsWith(':') || line.match(/^#+\s+.+$/)) && line.length < 100) {
+        currentCategory = line.replace(/^#+\s+/, '').replace(':', '').trim();
+        continue;
+      }
+      
+      // Look for question patterns
+      // 1. Lines with "Question:" format
+      const questionPattern = /^(?:Question|Q)[:\.]?\s+(.+)$/i;
+      const questionMatch = line.match(questionPattern);
+      
+      if (questionMatch) {
+        const questionText = questionMatch[1].trim();
+        
+        // Look for type in the next line
+        let questionType = 'rating';
+        if (i + 1 < lines.length) {
+          const typeLine = lines[i + 1].trim();
+          if (typeLine.match(/^(?:Type|Question Type)[:\.]?\s+(.+)$/i)) {
+            const typeMatch = typeLine.match(/^(?:Type|Question Type)[:\.]?\s+(.+)$/i);
+            if (typeMatch && typeMatch[1]) {
+              const typeText = typeMatch[1].toLowerCase().trim();
+              if (typeText.includes('open') || typeText.includes('text') || typeText.includes('qualitative')) {
+                questionType = 'open_ended';
+              }
+            }
+          }
+        }
+        
+        questions.push({
+          text: questionText,
+          category: currentCategory,
+          type: questionType,
+          perspective: currentPerspective,
+          required: true,
+          order: questionCounter++
+        });
+        continue;
+      }
+      
+      // 2. Numbered or bulleted questions
+      const listedQuestionMatch = line.match(/^(\d+\.|[-*•])?\s*(.+\?)$/);
+      if (listedQuestionMatch) {
+        const questionText = listedQuestionMatch[2].trim();
+        if (questionText.length > 10) { // Minimum length to be considered a question
+          questions.push({
+            text: questionText,
+            category: currentCategory,
+            type: questionText.toLowerCase().includes('describe') || 
+                  questionText.toLowerCase().includes('explain') || 
+                  questionText.toLowerCase().includes('what are') ||
+                  questionText.toLowerCase().includes('provide example') ? 'open_ended' : 'rating',
+            perspective: currentPerspective,
+            required: true,
+            order: questionCounter++
+          });
+        }
+        continue;
+      }
+      
+      // 3. Any line that ends with a question mark and is sufficiently long
+      if (line.endsWith('?') && line.length > 15 && !line.startsWith('#')) {
+        questions.push({
+          text: line,
+          category: currentCategory,
+          type: line.toLowerCase().includes('describe') || 
+                line.toLowerCase().includes('explain') || 
+                line.toLowerCase().includes('what are') ||
+                line.toLowerCase().includes('provide example') ? 'open_ended' : 'rating',
+          perspective: currentPerspective,
+          required: true,
+          order: questionCounter++
+        });
+      }
+    }
+    
+    // If we still don't have enough questions, look for any sentences with question marks
+    if (questions.length < 5) {
+      console.log('Not enough structured questions found, searching for question sentences');
+      const questionSentences = aiResponse.match(/[^.!?]+\?/g);
+      if (questionSentences) {
+        questionSentences.forEach(sentence => {
+          const cleanedSentence = sentence.trim();
+          if (cleanedSentence.length > 15 && !questions.some(q => q.text === cleanedSentence)) {
+            questions.push({
+              text: cleanedSentence,
+              category: 'General',
+              type: cleanedSentence.toLowerCase().includes('describe') || 
+                    cleanedSentence.toLowerCase().includes('explain') ? 'open_ended' : 'rating',
+              perspective: 'peer', // Default to peer for unstructured questions
+              required: true,
+              order: questionCounter++
+            });
+          }
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error parsing AI response:', error);
+    // Continue execution, will return empty questions
+  }
+  
+  console.log(`Successfully parsed ${questions.length} questions from AI response`);
+  return questions;
+}
+
+// Function to implement two-step approach for question generation
+async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo = {}) {
+  try {
+    console.log('Attempting two-step question generation approach...');
+    // Step 1: Extract key themes from the document
+    const extractThemesPrompt = `
+    Analyze the attached document and extract 5-8 key leadership themes or competencies.
+    Return ONLY a numbered list of themes with brief descriptions.
+    Do not provide any additional explanations or analysis.
+    `;
+
+    const themesResponse = await axios.post(
+      `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+      {
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert in document analysis. Extract only the key themes from the document without additional commentary."
+          },
+          {
+            role: "user",
+            content: extractThemesPrompt
+          }
+        ],
+        stream: false,
+        attachments: {
+          tags: [documentType],
+          files: fileIds
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        }
+      }
+    );
+
+    // Extract themes from response
+    let themesText = "";
+    if (themesResponse.data && 
+        themesResponse.data.choices && 
+        themesResponse.data.choices.length > 0) {
+      
+      const message = themesResponse.data.choices[0].message;
+      
+      if (typeof message === 'object' && message.content) {
+        themesText = message.content;
+      } else if (typeof message === 'string') {
+        themesText = message;
+      } else if (typeof themesResponse.data.choices[0].message === 'string') {
+        themesText = themesResponse.data.choices[0].message;
+      }
+    }
+
+    if (!themesText) {
+      console.log('Failed to extract themes from document');
+      return null;
+    }
+
+    console.log('Extracted themes:', themesText);
+
+    // Step 2: Generate questions based on the extracted themes
+    const generateQuestionsPrompt = `
+    Based on the following themes extracted from a leadership document:
+    
+    ${themesText}
+    
+    Generate specific 360-degree feedback questions for the following perspectives:
+    - Manager Assessment (4 questions)
+    - Peer Assessment (4 questions)
+    - Direct Report Assessment (4 questions)
+    - Self Assessment (4 questions)
+    
+    Format each question exactly as follows:
+    
+    MANAGER ASSESSMENT:
+    Question: [Question text]
+    Type: [rating or open_ended]
+    Category: [Category name]
+    
+    PEER ASSESSMENT:
+    Question: [Question text]
+    Type: [rating or open_ended]
+    Category: [Category name]
+    
+    And so on for each perspective.
+    
+    Include both rating-scale questions and open-ended questions for each perspective.
+    The questions should directly relate to the themes.
+    DO NOT include any explanations or additional text.
+    `;
+
+    // Set additional context if available
+    const { name, department, purpose } = templateInfo || {};
+    let contextAddition = "";
+    
+    if (purpose || department || name) {
+      contextAddition = `\n\nAdditional context:`;
+      if (name) contextAddition += `\n- Template Name: ${name}`;
+      if (department) contextAddition += `\n- Department/Function: ${department}`;
+      if (purpose) contextAddition += `\n- Purpose: ${purpose}`;
+    }
+
+    const questionsResponse = await axios.post(
+      `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+      {
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert in creating 360-degree feedback questions. Generate ONLY the questions in exactly the format requested. Do not provide any other explanations or text."
+          },
+          {
+            role: "user",
+            content: generateQuestionsPrompt + contextAddition
+          }
+        ],
+        stream: false
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        }
+      }
+    );
+
+    // Extract questions from response
+    let questionsText = "";
+    if (questionsResponse.data && 
+        questionsResponse.data.choices && 
+        questionsResponse.data.choices.length > 0) {
+      
+      const message = questionsResponse.data.choices[0].message;
+      
+      if (typeof message === 'object' && message.content) {
+        questionsText = message.content;
+      } else if (typeof message === 'string') {
+        questionsText = message;
+      } else if (typeof questionsResponse.data.choices[0].message === 'string') {
+        questionsText = questionsResponse.data.choices[0].message;
+      }
+    }
+
+    if (!questionsText) {
+      console.log('Failed to generate questions based on themes');
+      return null;
+    }
+
+    console.log('Generated questions with two-step approach');
+    return questionsText;
+  } catch (error) {
+    console.error('Error in two-step question generation:', error);
+    return null;
+  }
+}
+
 // Analyze documents with Flux AI (updated version)
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
   try {
@@ -1071,7 +1534,7 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     const messages = [
       {
         role: "system",
-        content: "You are an expert in organizational development and HR practices, specializing in 360-degree feedback assessments. Your task is to create structured, relevant questions for different perspectives in a 360-degree assessment. Focus on providing practical, actionable questions that will yield meaningful feedback."
+        content: "You are a specialized AI assistant for creating 360-degree feedback assessment questions. Your only job is to generate structured, relevant questions based on document analysis. DO NOT provide general explanations or summaries. ONLY generate specific feedback questions in the exact format requested."
       },
       {
         role: "user",

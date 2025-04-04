@@ -3,7 +3,7 @@
     "analysisDepth": "deep",
     "enableBiasDetection": true,
     "enableContentFiltering": true,
-    "maxTokensPerRequest": 2000,
+    "maxTokensPerRequest": 5000,
     "feedbackAnalysis": true
   }
 }
