@@ -36,9 +36,9 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       setLoading(true);
       const response = await api.get('/documents');
       
-      // Filter out documents that are already being processed or analyzed
+      // Filter documents that are analysis_complete and not yet used in a template
       const availableDocs = (response.data.documents || []).filter(doc => 
-        doc.status === 'uploaded'
+        doc.status === 'analysis_complete' && !doc.associatedTemplateId
       );
       
       setDocuments(availableDocs);
@@ -69,24 +69,52 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
 
   const handleDocumentSelection = (documentId) => {
     setSelectedDocumentIds(prev => {
+      // If already selected, deselect
       if (prev.includes(documentId)) {
-        return prev.filter(id => id !== documentId);
-      } else {
+        const remainingDocs = prev.filter(id => id !== documentId);
+        
+        // If no documents left, reset document type
+        if (remainingDocs.length === 0) {
+          setFormData(prevData => ({
+            ...prevData,
+            documentType: '',
+            name: ''
+          }));
+        }
+        
+        return remainingDocs;
+      }
+      
+      // Prevent more than 3 selections
+      if (prev.length >= 3) {
+        setError('You can select up to 3 documents');
+        return prev;
+      }
+      
+      const selectedDoc = documents.find(doc => doc.id === documentId);
+      
+      // If no documents selected yet, set the type
+      if (prev.length === 0) {
+        setFormData(prevData => ({
+          ...prevData,
+          documentType: selectedDoc.documentType,
+          name: `${selectedDoc.documentType.split('_').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)
+          ).join(' ')} Template`
+        }));
+        
         return [...prev, documentId];
       }
-    });
-    
-    // If this is the first document selected, use its documentType
-    if (selectedDocumentIds.length === 0) {
-      const selectedDoc = documents.find(doc => doc.id === documentId);
-      if (selectedDoc) {
-        setFormData(prev => ({
-          ...prev,
-          documentType: selectedDoc.documentType,
-          name: `${selectedDoc.documentType.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Template`
-        }));
+      
+      // Ensure same document type
+      const firstDocType = documents.find(doc => doc.id === prev[0]).documentType;
+      if (selectedDoc.documentType !== firstDocType) {
+        setError('Please select documents of the same type');
+        return prev;
       }
-    }
+      
+      return [...prev, documentId];
+    });
   };
 
   const handlePerspectiveSettingChange = (perspective, field, value) => {
@@ -111,7 +139,12 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
     }
     
     if (!formData.documentType) {
-      setError('Document type is required');
+      setError('Please select a document type');
+      return;
+    }
+    
+    if (!formData.name.trim()) {
+      setError('Please provide a template name');
       return;
     }
     
@@ -260,25 +293,19 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                   />
                 </div>
                 
-                <div>
-                  <label htmlFor="documentType" className="block text-sm font-medium text-gray-500 mb-1">
-                    Document Type <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="documentType"
+                <div className="hidden">
+                  <input
+                    type="hidden"
                     name="documentType"
                     value={formData.documentType}
-                    onChange={handleInputChange}
-                    className="w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="">Select document type</option>
-                    <option value="leadership_model">Leadership Model</option>
-                    <option value="job_description">Job Description</option>
-                    <option value="competency_framework">Competency Framework</option>
-                    <option value="company_values">Company Values</option>
-                    <option value="performance_criteria">Performance Criteria</option>
-                  </select>
+                  />
+                  <span className="block text-sm font-medium text-gray-500">
+                    Document Type: {formData.documentType 
+                      ? formData.documentType.split('_').map(word => 
+                          word.charAt(0).toUpperCase() + word.slice(1)
+                        ).join(' ')
+                      : 'Not selected'}
+                  </span>
                 </div>
                 
                 <div>
