@@ -714,13 +714,19 @@ async function createDevelopmentModeTemplate(documents, documentType, userId, te
     
     // Create the template with provided information
     const template = await Template.create({
-      name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
-      description: templateInfo.description || 'Generated in development mode',
+      name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template (Fallback)`,
+      description: templateInfo.description || 'Generated with fallback questions due to analysis error',
       purpose: templateInfo.purpose || '',
       department: templateInfo.department || '',
       documentType,
-      perspectiveSettings: templateInfo.perspectiveSettings,
-      generatedBy: 'manual',
+      perspectiveSettings: templateInfo.perspectiveSettings || {
+        manager: { questionCount: 10, enabled: true },
+        peer: { questionCount: 10, enabled: true },
+        direct_report: { questionCount: 10, enabled: true },
+        self: { questionCount: 10, enabled: true },
+        external: { questionCount: 5, enabled: false }
+      },
+      generatedBy: 'flux_ai',
       createdBy: userId,
       status: 'pending_review'
     });

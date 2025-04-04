@@ -898,214 +898,66 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
   }
 }
 
-// Analyze documents with Flux AI (updated version)
-async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents) {
-  try {
-    console.log('Analyzing documents with Flux AI:');
-    console.log('File IDs:', fileIds);
-    console.log('Document Type:', documentType);
-    
-    // Validate file IDs
-    if (!fileIds || fileIds.length === 0) {
-      console.error('No valid file IDs for analysis');
-      return createTemplateWithFallbackQuestions(documentType, userId, documents);
-    }
-    
-    // Create a prompt based on document type
-    const prompt = createAnalysisPrompt(documentType);
-    
-    // Create messages array for the chat completion
-    const messages = [
-      {
-        role: "system",
-        content: "You are an expert in organizational development and HR practices, specializing in 360-degree feedback."
-      },
-      {
-        role: "user",
-        content: prompt
-      }
-    ];
-    
-    // Wait for file processing
-    console.log('Waiting for file processing...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // MATCH EXACTLY THE FORMAT FROM THE FLUX EXAMPLE
-    const requestPayload = {
-      messages: messages,
-      stream: false,
-      attachments: {
-        tags: [documentType],
-        files: fileIds
-      }
-    };
-    
-    console.log('Using exact example format:', JSON.stringify(requestPayload, null, 2));
-    
-    // Try all possible authentication methods
-    let response = null;
-    let authMethods = [
-      // Method 1: X-API-KEY
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': fluxAiConfig.apiKey
-        }
-      },
-      // Method 2: Bearer token
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-        }
-      },
-      // Method 3: No API-KEY prefix
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': fluxAiConfig.apiKey.replace('SHqQ4nah.', '')  // Remove potential prefix
-        }
-      }
-    ];
-    
-    // Try each auth method
-    for (let i = 0; i < authMethods.length; i++) {
-      try {
-        console.log(`Trying auth method ${i+1}`);
-        response = await axios.post(
-          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
-          requestPayload, 
-          authMethods[i]
-        );
-        console.log(`Auth method ${i+1} succeeded!`);
-        break;  // Stop if successful
-      } catch (error) {
-        console.log(`Auth method ${i+1} failed:`, error.message);
-        if (i === authMethods.length - 1) {
-          // If all methods fail, return fallback
-          console.error('All authentication methods failed');
-          return createTemplateWithFallbackQuestions(documentType, userId, documents);
-        }
-      }
-    }
-    
-    // Process the response
-    console.log('Analysis response:', response.data);
-    
-    // Extract the AI response text
-    let aiResponseText = "";
-    if (response.data && 
-        response.data.choices && 
-        response.data.choices.length > 0) {
-      
-      const message = response.data.choices[0].message;
-      
-      // Handle different response formats
-      if (typeof message === 'object' && message.content) {
-        aiResponseText = message.content;
-      } else if (typeof message === 'string') {
-        aiResponseText = message;
-      } else if (typeof response.data.choices[0].message === 'string') {
-        aiResponseText = response.data.choices[0].message;
-      }
-    }
-    
-    if (!aiResponseText) {
-      console.log('Cannot extract response content from Flux AI, using fallback questions');
-      return createTemplateWithFallbackQuestions(documentType, userId, documents);
-    }
-    
-    // Check if AI indicates it can't see the document
-    const cantSeeDocument = aiResponseText.includes("don't see any attached document") || 
-                          aiResponseText.includes("I don't see any attached documents") ||
-                          aiResponseText.includes("I don't see the attached document") ||
-                          aiResponseText.includes("Could you please provide the document");
-    
-    if (cantSeeDocument) {
-      console.log('AI reports not seeing the documents - using fallback questions');
-      return createTemplateWithFallbackQuestions(documentType, userId, documents);
-    }
-    
-    console.log('AI seems to have analyzed the document successfully!');
-    
-    // Create a new template
-    const template = await Template.create({
-      name: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
-      description: 'Generated from document analysis',
-      documentType,
-      generatedBy: 'flux_ai',
-      createdBy: userId,
-      status: 'pending_review'
-    });
-    
-    // Parse questions from AI response
-    const questions = parseQuestionsFromAIResponse(aiResponseText);
-    
-    // Create questions for the template
-    await Promise.all(
-      questions.map(async (q) => {
-        return Question.create({
-          ...q,
-          templateId: template.id
-        });
-      })
-    );
-    
-    // Create source document references
-    await Promise.all(
-      documents.map(async (doc) => {
-        return SourceDocument.create({
-          fluxAiFileId: doc.fluxAiFileId,
-          documentId: doc.id,
-          templateId: template.id
-        });
-      })
-    );
-    
-    // Update documents with analysis complete status
-    await Document.update(
-      { 
-        status: 'analysis_complete',
-        associatedTemplateId: template.id
-      },
-      { where: { id: documents.map(doc => doc.id) } }
-    );
-    
-    console.log('Template created with ID:', template.id);
-    return template;
-  } catch (error) {
-    console.error('Full error details:', error.message);
-    
-    // Check for specific errors that might occur
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      
-      // If there's a specific error about mode, log it
-      if (error.response.data && error.response.data.error) {
-        console.error('API Error:', error.response.data.error);
-      }
-    }
-    
-    // Create fallback template
-    return createTemplateWithFallbackQuestions(documentType, userId, documents);
-  }
-}
-
-// Create appropriate prompt based on document type
-// Create appropriate prompt based on document type and template information
 function createAnalysisPrompt(documentType, templateInfo = {}) {
   // Extract template information if available
   const { name, description, purpose, department, perspectiveSettings } = templateInfo || {};
   
-  // Base prompt with clear instructions on format
-  const basePrompt = `Please analyze the attached document(s) and generate a comprehensive set of questions for a 360-degree feedback assessment. 
+  // Base prompt with clear instructions and EXAMPLES
+  const basePrompt = `Please analyze the attached document(s) and generate a comprehensive set of questions for a 360-degree feedback assessment.
 
-FORMAT YOUR RESPONSE AS FOLLOWS:
-1. Divide your questions into clear sections for each perspective: MANAGER, PEER, DIRECT_REPORT, SELF, and EXTERNAL.
-2. For each section, provide both rating-scale questions and open-ended questions.
-3. Group questions by categories that reflect key competencies or skills.
-4. Format each question as "Question: [question text]" followed by "Type: [rating/open_ended]" and "Category: [category name]"
+I NEED YOU TO GENERATE SPECIFIC QUESTIONS FOR A 360-DEGREE FEEDBACK ASSESSMENT. DO NOT SUMMARIZE THE DOCUMENT OR PROVIDE GENERAL INFORMATION ABOUT LEADERSHIP. I NEED ACTUAL QUESTIONS.
+
+FORMAT YOUR RESPONSE EXACTLY AS IN THE EXAMPLES BELOW:
+
+MANAGER ASSESSMENT:
+Question: How effectively does this person develop and articulate a clear vision for their team?
+Type: rating
+Category: Strategic Leadership
+
+Question: How well does this person prioritize and align team objectives with organizational goals?
+Type: rating
+Category: Strategic Thinking
+
+Question: What specific strengths have you observed in this person's leadership approach?
+Type: open_ended
+Category: Leadership Effectiveness
+
+PEER ASSESSMENT:
+Question: How effectively does this person collaborate across departments to achieve shared objectives?
+Type: rating
+Category: Collaboration
+
+Question: How would you rate this person's ability to communicate complex ideas clearly?
+Type: rating
+Category: Communication
+
+Question: What could this person do to be a more effective collaborator?
+Type: open_ended
+Category: Teamwork
+
+DIRECT REPORT ASSESSMENT:
+Question: How well does this person provide you with clear direction and guidance?
+Type: rating
+Category: Direction Setting
+
+Question: How effectively does this person recognize and acknowledge your contributions?
+Type: rating
+Category: Recognition
+
+Question: What specific actions could this person take to better support your professional development?
+Type: open_ended
+Category: Team Development
+
+SELF ASSESSMENT:
+Question: How effectively do you foster an environment where team members feel empowered to contribute ideas?
+Type: rating
+Category: Team Empowerment
+
+Question: What do you consider to be your greatest leadership strength? Provide specific examples.
+Type: open_ended
+Category: Leadership Strengths
+
+NOW FOLLOW THIS FORMAT AND GENERATE UNIQUE QUESTIONS FOR EACH PERSPECTIVE BASED ON THE DOCUMENT CONTENT.
 
 PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
 - Manager Assessment (how the person is evaluated by their manager)
@@ -1192,196 +1044,12 @@ PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
 - Professional development areas`;
   }
 
+  // Final reminder to focus on questions
+  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that reflect the content of the document.`;
+
   // Combine all prompt components
-  return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}`;
+  return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
 }
-
-// REPLACE the parseQuestionsFromAIResponse function in backend/controllers/documents.controller.js
-// Find the existing function and replace it completely with this version
-
-// Parse AI response to extract questions
-function parseQuestionsFromAIResponse(aiResponse) {
-  // Check if aiResponse is undefined or empty
-  if (!aiResponse) {
-    console.log('AI response is empty or undefined, returning fallback questions');
-    return generateFallbackQuestions();
-  }
-  
-  console.log('Parsing AI response for questions...');
-  const questions = [];
-  
-  try {
-    // First, try to identify perspective sections in the response
-    const perspectivePatterns = {
-      'manager': /manager assessment|manager perspective|manager feedback|manager evaluation/i,
-      'peer': /peer assessment|peer perspective|peer feedback|peer evaluation|colleague/i,
-      'direct_report': /direct report assessment|direct report perspective|direct report feedback|direct report evaluation|team member|subordinate/i,
-      'self': /self assessment|self perspective|self feedback|self evaluation/i,
-      'external': /external assessment|external perspective|external feedback|external evaluation|external stakeholder/i
-    };
-    
-    // Split by perspective sections
-    let currentPerspective = 'peer'; // Default perspective if none found
-    let currentCategory = 'General';
-    let questionCounter = 1;
-    
-    // Split response into lines for processing
-    const lines = aiResponse.split('\n');
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      // Skip empty lines
-      if (!line) continue;
-      
-      // Check if this line indicates a perspective section
-      let foundPerspective = false;
-      for (const [perspective, pattern] of Object.entries(perspectivePatterns)) {
-        if (pattern.test(line)) {
-          currentPerspective = perspective;
-          foundPerspective = true;
-          break;
-        }
-      }
-      if (foundPerspective) continue;
-      
-      // Check if this line indicates a category
-      if ((line.endsWith(':') || line.match(/^#+\s+.+$/)) && line.length < 100) {
-        currentCategory = line.replace(/^#+\s+/, '').replace(':', '').trim();
-        continue;
-      }
-      
-      // Look for question patterns
-      // 1. Lines with "Question:" format
-      const questionPattern = /^(?:Question|Q)[:\.]?\s+(.+)$/i;
-      const questionMatch = line.match(questionPattern);
-      
-      if (questionMatch) {
-        const questionText = questionMatch[1].trim();
-        
-        // Look for type in the next line
-        let questionType = 'rating';
-        if (i + 1 < lines.length) {
-          const typeLine = lines[i + 1].trim();
-          if (typeLine.match(/^(?:Type|Question Type)[:\.]?\s+(.+)$/i)) {
-            const typeMatch = typeLine.match(/^(?:Type|Question Type)[:\.]?\s+(.+)$/i);
-            if (typeMatch && typeMatch[1]) {
-              const typeText = typeMatch[1].toLowerCase().trim();
-              if (typeText.includes('open') || typeText.includes('text') || typeText.includes('qualitative')) {
-                questionType = 'open_ended';
-              }
-            }
-          }
-        }
-        
-        questions.push({
-          text: questionText,
-          category: currentCategory,
-          type: questionType,
-          perspective: currentPerspective,
-          required: true,
-          order: questionCounter++
-        });
-        continue;
-      }
-      
-      // 2. Numbered or bulleted questions
-      const listedQuestionMatch = line.match(/^(\d+\.|[-*•])?\s*(.+\?)$/);
-      if (listedQuestionMatch) {
-        const questionText = listedQuestionMatch[2].trim();
-        if (questionText.length > 10) { // Minimum length to be considered a question
-          questions.push({
-            text: questionText,
-            category: currentCategory,
-            type: questionText.toLowerCase().includes('describe') || 
-                  questionText.toLowerCase().includes('explain') || 
-                  questionText.toLowerCase().includes('what are') ||
-                  questionText.toLowerCase().includes('provide example') ? 'open_ended' : 'rating',
-            perspective: currentPerspective,
-            required: true,
-            order: questionCounter++
-          });
-        }
-        continue;
-      }
-      
-      // 3. Any line that ends with a question mark and is sufficiently long
-      if (line.endsWith('?') && line.length > 15 && !line.startsWith('#')) {
-        questions.push({
-          text: line,
-          category: currentCategory,
-          type: line.toLowerCase().includes('describe') || 
-                line.toLowerCase().includes('explain') || 
-                line.toLowerCase().includes('what are') ||
-                line.toLowerCase().includes('provide example') ? 'open_ended' : 'rating',
-          perspective: currentPerspective,
-          required: true,
-          order: questionCounter++
-        });
-      }
-    }
-    
-    // If we still don't have enough questions, look for any sentences with question marks
-    if (questions.length < 5) {
-      console.log('Not enough structured questions found, searching for question sentences');
-      const questionSentences = aiResponse.match(/[^.!?]+\?/g);
-      if (questionSentences) {
-        questionSentences.forEach(sentence => {
-          const cleanedSentence = sentence.trim();
-          if (cleanedSentence.length > 15 && !questions.some(q => q.text === cleanedSentence)) {
-            questions.push({
-              text: cleanedSentence,
-              category: 'General',
-              type: cleanedSentence.toLowerCase().includes('describe') || 
-                    cleanedSentence.toLowerCase().includes('explain') ? 'open_ended' : 'rating',
-              perspective: 'peer', // Default to peer for unstructured questions
-              required: true,
-              order: questionCounter++
-            });
-          }
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error parsing AI response:', error);
-    // Continue execution, will return fallback questions
-  }
-  
-  // If still no questions found, use fallback questions
-  if (questions.length === 0) {
-    console.log('No questions found in AI response, using fallback questions');
-    return generateFallbackQuestions();
-  }
-  
-  // Ensure distribution across perspectives if we have enough questions
-  if (questions.length >= 10) {
-    const perspectives = ['manager', 'peer', 'direct_report', 'self'];
-    const perspectiveQuestions = {};
-    perspectives.forEach(p => { perspectiveQuestions[p] = questions.filter(q => q.perspective === p); });
-    
-    // If any perspective has no questions, assign some from the most common perspective
-    perspectives.forEach(p => {
-      if (perspectiveQuestions[p].length === 0) {
-        // Find the perspective with the most questions
-        const mostCommonPerspective = perspectives.reduce((a, b) => 
-          perspectiveQuestions[a].length > perspectiveQuestions[b].length ? a : b
-        );
-        
-        // Take some questions from the most common and reassign
-        if (perspectiveQuestions[mostCommonPerspective].length > 3) {
-          const questionsToReassign = perspectiveQuestions[mostCommonPerspective].slice(0, 3);
-          questionsToReassign.forEach(q => { q.perspective = p; });
-        }
-      }
-    });
-  }
-  
-  console.log(`Successfully parsed ${questions.length} questions from AI response`);
-  return questions;
-}
-
-// REPLACE the analyzeDocumentsWithFluxAI function in backend/controllers/documents.controller.js
-// Find the existing function and replace it completely with this improved version
 
 // Analyze documents with Flux AI (updated version)
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
@@ -1541,11 +1209,62 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     
     // Check if we have enough relevant questions
     if (questions.length < 5) {
-      console.log('Not enough relevant questions generated, using augmented set');
-      const fallbackQuestions = generateFallbackQuestions();
+      console.log('Not enough relevant questions generated in first attempt, trying two-step approach');
       
-      // Add some document-specific questions to our mix
-      const combinedQuestions = [...questions, ...fallbackQuestions.slice(0, 10)];
+      // Try the two-step approach
+      const twoStepResponse = await tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo);
+      
+      // If we got a response, try to parse questions from it
+      if (twoStepResponse) {
+        const twoStepQuestions = parseQuestionsFromAIResponse(twoStepResponse);
+        
+        // If we found questions, use them instead of fallback
+        if (twoStepQuestions && twoStepQuestions.length >= 5) {
+          console.log(`Found ${twoStepQuestions.length} questions using two-step approach`);
+          
+          // Create questions for the template using the two-step result
+          await Promise.all(
+            twoStepQuestions.map(async (q) => {
+              return Question.create({
+                ...q,
+                templateId: template.id
+              });
+            })
+          );
+          
+          // Skip to the next steps (creating source documents, etc.)
+          console.log('Successfully created questions using two-step approach');
+          
+          // Create source document references
+          await Promise.all(
+            documents.map(async (doc) => {
+              return SourceDocument.create({
+                fluxAiFileId: doc.fluxAiFileId,
+                documentId: doc.id,
+                templateId: template.id
+              });
+            })
+          );
+          
+          // Update documents with analysis complete status
+          await Document.update(
+            { 
+              status: 'analysis_complete',
+              associatedTemplateId: template.id
+            },
+            { where: { id: documents.map(doc => doc.id) } }
+          );
+          
+          console.log('Template created with ID:', template.id);
+          return template;
+        }
+      }
+      
+      console.log('Two-step approach failed or did not generate enough questions, using fallback questions');
+      const fallbackQuestions = generateFallbackQuestions(documentType, templateInfo.perspectiveSettings);
+      
+      // Add any AI-generated questions we did get to the mix
+      const combinedQuestions = [...questions, ...fallbackQuestions.slice(0, Math.max(15 - questions.length, 0))];
       
       // Create questions for the template
       await Promise.all(
@@ -1557,7 +1276,8 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
         })
       );
     } else {
-      // Create questions for the template with what we parsed
+      // We have enough questions from the first attempt, create them
+      console.log(`Creating ${questions.length} questions from first AI response`);
       await Promise.all(
         questions.map(async (q) => {
           return Question.create({
@@ -1607,119 +1327,6 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     // Create fallback template
     return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
   }
-}
-
-// Parse AI response to extract questions
-function parseQuestionsFromAIResponse(aiResponse) {
-  // Check if aiResponse is undefined or empty
-  if (!aiResponse) {
-    console.log('AI response is empty or undefined, returning fallback questions');
-    return generateFallbackQuestions();
-  }
-  
-  console.log('Parsing AI response for questions...');
-  const questions = [];
-  
-  try {
-    // Try to find questions in the response
-    // Look for numbered or bulleted items
-    const lines = aiResponse.split('\n');
-    
-    let currentCategory = 'General';
-    let currentPerspective = 'peer'; // Default perspective
-    
-    // Look for perspective indicators
-    const perspectiveKeywords = {
-      'manager': ['manager', 'supervisor', 'boss', 'management'],
-      'peer': ['peer', 'colleague', 'coworker', 'peers'],
-      'direct_report': ['direct report', 'team member', 'subordinate', 'staff'],
-      'self': ['self', 'self-assessment', 'self-evaluation']
-    };
-    
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-      
-      // Skip empty lines
-      if (!trimmedLine) continue;
-      
-      // Check if line indicates a perspective
-      for (const [perspective, keywords] of Object.entries(perspectiveKeywords)) {
-        if (keywords.some(keyword => trimmedLine.toLowerCase().includes(keyword))) {
-          currentPerspective = perspective;
-          break;
-        }
-      }
-      
-      // Check if line is a category header
-      if (trimmedLine.endsWith(':') && !trimmedLine.match(/^\d+\./) && trimmedLine.length < 50) {
-        currentCategory = trimmedLine.replace(':', '').trim();
-        continue;
-      }
-      
-      // Check if line is a question (starts with number, dash, bullet, or contains a question mark)
-      const questionMatch = trimmedLine.match(/^(\d+\.|\-|\*|\•|\–)\s+(.+)$/);
-      if (questionMatch) {
-        const questionText = questionMatch[2].trim();
-        
-        // Skip if it's too short to be a real question
-        if (questionText.length < 10) continue;
-        
-        questions.push({
-          text: questionText,
-          category: currentCategory || 'General',
-          type: questionText.endsWith('?') ? 'open_ended' : 'rating',
-          perspective: currentPerspective,
-          required: true,
-          order: questions.length + 1
-        });
-      } else if (trimmedLine.includes('?') && trimmedLine.length > 15) {
-        // If it's a standalone question without a bullet or number
-        questions.push({
-          text: trimmedLine,
-          category: currentCategory || 'General',
-          type: 'open_ended',
-          perspective: currentPerspective,
-          required: true,
-          order: questions.length + 1
-        });
-      }
-    }
-    
-    // If we couldn't find structured questions, try to extract paragraphs
-    if (questions.length === 0) {
-      console.log('No structured questions found, trying to extract from paragraphs');
-      const paragraphs = aiResponse.split('\n\n');
-      
-      for (const paragraph of paragraphs) {
-        const sentences = paragraph.split(/(?<=[.!?])\s+/);
-        
-        for (const sentence of sentences) {
-          if (sentence.trim().endsWith('?') && sentence.length > 15) {
-            questions.push({
-              text: sentence.trim(),
-              type: 'open_ended',
-              category: 'General',
-              perspective: 'peer',
-              required: true,
-              order: questions.length + 1
-            });
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error parsing AI response:', error);
-    // Continue execution, will return fallback questions
-  }
-  
-  // If still no questions found, use fallback questions
-  if (questions.length === 0) {
-    console.log('No questions found in AI response, using fallback questions');
-    return generateFallbackQuestions();
-  }
-  
-  console.log(`Successfully parsed ${questions.length} questions from AI response`);
-  return questions;
 }
 
 // Get all documents
@@ -1949,6 +1556,163 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
   });
   
   return fallbackQuestions;
+}
+
+// This implements a two-step approach if the first attempt fails
+async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo = {}) {
+  try {
+    console.log('Attempting two-step question generation approach...');
+    // Step 1: Extract key themes from the document
+    const extractThemesPrompt = `
+    Analyze the attached document and extract 5-8 key leadership themes or competencies.
+    Return ONLY a numbered list of themes with brief descriptions.
+    Do not provide any additional explanations or analysis.
+    `;
+
+    const themesResponse = await axios.post(
+      `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+      {
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert in document analysis. Extract only the key themes from the document without additional commentary."
+          },
+          {
+            role: "user",
+            content: extractThemesPrompt
+          }
+        ],
+        stream: false,
+        attachments: {
+          tags: [documentType],
+          files: fileIds
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        }
+      }
+    );
+
+    // Extract themes from response
+    let themesText = "";
+    if (themesResponse.data && 
+        themesResponse.data.choices && 
+        themesResponse.data.choices.length > 0) {
+      
+      const message = themesResponse.data.choices[0].message;
+      
+      if (typeof message === 'object' && message.content) {
+        themesText = message.content;
+      } else if (typeof message === 'string') {
+        themesText = message;
+      } else if (typeof themesResponse.data.choices[0].message === 'string') {
+        themesText = themesResponse.data.choices[0].message;
+      }
+    }
+
+    if (!themesText) {
+      console.log('Failed to extract themes from document');
+      return null;
+    }
+
+    console.log('Extracted themes:', themesText);
+
+    // Step 2: Generate questions based on the extracted themes
+    const generateQuestionsPrompt = `
+    Based on the following themes extracted from a leadership document:
+    
+    ${themesText}
+    
+    Generate specific 360-degree feedback questions for the following perspectives:
+    - Manager Assessment (4 questions)
+    - Peer Assessment (4 questions)
+    - Direct Report Assessment (4 questions)
+    - Self Assessment (4 questions)
+    
+    Format each question exactly as follows:
+    
+    MANAGER ASSESSMENT:
+    Question: [Question text]
+    Type: [rating or open_ended]
+    Category: [Category name]
+    
+    PEER ASSESSMENT:
+    Question: [Question text]
+    Type: [rating or open_ended]
+    Category: [Category name]
+    
+    And so on for each perspective.
+    
+    Include both rating-scale questions and open-ended questions for each perspective.
+    The questions should directly relate to the themes.
+    DO NOT include any explanations or additional text.
+    `;
+
+    // Set additional context if available
+    const { name, department, purpose } = templateInfo || {};
+    let contextAddition = "";
+    
+    if (purpose || department || name) {
+      contextAddition = `\n\nAdditional context:`;
+      if (name) contextAddition += `\n- Template Name: ${name}`;
+      if (department) contextAddition += `\n- Department/Function: ${department}`;
+      if (purpose) contextAddition += `\n- Purpose: ${purpose}`;
+    }
+
+    const questionsResponse = await axios.post(
+      `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+      {
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert in creating 360-degree feedback questions. Generate ONLY the questions in exactly the format requested. Do not provide any other explanations or text."
+          },
+          {
+            role: "user",
+            content: generateQuestionsPrompt + contextAddition
+          }
+        ],
+        stream: false
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        }
+      }
+    );
+
+    // Extract questions from response
+    let questionsText = "";
+    if (questionsResponse.data && 
+        questionsResponse.data.choices && 
+        questionsResponse.data.choices.length > 0) {
+      
+      const message = questionsResponse.data.choices[0].message;
+      
+      if (typeof message === 'object' && message.content) {
+        questionsText = message.content;
+      } else if (typeof message === 'string') {
+        questionsText = message;
+      } else if (typeof questionsResponse.data.choices[0].message === 'string') {
+        questionsText = questionsResponse.data.choices[0].message;
+      }
+    }
+
+    if (!questionsText) {
+      console.log('Failed to generate questions based on themes');
+      return null;
+    }
+
+    console.log('Generated questions with two-step approach');
+    return questionsText;
+  } catch (error) {
+    console.error('Error in two-step question generation:', error);
+    return null;
+  }
 }
 
 // Add these helper functions for the fallback questions by document type

@@ -27,12 +27,15 @@ const config = {
 
   getSystemPrompt: function(task) {
     const prompts = {
-      document_analysis: "You are an expert in organizational development and HR practices...",
-      question_generation: "You are an expert in designing effective 360-degree feedback...",
+      document_analysis: "You are a specialized AI assistant for creating 360-degree feedback assessment questions. Your only job is to generate structured, relevant questions based on document analysis. DO NOT provide general explanations or summaries. ONLY generate specific feedback questions in the exact format requested.",
+      
+      question_generation: "You are an expert in designing 360-degree feedback questions. Your task is ONLY to create questions that are specific, actionable, and relevant to the perspective of the respondent. Follow the exact format provided in the prompt. DO NOT explain concepts or provide general information.",
+      
       feedback_assistance: "You are an AI assistant helping provide constructive feedback...",
+      
       report_generation: "You are an expert in analyzing 360-degree feedback data..."
     };
-
+  
     return prompts[task] || prompts.document_analysis;
   }
 };
