@@ -24,28 +24,51 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
       });
       return;
     }
-
+  
     setIsUploading(true);
     setUploadStatus(null);
-
+  
     const formData = new FormData();
     files.forEach(file => {
       formData.append('files', file);
     });
     formData.append('documentType', documentType);
-
+  
     try {
       const response = await api.post('/documents/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       });
-
-      setUploadStatus({
-        success: true,
-        message: `Successfully uploaded ${files.length} document(s). Documents are ready for template creation.`,
-        data: response.data
-      });
+  
+      // Update document status to mark as ready for analysis
+      if (response.data && response.data.documents && response.data.documents.length > 0) {
+        const documentIds = response.data.documents.map(doc => doc.id);
+        
+        try {
+          // This marks the documents as analysis_complete so they appear in template creation
+          await api.post('/documents/mark-ready', { documentIds });
+          
+          setUploadStatus({
+            success: true,
+            message: `Successfully uploaded ${files.length} document(s). Documents are ready for template creation.`,
+            data: response.data
+          });
+        } catch (analysisError) {
+          console.error('Error marking documents ready:', analysisError);
+          setUploadStatus({
+            success: true,
+            message: `Documents uploaded, but couldn't prepare them for template creation. Please try again later.`,
+            data: response.data
+          });
+        }
+      } else {
+        setUploadStatus({
+          success: true,
+          message: `Successfully uploaded ${files.length} document(s).`,
+          data: response.data
+        });
+      }
       
       // Reset form after successful upload
       setFiles([]);

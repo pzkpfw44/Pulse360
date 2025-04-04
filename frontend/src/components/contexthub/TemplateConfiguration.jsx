@@ -36,11 +36,14 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       setLoading(true);
       const response = await api.get('/documents');
       
-      // Filter documents that are analysis_complete and not yet used in a template
+      // Show ALL uploaded documents that don't have an associated template yet
+      // This includes documents in 'uploaded', 'analysis_in_progress', and 'analysis_complete' states
       const availableDocs = (response.data.documents || []).filter(doc => 
-        doc.status === 'analysis_complete' && !doc.associatedTemplateId
+        !doc.associatedTemplateId && 
+        ['uploaded', 'uploaded_to_ai', 'analysis_in_progress', 'analysis_complete'].includes(doc.status)
       );
       
+      console.log('Available documents for template:', availableDocs.length);
       setDocuments(availableDocs);
       setLoading(false);
     } catch (err) {
@@ -152,6 +155,11 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       setLoading(true);
       setError(null);
       
+      // First, show a generating message
+      const generateStatus = document.createElement('div');
+      generateStatus.innerHTML = '<div class="fixed top-0 left-0 right-0 bg-blue-600 text-white p-2 text-center z-50">Generating template... This may take a moment.</div>';
+      document.body.appendChild(generateStatus);
+      
       const response = await api.post('/templates/generate-configured', {
         documentIds: selectedDocumentIds,
         name: formData.name,
@@ -162,12 +170,25 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
         perspectiveSettings: formData.perspectiveSettings
       });
       
+      // Remove the status message
+      document.body.removeChild(generateStatus);
+      
       // Reset the form
       setShowForm(false);
       setSelectedDocumentIds([]);
       
       // Navigate to the template review page
       if (response.data && response.data.template) {
+        // Show success message
+        const successStatus = document.createElement('div');
+        successStatus.innerHTML = '<div class="fixed top-0 left-0 right-0 bg-green-600 text-white p-2 text-center z-50">Template created successfully!</div>';
+        document.body.appendChild(successStatus);
+        
+        // Remove success message after 3 seconds
+        setTimeout(() => {
+          document.body.removeChild(successStatus);
+        }, 3000);
+        
         navigate(`/contexthub/templates/${response.data.template.id}`);
       }
       
@@ -178,7 +199,18 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       
     } catch (err) {
       console.error('Error generating template:', err);
-      setError(err.response?.data?.message || 'Failed to generate template');
+      let errorMsg = 'Failed to generate template';
+      
+      if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      
+      setError(errorMsg);
+      
+      // Show detailed error in console for debugging
+      console.log('Error details:', JSON.stringify(err.response?.data || err, null, 2));
     } finally {
       setLoading(false);
     }

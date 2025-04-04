@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import TemplateConfiguration from './TemplateConfiguration';
+import AIGeneratedBadge from "../../components/ui/AIGeneratedBadge";
 
 const TemplateList = () => {
   const [templates, setTemplates] = useState([]);
@@ -190,6 +191,10 @@ const TemplateList = () => {
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
                     {template.questions?.length || 0} Questions
                   </span>
+                  <AIGeneratedBadge 
+                    aiGenerated={template.aiGenerated} 
+                    usedFallback={template.usedFallback} 
+                  />
                 </div>
 
                 <p className="text-sm text-gray-500 mb-3 line-clamp-2">
