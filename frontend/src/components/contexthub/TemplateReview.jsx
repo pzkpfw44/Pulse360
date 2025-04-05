@@ -14,7 +14,7 @@ import {
   FileText,
   Scale,
   Users,
-  HelpCircle
+  HelpCircle,
   Zap,
   Brain,
   Edit 

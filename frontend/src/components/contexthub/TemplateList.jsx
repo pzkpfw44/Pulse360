@@ -8,7 +8,7 @@ import {
   CheckCircle,
   AlertTriangle,
   Clock,
-  Plus
+  Plus,
   Zap,
   Brain,
   Settings,
@@ -186,7 +186,6 @@ const TemplateList = () => {
                   {getStatusBadge(template.status)}
                 </div>
 
-                <div className="mb-3 flex flex-wrap gap-2">
                 <div className="mb-3 flex flex-wrap gap-2">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                     {formatDocumentType(template.documentType)}
