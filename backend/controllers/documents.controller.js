@@ -841,10 +841,14 @@ function createAnalysisPrompt(documentType, templateInfo = {}) {
   // Extract template information if available
   const { name, description, purpose, department, perspectiveSettings } = templateInfo || {};
   
-  // Base prompt with clear instructions and EXAMPLES
+  // Enhanced base prompt with stronger emphasis on template metadata
   const basePrompt = `Please analyze the attached document(s) and generate a comprehensive set of questions for a 360-degree feedback assessment.
 
-I NEED YOU TO GENERATE SPECIFIC QUESTIONS FOR A 360-DEGREE FEEDBACK ASSESSMENT. DO NOT SUMMARIZE THE DOCUMENT OR PROVIDE GENERAL INFORMATION ABOUT LEADERSHIP. I NEED ACTUAL QUESTIONS.
+I NEED YOU TO GENERATE SPECIFIC QUESTIONS FOR A 360-DEGREE FEEDBACK ASSESSMENT${purpose ? ` FOR ${purpose.toUpperCase()}` : ''}${department ? ` IN THE ${department.toUpperCase()} DEPARTMENT` : ''}.
+
+${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''}
+
+DO NOT SUMMARIZE THE DOCUMENT OR PROVIDE GENERAL INFORMATION ABOUT LEADERSHIP. I NEED ACTUAL QUESTIONS.
 
 FORMAT YOUR RESPONSE EXACTLY AS IN THE EXAMPLES BELOW:
 
@@ -905,86 +909,101 @@ PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
 - Self Assessment (how the person evaluates themselves)
 - External Assessment (how the person is evaluated by external stakeholders, if applicable)`;
 
-  // Contextual information from the template settings
+  // Contextual information from the template settings - Enhanced with more specific wording
   let contextPrompt = '';
   if (purpose || department || name) {
-    contextPrompt = `\n\nADDITIONAL CONTEXT:`;
-    if (name) contextPrompt += `\n- Template Name: ${name}`;
-    if (department) contextPrompt += `\n- Department/Function: ${department}`;
-    if (purpose) contextPrompt += `\n- Purpose: ${purpose}`;
+    contextPrompt = `\n\nIMPORTANT CONTEXT TO INCORPORATE INTO QUESTIONS:`;
+    if (name) contextPrompt += `\n- Assessment Name: ${name}`;
+    if (department) contextPrompt += `\n- Department/Function: ${department} (Make questions specific to this department)`;
+    if (purpose) contextPrompt += `\n- Purpose: ${purpose} (Tailor questions to assess this role/purpose)`;
+    if (description) contextPrompt += `\n- Focus Areas: ${description} (Questions should assess these specific areas)`;
   }
 
-  // Perspective-specific instructions
+  // Perspective-specific instructions - more detailed about question counts
   let perspectivePrompt = '';
   if (perspectiveSettings) {
-    perspectivePrompt = '\n\nQUESTION COUNT REQUIREMENTS:';
+    perspectivePrompt = '\n\nGENERATE EXACTLY THIS MANY QUESTIONS FOR EACH PERSPECTIVE:';
     Object.entries(perspectiveSettings).forEach(([perspective, settings]) => {
       if (settings.enabled) {
         const count = settings.questionCount || 10;
-        perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: ${count} questions`;
+        perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: ${count} questions (${Math.ceil(count * 0.7)} rating questions and ${Math.floor(count * 0.3)} open-ended questions)`;
+      } else {
+        perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: SKIP (not required)`;
       }
     });
   }
 
-  // Document type specific instructions
+  // Document type specific instructions - enhanced with more guidance
   let typeSpecificPrompt = '';
   switch (documentType) {
     case 'leadership_model':
-      typeSpecificPrompt = `\n\nFOCUS AREAS:
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR ${department || 'LEADERSHIP'} MODEL QUESTIONS:
 - Leadership qualities and behaviors described in the model
-- Decision-making and strategic thinking
-- Empowerment and delegation abilities
-- Communication and influence skills
-- Team development and coaching abilities`;
+- Vision-setting and strategic thinking for ${department || 'the organization'}
+- Team development and empowerment${purpose ? ` for ${purpose}` : ''}
+- Communication and influence skills needed for ${department || 'leadership roles'}
+- Decision-making processes and effectiveness
+- Change management and adaptability`;
       break;
     
     case 'job_description':
-      typeSpecificPrompt = `\n\nFOCUS AREAS:
-- Key responsibilities and job functions
-- Required skills and competencies
-- Performance expectations
-- Collaboration requirements
-- Technical expertise relevant to the role`;
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR ${purpose || 'JOB DESCRIPTION'} QUESTIONS:
+- Key responsibilities and job functions specific to ${department || 'this role'}
+- Required skills and competencies for success${purpose ? ` as ${purpose}` : ''}
+- Performance expectations and deliverables
+- Collaboration requirements with other roles/teams
+- Technical expertise relevant to ${department || 'the role'}
+- Problem-solving and decision-making within role scope`;
       break;
     
+    // Add similar enhancements for other document types
     case 'competency_framework':
-      typeSpecificPrompt = `\n\nFOCUS AREAS:
-- Core competencies from the framework
-- Observable behaviors for each competency
-- Skills application in different contexts
-- Development opportunities
-- Competency measurement criteria`;
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR COMPETENCY FRAMEWORK QUESTIONS:
+- Core competencies from the framework specific to ${department || 'this organization'}
+- Observable behaviors for each competency${purpose ? ` relevant to ${purpose}` : ''}
+- Skills application in different contexts and situations
+- Development opportunities for each competency area
+- Competency measurement criteria and success indicators
+- Gaps between current and desired competency levels`;
       break;
     
     case 'company_values':
-      typeSpecificPrompt = `\n\nFOCUS AREAS:
-- Alignment with company values
-- Demonstration of values in daily work
-- Value-based decision making
-- Promotion of values within teams
-- Ethical considerations related to values`;
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR COMPANY VALUES QUESTIONS:
+- Alignment with company values in daily work
+- Demonstration of values in interactions with ${department ? `the ${department} team` : 'teams'}
+- Value-based decision making${purpose ? ` for ${purpose}` : ''}
+- Promotion of values within teams and across the organization
+- Ethical considerations related to values
+- Living the values during challenging situations`;
       break;
     
     case 'performance_criteria':
-      typeSpecificPrompt = `\n\nFOCUS AREAS:
-- Achievement against key performance indicators
-- Quality and consistency of work
-- Efficiency and productivity
-- Goal attainment
-- Performance improvement areas`;
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR PERFORMANCE CRITERIA QUESTIONS:
+- Achievement against key performance indicators for ${department || 'this role'}
+- Quality and consistency of work output${purpose ? ` as ${purpose}` : ''}
+- Efficiency and productivity metrics
+- Goal attainment and objective completion
+- Performance improvement areas and growth potential
+- Balance between short-term results and long-term development`;
       break;
     
     default:
-      typeSpecificPrompt = `\n\nFOCUS AREAS:
-- Key professional competencies
-- Interpersonal and communication skills
-- Task and project management
-- Teamwork and collaboration
-- Professional development areas`;
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR QUESTIONS:
+- Key professional competencies for ${department || 'this role'}
+- Interpersonal and communication skills${purpose ? ` needed for ${purpose}` : ''}
+- Task and project management effectiveness
+- Teamwork and collaboration capabilities
+- Professional development areas
+- Overall performance and contribution`;
   }
 
-  // Final reminder to focus on questions
-  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that reflect the content of the document.
+  // Final reminder to focus on questions - more specific about quality
+  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that:
+1. Directly relate to the content of the document
+2. Are tailored to ${department || 'the organization'}'s context
+3. Are specific to ${purpose || 'the role'} being assessed
+4. Follow best practices for 360-degree feedback (behavioral, actionable, specific)
+5. Include both strengths assessment and development opportunities
 
 REMINDER ON FORMAT: For each perspective (MANAGER ASSESSMENT, PEER ASSESSMENT, etc.), provide questions in this exact format:
 Question: [Your question text here]
@@ -1716,7 +1735,7 @@ async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo 
 // Analyze documents with Flux AI (updated version)
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
   try {
-    console.log('Analysis response:', response.data);
+    // REMOVED ERROR-CAUSING LINE: console.log('Analysis response:', response.data);
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);
     
@@ -1964,7 +1983,7 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       }
       
       console.log('Two-step approach failed or did not generate enough questions, using fallback questions');
-      const fallbackQuestions = generateFallbackQuestions(documentType, templateInfo.perspectiveSettings);
+      const fallbackQuestions = generateFallbackQuestions(documentType, perspectiveSettings, templateInfo);
       
       // Add any AI-generated questions we did get to the mix
       const combinedQuestions = [...questions, ...fallbackQuestions.slice(0, Math.max(15 - questions.length, 0))];
@@ -2249,7 +2268,12 @@ exports.deleteDocument = async (req, res) => {
 };
 
 // Function to generate fallback questions
-function generateFallbackQuestions(documentType = '', perspectiveSettings = null) {
+function generateFallbackQuestions(documentType = '', perspectiveSettings = null, templateInfo = {}) {
+  // Extract template information
+  const { name, description, purpose, department } = templateInfo || {};
+  const domainContext = department ? ` in ${department}` : '';
+  const purposeContext = purpose ? ` for ${purpose}` : '';
+  
   // Get active perspectives
   const activePerspectives = [];
   
@@ -2289,7 +2313,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
       for (let i = 0; i < commonCount; i++) {
         if (i === 0) {
           fallbackQuestions.push({
-            text: "How effectively do you communicate with team members?",
+            text: `How effectively do you communicate with team members${domainContext}?`,
             type: "rating",
             category: "Communication",
             perspective: perspective,
@@ -2298,7 +2322,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 1) {
           fallbackQuestions.push({
-            text: "What do you consider to be your key strengths? Please provide specific examples.",
+            text: `What do you consider to be your key strengths${purposeContext}? Please provide specific examples.`,
             type: "open_ended",
             category: "Strengths",
             perspective: perspective,
@@ -2307,7 +2331,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 2) {
           fallbackQuestions.push({
-            text: "In what areas could you improve? Please be specific.",
+            text: `In what areas could you improve${purposeContext}? Please be specific.`,
             type: "open_ended",
             category: "Development Areas",
             perspective: perspective,
@@ -2322,10 +2346,10 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
         if (i === 0) {
           fallbackQuestions.push({
             text: perspective === 'manager' 
-              ? "How effectively does this person communicate with the team?"
+              ? `How effectively does this person communicate with the team${domainContext}?`
               : perspective === 'direct_report'
-                ? "How effectively does this person communicate with you and others?"
-                : "How effectively does this person communicate with team members?",
+                ? `How effectively does this person communicate with you and others${domainContext}?`
+                : `How effectively does this person communicate with team members${domainContext}?`,
             type: "rating",
             category: "Communication",
             perspective: perspective,
@@ -2334,7 +2358,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 1) {
           fallbackQuestions.push({
-            text: "What are this person's key strengths? Please provide specific examples.",
+            text: `What are this person's key strengths${purposeContext}? Please provide specific examples.`,
             type: "open_ended",
             category: "Strengths",
             perspective: perspective,
@@ -2343,7 +2367,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 2) {
           fallbackQuestions.push({
-            text: "In what areas could this person improve? Please be specific and constructive.",
+            text: `In what areas could this person improve${purposeContext}? Please be specific and constructive.`,
             type: "open_ended",
             category: "Development Areas",
             perspective: perspective,
@@ -2360,22 +2384,22 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
     // Add document-type specific questions
     switch (documentType) {
       case 'leadership_model':
-        addLeadershipModelFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount);
+        addLeadershipModelFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount, templateInfo);
         break;
       case 'job_description':
-        addJobDescriptionFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount);
+        addJobDescriptionFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount, templateInfo);
         break;
       case 'competency_framework':
-        addCompetencyFrameworkFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount);
+        addCompetencyFrameworkFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount, templateInfo);
         break;
       case 'company_values':
-        addCompanyValuesFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount);
+        addCompanyValuesFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount, templateInfo);
         break;
       case 'performance_criteria':
-        addPerformanceCriteriaFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount);
+        addPerformanceCriteriaFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount, templateInfo);
         break;
       default:
-        addGenericFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount);
+        addGenericFallbackQuestions(fallbackQuestions, perspective, questionCounter, typeSpecificCount, templateInfo);
         break;
     }
     
@@ -2388,7 +2412,11 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
 }
 
 // Modified helper functions that respect question count
-function addLeadershipModelFallbackQuestions(questions, perspective, startOrder, count) {
+function addLeadershipModelFallbackQuestions(questions, perspective, startOrder, count, templateInfo = {}) {
+  const { department, purpose } = templateInfo || {};
+  const contextStr = department ? ` in the ${department} department` : '';
+  const roleContext = purpose ? ` related to ${purpose}` : '';
+  
   let order = startOrder;
   let questionsAdded = 0;
   const candidates = [];
@@ -2396,32 +2424,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   if (perspective === 'manager') {
     candidates.push(
       {
-        text: "How effectively does this person demonstrate strategic thinking?",
+        text: `How effectively does this person demonstrate strategic thinking${contextStr}?`,
         type: "rating",
         category: "Strategic Thinking"
       },
       {
-        text: "How well does this person develop team members?",
+        text: `How well does this person develop team members${contextStr}?`,
         type: "rating",
         category: "Talent Development"
       },
       {
-        text: "How effectively does this person make decisions?",
+        text: `How effectively does this person make decisions${roleContext}?`,
         type: "rating",
         category: "Decision Making"
       },
       {
-        text: "How well does this person align team goals with organizational objectives?",
+        text: `How well does this person align team goals with organizational objectives${contextStr}?`,
         type: "rating",
         category: "Strategic Alignment"
       },
       {
-        text: "How effectively does this person handle complex challenges?",
+        text: `How effectively does this person handle complex challenges${contextStr}?`,
         type: "rating",
         category: "Problem Solving"
       },
       {
-        text: "How would you describe this person's leadership style and its impact?",
+        text: `How would you describe this person's leadership style and its impact${roleContext}?`,
         type: "open_ended",
         category: "Leadership Style"
       }
@@ -2429,32 +2457,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'peer') {
     candidates.push(
       {
-        text: "How well does this person collaborate across teams?",
+        text: `How well does this person collaborate across teams${contextStr}?`,
         type: "rating",
         category: "Collaboration"
       },
       {
-        text: "How would you rate this person's ability to influence without authority?",
+        text: `How would you rate this person's ability to influence without authority${contextStr}?`,
         type: "rating",
         category: "Influence"
       },
       {
-        text: "How effectively does this person handle conflicts?",
+        text: `How effectively does this person handle conflicts${roleContext}?`,
         type: "rating",
         category: "Conflict Resolution"
       },
       {
-        text: "How well does this person share knowledge and resources?",
+        text: `How well does this person share knowledge and resources${contextStr}?`,
         type: "rating",
         category: "Knowledge Sharing"
       },
       {
-        text: "How effectively does this person contribute to a positive team culture?",
+        text: `How effectively does this person contribute to a positive team culture${contextStr}?`,
         type: "rating",
         category: "Team Culture"
       },
       {
-        text: "How could this person be a more effective peer collaborator?",
+        text: `How could this person be a more effective peer collaborator${roleContext}?`,
         type: "open_ended",
         category: "Collaboration"
       }
@@ -2462,32 +2490,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'direct_report') {
     candidates.push(
       {
-        text: "How well does this person provide clear direction and guidance?",
+        text: `How well does this person provide clear direction and guidance${roleContext}?`,
         type: "rating",
         category: "Direction Setting"
       },
       {
-        text: "How effectively does this person delegate tasks and empower you?",
+        text: `How effectively does this person delegate tasks and empower you${contextStr}?`,
         type: "rating",
         category: "Delegation"
       },
       {
-        text: "How well does this person support your professional development?",
+        text: `How well does this person support your professional development${roleContext}?`,
         type: "rating",
         category: "Development Support"
       },
       {
-        text: "How effectively does this person provide constructive feedback?",
+        text: `How effectively does this person provide constructive feedback${contextStr}?`,
         type: "rating",
         category: "Feedback"
       },
       {
-        text: "How well does this person recognize your achievements?",
+        text: `How well does this person recognize your achievements${roleContext}?`,
         type: "rating",
         category: "Recognition"
       },
       {
-        text: "What could this person do to be a more effective leader for you?",
+        text: `What could this person do to be a more effective leader for you${contextStr}?`,
         type: "open_ended", 
         category: "Leadership Effectiveness"
       }
@@ -2495,32 +2523,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'self') {
     candidates.push(
       {
-        text: "How effectively do you communicate vision and strategy?",
+        text: `How effectively do you communicate vision and strategy${contextStr}?`,
         type: "rating",
         category: "Vision"
       },
       {
-        text: "How well do you develop and empower your team members?",
+        text: `How well do you develop and empower your team members${roleContext}?`,
         type: "rating",
         category: "Team Development"
       },
       {
-        text: "How would you rate your ability to make difficult decisions?",
+        text: `How would you rate your ability to make difficult decisions${contextStr}?`,
         type: "rating",
         category: "Decision Making"
       },
       {
-        text: "How effectively do you lead through times of change?",
+        text: `How effectively do you lead through times of change${roleContext}?`,
         type: "rating",
         category: "Change Leadership"
       },
       {
-        text: "How well do you balance strategic thinking with tactical execution?",
+        text: `How well do you balance strategic thinking with tactical execution${contextStr}?`,
         type: "rating",
         category: "Strategic Execution"
       },
       {
-        text: "What leadership skills would you like to develop further?",
+        text: `What leadership skills would you like to develop further${roleContext}?`,
         type: "open_ended",
         category: "Development Goals"
       }
@@ -2528,32 +2556,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'external') {
     candidates.push(
       {
-        text: "How effectively does this person represent the organization?",
+        text: `How effectively does this person represent the organization${contextStr}?`,
         type: "rating",
         category: "Representation"
       },
       {
-        text: "How well does this person build relationships with external stakeholders?",
+        text: `How well does this person build relationships with external stakeholders${roleContext}?`,
         type: "rating",
         category: "Relationship Building"
       },
       {
-        text: "How effectively does this person communicate the organization's vision?",
+        text: `How effectively does this person communicate the organization's vision${contextStr}?`,
         type: "rating",
         category: "External Communication"
       },
       {
-        text: "How would you rate this person's professionalism?",
+        text: `How would you rate this person's professionalism${contextStr}?`,
         type: "rating",
         category: "Professionalism"
       },
       {
-        text: "How well does this person understand your needs as an external stakeholder?",
+        text: `How well does this person understand your needs as an external stakeholder${roleContext}?`,
         type: "rating",
         category: "Stakeholder Understanding"
       },
       {
-        text: "What could this person do to improve their effectiveness in working with external stakeholders?",
+        text: `What could this person do to improve their effectiveness in working with external stakeholders${contextStr}?`,
         type: "open_ended",
         category: "External Effectiveness"
       }
@@ -3742,7 +3770,7 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
     });
     
     // Generate fallback questions - enhanced to use template info
-    const fallbackQuestions = generateFallbackQuestions(documentType, templateInfo.perspectiveSettings);
+    const fallbackQuestions = generateFallbackQuestions(documentType, templateInfo.perspectiveSettings, templateInfo);
     
     // Create questions for the template
     await Promise.all(
