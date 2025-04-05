@@ -213,7 +213,7 @@ const TemplateList = () => {
                       AI Assisted
                     </span>
                   )}
-                  {template.generatedBy === 'standard' && (
+                  {template.generatedBy === 'Pre-loaded Template' && (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
                       <Settings className="h-3 w-3 mr-1" />
                       Standard
