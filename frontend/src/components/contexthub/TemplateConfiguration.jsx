@@ -36,10 +36,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       setLoading(true);
       const response = await api.get('/documents');
       
-      // Show ALL uploaded documents that don't have an associated template yet
-      // This includes documents in 'uploaded', 'analysis_in_progress', and 'analysis_complete' states
       const availableDocs = (response.data.documents || []).filter(doc => 
-        !doc.associatedTemplateId && 
         ['uploaded', 'uploaded_to_ai', 'analysis_in_progress', 'analysis_complete'].includes(doc.status)
       );
       

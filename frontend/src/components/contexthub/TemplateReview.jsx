@@ -15,6 +15,9 @@ import {
   Scale,
   Users,
   HelpCircle
+  Zap,
+  Brain,
+  Edit 
 } from 'lucide-react';
 
 // TabPanel component for perspective tabs
@@ -759,11 +762,51 @@ const TemplateReview = () => {
             <p className="text-gray-500">
               {template.documentType.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Template
             </p>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2
-              ${template.status === 'pending_review' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}
-            >
-              {template.status === 'pending_review' ? 'Pending Review' : 'Approved'}
-            </span>
+            <div className="flex mt-2 gap-2">
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                ${template.status === 'pending_review' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}
+              >
+                {template.status === 'pending_review' ? 'Pending Review' : 'Approved'}
+              </span>
+              
+              {/* Generation Method Badge */}
+              {template.generatedBy === 'flux_ai_direct' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                  <Brain className="h-3 w-3 mr-1" />
+                  AI Generated
+                </span>
+              )}
+              {template.generatedBy === 'flux_ai_enhanced' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                  <Zap className="h-3 w-3 mr-1" />
+                  AI Enhanced
+                </span>
+              )}
+              {template.generatedBy === 'flux_ai_fallback' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                  <Zap className="h-3 w-3 mr-1" />
+                  AI Assisted
+                </span>
+              )}
+              {template.generatedBy === 'standard' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                  <Settings className="h-3 w-3 mr-1" />
+                  Standard
+                </span>
+              )}
+              {template.generatedBy === 'manual' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                  <Edit className="h-3 w-3 mr-1" />
+                  Custom
+                </span>
+              )}
+              {template.generatedBy === 'flux_ai' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                  <Zap className="h-3 w-3 mr-1" />
+                  AI Generated
+                </span>
+              )}
+            </div>
           </div>
           
           <div className="mt-4 sm:mt-0">

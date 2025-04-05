@@ -982,7 +982,14 @@ PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
   }
 
   // Final reminder to focus on questions
-  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that reflect the content of the document.`;
+  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that reflect the content of the document.
+
+REMINDER ON FORMAT: For each perspective (MANAGER ASSESSMENT, PEER ASSESSMENT, etc.), provide questions in this exact format:
+Question: [Your question text here]
+Type: [rating or open_ended]
+Category: [The category/theme of the question]
+
+Do not include any other text, explanations, or formats. Only use the example format.`;
 
   // Combine all prompt components
   return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
@@ -1049,6 +1056,565 @@ function generateGenericQuestions(perspective, count, startOrder) {
   }
   
   return questions;
+}
+
+// Function to parse questions from AI response
+function parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings = {}) {
+  console.log('Parsing questions from AI response');
+  const questions = [];
+  let questionOrder = 1;
+  
+  try {
+    // First, check if response contains the message that it can't see documents
+    if (aiResponseText.includes("don't see any attached document") || 
+        aiResponseText.includes("I don't see the document") ||
+        aiResponseText.includes("I don't have access") ||
+        aiResponseText.includes("I don't see any text")) {
+      console.log('AI indicates it cannot see the document.');
+      return [];
+    }
+    
+    // Check if we have a structured response with assessment sections
+    const hasPerspectives = 
+      aiResponseText.includes('MANAGER ASSESSMENT') || 
+      aiResponseText.includes('PEER ASSESSMENT') || 
+      aiResponseText.includes('DIRECT REPORT ASSESSMENT') || 
+      aiResponseText.includes('SELF ASSESSMENT');
+      
+    if (!hasPerspectives) {
+      // If AI returned a summary instead of structured questions,
+      // try to extract insights and create questions
+      console.log('AI response does not contain structured questions, attempting to extract insights...');
+      return extractQuestionsFromSummary(aiResponseText, perspectiveSettings);
+    }
+
+    // Split the text into perspective sections
+    const sections = [
+      {
+        perspective: 'manager',
+        text: extractSection(aiResponseText, 'MANAGER ASSESSMENT', ['PEER ASSESSMENT', 'DIRECT REPORT ASSESSMENT', 'SELF ASSESSMENT', 'EXTERNAL ASSESSMENT'])
+      },
+      {
+        perspective: 'peer',
+        text: extractSection(aiResponseText, 'PEER ASSESSMENT', ['MANAGER ASSESSMENT', 'DIRECT REPORT ASSESSMENT', 'SELF ASSESSMENT', 'EXTERNAL ASSESSMENT'])
+      },
+      {
+        perspective: 'direct_report',
+        text: extractSection(aiResponseText, 'DIRECT REPORT ASSESSMENT', ['MANAGER ASSESSMENT', 'PEER ASSESSMENT', 'SELF ASSESSMENT', 'EXTERNAL ASSESSMENT'])
+      },
+      {
+        perspective: 'self',
+        text: extractSection(aiResponseText, 'SELF ASSESSMENT', ['MANAGER ASSESSMENT', 'PEER ASSESSMENT', 'DIRECT REPORT ASSESSMENT', 'EXTERNAL ASSESSMENT'])
+      },
+      {
+        perspective: 'external',
+        text: extractSection(aiResponseText, 'EXTERNAL ASSESSMENT', ['MANAGER ASSESSMENT', 'PEER ASSESSMENT', 'DIRECT REPORT ASSESSMENT', 'SELF ASSESSMENT'])
+      }
+    ];
+
+    // Process each section to extract questions
+    for (const section of sections) {
+      // Skip sections without content or for disabled perspectives
+      if (!section.text || (perspectiveSettings[section.perspective] && !perspectiveSettings[section.perspective].enabled)) {
+        continue;
+      }
+
+      // Extract questions from the section text
+      const extractedQuestions = extractQuestionsFromSection(section.text, section.perspective);
+      
+      // Add the questions with proper order
+      extractedQuestions.forEach(question => {
+        questions.push({
+          ...question,
+          order: questionOrder++,
+          perspective: section.perspective
+        });
+      });
+    }
+
+    console.log(`Successfully parsed ${questions.length} questions from AI response`);
+    return questions;
+  } catch (error) {
+    console.error('Error parsing questions from AI response:', error);
+    return [];
+  }
+}
+
+// Function to remove markdown formatting from text
+function removeMarkdownFormatting(text) {
+  if (!text) return '';
+  
+  // Remove bold/italic markers
+  return text.replace(/\*\*/g, '').replace(/\*/g, '')
+            // Remove underscores used for emphasis
+            .replace(/\_\_/g, '').replace(/\_/g, '')
+            // Remove hash symbols for headers
+            .replace(/^\s*#{1,6}\s/gm, '')
+            // Remove backticks for code
+            .replace(/`/g, '');
+}
+
+// Helper function to extract a section from the AI response
+function extractSection(text, sectionName, otherSections) {
+  if (!text.includes(sectionName)) return '';
+  
+  const startIndex = text.indexOf(sectionName);
+  let endIndex = text.length;
+  
+  // Find the start of the next section
+  for (const otherSection of otherSections) {
+    const otherIndex = text.indexOf(otherSection, startIndex + sectionName.length);
+    if (otherIndex > startIndex && otherIndex < endIndex) {
+      endIndex = otherIndex;
+    }
+  }
+  
+  return text.substring(startIndex, endIndex).trim();
+}
+
+// Helper function to extract questions from a section
+function extractQuestionsFromSection(sectionText, perspective) {
+  const questions = [];
+  
+  // Extract blocks that start with "Question:" and include Type: and Category:
+  const questionPattern = /Question:\s*(.*?)(?:\r?\n|\r)Type:\s*(.*?)(?:\r?\n|\r)Category:\s*(.*?)(?=(?:\r?\n|\r)Question:|$)/gs;
+  
+  let match;
+  while ((match = questionPattern.exec(sectionText)) !== null) {
+    const questionText = removeMarkdownFormatting(match[1].trim());
+    const questionType = match[2].trim().toLowerCase();
+    const category = removeMarkdownFormatting(match[3].trim());
+    
+    if (questionText && (questionType === 'rating' || questionType === 'open_ended' || questionType === 'multiple_choice')) {
+      questions.push({
+        text: questionText,
+        type: questionType,
+        category: category,
+        required: true,
+        perspective: perspective
+      });
+    }
+  }
+  
+  // If no structured questions found, try a less strict pattern
+  if (questions.length === 0) {
+    // Look for lines that look like questions
+    const lines = sectionText.split('\n');
+    let currentQuestion = null;
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      if (trimmedLine.startsWith('Question:')) {
+        // Start a new question
+        currentQuestion = {
+          text: removeMarkdownFormatting(trimmedLine.substring('Question:'.length).trim()),
+          type: 'rating', // Default type
+          category: 'General', // Default category
+          required: true,
+          perspective: perspective
+        };
+        questions.push(currentQuestion);
+      } else if (currentQuestion && trimmedLine.startsWith('Type:')) {
+        currentQuestion.type = trimmedLine.substring('Type:'.length).trim().toLowerCase();
+      } else if (currentQuestion && trimmedLine.startsWith('Category:')) {
+        currentQuestion.category = removeMarkdownFormatting(trimmedLine.substring('Category:'.length).trim());
+      }
+    }
+  }
+  
+  return questions;
+}
+
+// Extract questions from a summary when AI doesn't return structured questions
+function extractQuestionsFromSummary(summaryText, perspectiveSettings = {}) {
+  console.log('Extracting questions from summary text');
+  const questions = [];
+  let questionOrder = 1;
+  
+  // Extract key points/themes from the summary
+  const themes = extractThemesFromSummary(summaryText);
+  
+  // Generate questions for each enabled perspective based on themes
+  Object.entries(perspectiveSettings || {}).forEach(([perspective, settings]) => {
+    if (!settings.enabled) return;
+    
+    // How many questions to generate for this perspective
+    const questionCount = settings.questionCount || 10;
+    
+    // Generate questions for each theme
+    themes.forEach((theme, index) => {
+      // Skip if we've generated enough questions for this perspective
+      if (questions.filter(q => q.perspective === perspective).length >= questionCount) return;
+      
+      // Create a rating question based on the theme
+      questions.push({
+        text: generateQuestionForTheme(theme, perspective, 'rating'),
+        type: 'rating',
+        category: theme.category,
+        required: true,
+        perspective: perspective,
+        order: questionOrder++
+      });
+      
+      // Add an open-ended question for some themes (but not all to keep balance)
+      if (index % 3 === 0 && questions.filter(q => q.perspective === perspective).length < questionCount) {
+        questions.push({
+          text: generateQuestionForTheme(theme, perspective, 'open_ended'),
+          type: 'open_ended',
+          category: theme.category,
+          required: true,
+          perspective: perspective,
+          order: questionOrder++
+        });
+      }
+    });
+    
+    // If we don't have enough questions yet, add generic ones to reach the count
+    const remainingCount = questionCount - questions.filter(q => q.perspective === perspective).length;
+    if (remainingCount > 0) {
+      const genericQuestions = generateGenericQuestionsForPerspective(perspective, remainingCount, questionOrder);
+      questions.push(...genericQuestions);
+      questionOrder += genericQuestions.length;
+    }
+  });
+  
+  console.log(`Generated ${questions.length} questions from summary text`);
+  return questions;
+}
+
+// Extract themes from a summary
+function extractThemesFromSummary(summaryText) {
+  const themes = [];
+  
+  // Look for numbered or bulleted lists
+  const listPattern = /(?:^|\n)(?:\d+\.\s*|\*\s*|\-\s*)([^:\n.]+)(?::|\.)\s*([^\n]*)/g;
+  let match;
+  
+  while ((match = listPattern.exec(summaryText)) !== null) {
+    const themeTitle = removeMarkdownFormatting(match[1].trim());
+    const themeDesc = removeMarkdownFormatting(match[2].trim());
+    
+    themes.push({
+      title: themeTitle,
+      description: themeDesc,
+      category: themeTitle
+    });
+  }
+  
+  // If no list found, try to extract sentences with keywords
+  if (themes.length === 0) {
+    const keywords = [
+      'leadership', 'communication', 'decision', 'strategy', 'vision', 
+      'teamwork', 'collaboration', 'empathy', 'innovation', 'integrity',
+      'accountability', 'performance', 'development', 'coaching', 'feedback'
+    ];
+    
+    const sentences = summaryText.match(/[^.!?]+[.!?]+/g) || [];
+    
+    sentences.forEach(sentence => {
+      const cleanSentence = removeMarkdownFormatting(sentence);
+      for (const keyword of keywords) {
+        if (cleanSentence.toLowerCase().includes(keyword)) {
+          const theme = {
+            title: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+            description: cleanSentence.trim(),
+            category: keyword.charAt(0).toUpperCase() + keyword.slice(1)
+          };
+          
+          // Check if we already have this theme
+          if (!themes.some(t => t.title.toLowerCase() === theme.title.toLowerCase())) {
+            themes.push(theme);
+          }
+          
+          break;
+        }
+      }
+    });
+  }
+  
+  // If still no themes, create some default ones
+  if (themes.length === 0) {
+    themes.push(
+      { title: 'Communication', description: 'Effective communication skills', category: 'Communication' },
+      { title: 'Leadership', description: 'Leadership abilities', category: 'Leadership' },
+      { title: 'Decision Making', description: 'Decision making approach', category: 'Decision Making' },
+      { title: 'Teamwork', description: 'Collaboration and teamwork', category: 'Teamwork' },
+      { title: 'Strategic Thinking', description: 'Strategic planning and vision', category: 'Strategic Thinking' }
+    );
+  }
+  
+  return themes;
+}
+
+// Generate a question based on a theme and perspective
+function generateQuestionForTheme(theme, perspective, type) {
+  const themeTitle = removeMarkdownFormatting(theme.title);
+  
+  // Rating question templates by perspective
+  const ratingTemplates = {
+    manager: [
+      `How effectively does this person demonstrate ${themeTitle.toLowerCase()}?`,
+      `How would you rate this person's ${themeTitle.toLowerCase()} skills?`,
+      `To what extent does this person excel in ${themeTitle.toLowerCase()}?`
+    ],
+    peer: [
+      `How would you rate this person's ability to ${themeTitle.toLowerCase()} when working with colleagues?`,
+      `How effectively does this person demonstrate ${themeTitle.toLowerCase()} in team settings?`,
+      `How well does this person apply ${themeTitle.toLowerCase()} principles in collaborative work?`
+    ],
+    direct_report: [
+      `How effectively does this person demonstrate ${themeTitle.toLowerCase()} when working with you?`,
+      `How would you rate this person's ${themeTitle.toLowerCase()} approach when leading your team?`,
+      `How well does this person utilize ${themeTitle.toLowerCase()} skills in their interactions with you?`
+    ],
+    self: [
+      `How effectively do you demonstrate ${themeTitle.toLowerCase()}?`,
+      `How would you rate your own ${themeTitle.toLowerCase()} abilities?`,
+      `How well do you apply ${themeTitle.toLowerCase()} principles in your role?`
+    ],
+    external: [
+      `How would you rate this person's ${themeTitle.toLowerCase()} when interacting with external stakeholders?`,
+      `How effectively does this person demonstrate ${themeTitle.toLowerCase()} in professional contexts?`,
+      `How well does this person apply ${themeTitle.toLowerCase()} principles in external relations?`
+    ]
+  };
+  
+  // Open-ended question templates by perspective
+  const openEndedTemplates = {
+    manager: [
+      `What specific examples demonstrate this person's ${themeTitle.toLowerCase()} abilities?`,
+      `How could this person improve their approach to ${themeTitle.toLowerCase()}?`,
+      `What impact has this person's ${themeTitle.toLowerCase()} had on the team or organization?`
+    ],
+    peer: [
+      `What specific examples have you observed of this person's ${themeTitle.toLowerCase()} when working with you?`,
+      `How could this person enhance their ${themeTitle.toLowerCase()} when collaborating with colleagues?`,
+      `What makes this person's approach to ${themeTitle.toLowerCase()} effective or ineffective?`
+    ],
+    direct_report: [
+      `How has this person's ${themeTitle.toLowerCase()} impacted your work or development?`,
+      `What specific examples illustrate this person's ${themeTitle.toLowerCase()} when leading your team?`,
+      `How could this person improve their ${themeTitle.toLowerCase()} approach to better support you?`
+    ],
+    self: [
+      `What specific examples demonstrate your ${themeTitle.toLowerCase()} abilities?`,
+      `How do you plan to further develop your ${themeTitle.toLowerCase()} skills?`,
+      `What challenges have you faced related to ${themeTitle.toLowerCase()}, and how have you addressed them?`
+    ],
+    external: [
+      `How has this person's ${themeTitle.toLowerCase()} impacted your professional relationship?`,
+      `What specific examples have you observed of this person's ${themeTitle.toLowerCase()}?`,
+      `How could this person enhance their ${themeTitle.toLowerCase()} when working with external partners?`
+    ]
+  };
+  
+  // Select templates based on question type
+  const templates = type === 'rating' ? ratingTemplates : openEndedTemplates;
+  
+  // Get random template for this perspective and type
+  const perspectiveTemplates = templates[perspective] || templates.peer;
+  const selectedTemplate = perspectiveTemplates[Math.floor(Math.random() * perspectiveTemplates.length)];
+  
+  return selectedTemplate;
+}
+
+// Generate generic questions for a perspective if needed
+function generateGenericQuestionsForPerspective(perspective, count, startOrder) {
+  const questions = [];
+  
+  // Generic questions by perspective
+  const genericQuestions = {
+    manager: [
+      { text: "How effectively does this person communicate with the team?", type: "rating", category: "Communication" },
+      { text: "How well does this person develop team members?", type: "rating", category: "Team Development" },
+      { text: "How effectively does this person solve problems?", type: "rating", category: "Problem Solving" },
+      { text: "How would you rate this person's ability to deliver results?", type: "rating", category: "Performance" },
+      { text: "What are this person's greatest strengths as a leader?", type: "open_ended", category: "Leadership Strengths" }
+    ],
+    peer: [
+      { text: "How effectively does this person collaborate with colleagues?", type: "rating", category: "Collaboration" },
+      { text: "How well does this person communicate ideas and information?", type: "rating", category: "Communication" },
+      { text: "How would you rate this person's reliability?", type: "rating", category: "Reliability" },
+      { text: "How effectively does this person contribute to team objectives?", type: "rating", category: "Team Contribution" },
+      { text: "What could this person do to be a more effective collaborator?", type: "open_ended", category: "Collaboration" }
+    ],
+    direct_report: [
+      { text: "How effectively does this person provide direction and guidance?", type: "rating", category: "Leadership" },
+      { text: "How well does this person listen to your ideas and concerns?", type: "rating", category: "Listening" },
+      { text: "How would you rate this person's ability to provide helpful feedback?", type: "rating", category: "Feedback" },
+      { text: "How effectively does this person support your development?", type: "rating", category: "Development Support" },
+      { text: "What could this person do to better support your success?", type: "open_ended", category: "Leadership Improvement" }
+    ],
+    self: [
+      { text: "How effectively do you communicate with team members?", type: "rating", category: "Communication" },
+      { text: "How well do you prioritize and manage your workload?", type: "rating", category: "Time Management" },
+      { text: "How would you rate your ability to achieve objectives?", type: "rating", category: "Goal Achievement" },
+      { text: "How effectively do you develop team members?", type: "rating", category: "Team Development" },
+      { text: "What leadership skills would you like to develop further?", type: "open_ended", category: "Development Areas" }
+    ],
+    external: [
+      { text: "How effectively does this person communicate with external stakeholders?", type: "rating", category: "External Communication" },
+      { text: "How would you rate this person's professionalism?", type: "rating", category: "Professionalism" },
+      { text: "How well does this person understand and address your needs?", type: "rating", category: "Customer Focus" },
+      { text: "How effectively does this person build relationships?", type: "rating", category: "Relationship Building" },
+      { text: "What could this person do to improve their effectiveness with external partners?", type: "open_ended", category: "External Effectiveness" }
+    ]
+  };
+  
+  // Get questions for this perspective
+  const perspectiveQuestions = genericQuestions[perspective] || genericQuestions.peer;
+  
+  // Add the requested number of questions
+  for (let i = 0; i < count; i++) {
+    // If we need more than available, cycle through the array
+    const questionTemplate = perspectiveQuestions[i % perspectiveQuestions.length];
+    
+    questions.push({
+      text: questionTemplate.text,
+      type: questionTemplate.type,
+      category: questionTemplate.category,
+      required: true,
+      perspective: perspective,
+      order: startOrder + i
+    });
+  }
+  
+  return questions;
+}
+
+// Function to balance questions according to perspective settings
+function balanceQuestionsByPerspective(questions, perspectiveSettings = {}) {
+  // If no perspective settings or no questions, return original questions
+  if (!perspectiveSettings || Object.keys(perspectiveSettings).length === 0 || questions.length === 0) {
+    return questions;
+  }
+  
+  console.log('Balancing questions by perspective settings');
+  
+  // Group questions by perspective
+  const groupedQuestions = {};
+  questions.forEach(question => {
+    const perspective = question.perspective || 'peer'; // Default to peer if missing
+    if (!groupedQuestions[perspective]) {
+      groupedQuestions[perspective] = [];
+    }
+    groupedQuestions[perspective].push(question);
+  });
+  
+  // Create balanced questions array
+  const balancedQuestions = [];
+  let questionOrder = 1;
+  
+  // For each perspective in the settings
+  Object.entries(perspectiveSettings).forEach(([perspective, settings]) => {
+    // Skip disabled perspectives
+    if (!settings.enabled) {
+      return;
+    }
+    
+    // Get the target count and available questions
+    const targetCount = settings.questionCount || 10;
+    const availableQuestions = groupedQuestions[perspective] || [];
+    
+    // If we have more questions than needed, select a subset
+    if (availableQuestions.length > targetCount) {
+      console.log(`Perspective ${perspective}: selecting ${targetCount} questions from ${availableQuestions.length} available`);
+      
+      // Ensure we have at least one open-ended question if possible
+      const ratingQuestions = availableQuestions.filter(q => q.type === 'rating');
+      const openEndedQuestions = availableQuestions.filter(q => q.type === 'open_ended');
+      
+      // First, add at least one open-ended question if available
+      let selectedQuestions = [];
+      if (openEndedQuestions.length > 0) {
+        selectedQuestions = openEndedQuestions.slice(0, Math.min(2, openEndedQuestions.length));
+      }
+      
+      // Then fill the rest with rating questions
+      const remainingCount = targetCount - selectedQuestions.length;
+      if (remainingCount > 0 && ratingQuestions.length > 0) {
+        selectedQuestions = [...selectedQuestions, ...ratingQuestions.slice(0, remainingCount)];
+      }
+      
+      // If we still don't have enough, add more open-ended questions
+      if (selectedQuestions.length < targetCount && openEndedQuestions.length > selectedQuestions.filter(q => q.type === 'open_ended').length) {
+        const additionalOpenEnded = openEndedQuestions.slice(
+          selectedQuestions.filter(q => q.type === 'open_ended').length,
+          targetCount - selectedQuestions.filter(q => q.type === 'rating').length
+        );
+        selectedQuestions = [...selectedQuestions, ...additionalOpenEnded];
+      }
+      
+      // If we're still short, just add questions in order until we reach target count
+      if (selectedQuestions.length < targetCount) {
+        const remainingQuestions = availableQuestions.filter(q => 
+          !selectedQuestions.some(sq => sq.text === q.text)
+        );
+        selectedQuestions = [
+          ...selectedQuestions,
+          ...remainingQuestions.slice(0, targetCount - selectedQuestions.length)
+        ];
+      }
+      
+      // Add the selected questions with updated order
+      selectedQuestions.forEach(question => {
+        balancedQuestions.push({
+          ...question,
+          order: questionOrder++
+        });
+      });
+    } 
+    // If we have exactly the right number or fewer, use all available
+    else if (availableQuestions.length > 0) {
+      console.log(`Perspective ${perspective}: using all ${availableQuestions.length} available questions (target: ${targetCount})`);
+      
+      // Add all available questions with updated order
+      availableQuestions.forEach(question => {
+        balancedQuestions.push({
+          ...question,
+          order: questionOrder++
+        });
+      });
+      
+      // If we're short, generate additional generic questions
+      const shortfall = targetCount - availableQuestions.length;
+      if (shortfall > 0) {
+        console.log(`Perspective ${perspective}: generating ${shortfall} additional generic questions`);
+        
+        // Generate generic questions for this perspective
+        const additionalQuestions = generateGenericQuestions(perspective, shortfall, questionOrder);
+        
+        // Add the additional questions
+        additionalQuestions.forEach(question => {
+          balancedQuestions.push({
+            ...question,
+            perspective: perspective,
+            order: questionOrder++
+          });
+        });
+      }
+    }
+    // If no questions available for this perspective, generate all generic ones
+    else if (targetCount > 0) {
+      console.log(`Perspective ${perspective}: generating ${targetCount} generic questions (none available)`);
+      
+      // Generate generic questions for this perspective
+      const genericQuestions = generateGenericQuestions(perspective, targetCount, questionOrder);
+      
+      // Add the generic questions
+      genericQuestions.forEach(question => {
+        balancedQuestions.push({
+          ...question,
+          perspective: perspective,
+          order: questionOrder++
+        });
+      });
+    }
+  });
+  
+  console.log(`Balanced questions: ${balancedQuestions.length} total questions`);
+  return balancedQuestions;
 }
 
 // Function to implement two-step approach for question generation
@@ -1320,6 +1886,15 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       }
     }
     
+    // Determine generation method based on AI response
+    let generationMethod = 'flux_ai_direct';
+    
+    // No response text means we'll need to use fallback
+    if (!aiResponseText) {
+      console.log('No AI response text, will use fallback generation');
+      generationMethod = 'standard';
+    }
+    
     if (!aiResponseText) {
       console.log('Cannot extract response content from Flux AI, using fallback questions');
       return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
@@ -1338,6 +1913,22 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     
     console.log('AI seems to have analyzed the document successfully!');
     
+    // Parse questions from AI response
+    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
+    
+    // Update generation method based on number of questions found
+    if (questions.length === 0) {
+      console.log('No questions extracted from AI response, will use fallback');
+      generationMethod = 'standard';
+      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    } else if (questions.length < 5) {
+      console.log('Few questions extracted from AI, using enhanced generation');
+      generationMethod = 'flux_ai_enhanced';
+    } else if (!aiResponseText.includes("MANAGER ASSESSMENT") || !aiResponseText.includes("PEER ASSESSMENT")) {
+      // The AI returned content but not in our requested format
+      generationMethod = 'flux_ai_fallback';
+    }
+    
     // Create a new template
     const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
     const description = templateInfo?.description || 'Generated from document analysis';
@@ -1355,14 +1946,11 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       purpose: templateInfo?.purpose || '',
       department: templateInfo?.department || '',
       documentType,
-      generatedBy: 'flux_ai',
+      generatedBy: generationMethod,  // Use the variable instead of hard-coded value
       createdBy: userId,
       status: 'pending_review',
       perspectiveSettings: perspectiveSettings
     });
-    
-    // Parse questions from AI response
-    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
     
     // Check if we have enough relevant questions
     if (questions.length < 5) {
@@ -1409,8 +1997,8 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
           // Update documents with analysis complete status
           await Document.update(
             { 
-              status: 'analysis_complete',
-              associatedTemplateId: template.id
+              status: 'analysis_complete'
+              // We're not setting associatedTemplateId here, so documents can be reused
             },
             { where: { id: documents.map(doc => doc.id) } }
           );
@@ -1470,8 +2058,8 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     // Update documents with analysis complete status
     await Document.update(
       { 
-        status: 'analysis_complete',
-        associatedTemplateId: template.id
+        status: 'analysis_complete'
+        // We're not setting associatedTemplateId here, so documents can be reused
       },
       { where: { id: documents.map(doc => doc.id) } }
     );
@@ -3086,8 +3674,8 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
     console.log('Creating template with fallback questions');
     
     const template = await Template.create({
-      name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template (Fallback)`,
-      description: templateInfo.description || 'Generated with fallback questions due to analysis error',
+      name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
+      description: templateInfo.description || 'Generated with standard questions',
       purpose: templateInfo.purpose || '',
       department: templateInfo.department || '',
       documentType,
@@ -3098,7 +3686,7 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
         self: { questionCount: 10, enabled: true },
         external: { questionCount: 5, enabled: false }
       },
-      generatedBy: 'flux_ai',
+      generatedBy: 'standard', // Use a clear identifier
       createdBy: userId,
       status: 'pending_review'
     });
@@ -3130,8 +3718,8 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
     // Update documents with analysis complete status
     await Document.update(
       { 
-        status: 'analysis_complete',
-        associatedTemplateId: template.id
+        status: 'analysis_complete'
+        // We're not setting associatedTemplateId here, so documents can be reused
       },
       { where: { id: documents.map(doc => doc.id) } }
     );

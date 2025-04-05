@@ -9,6 +9,9 @@ import {
   AlertTriangle,
   Clock,
   Plus
+  Zap,
+  Brain,
+  Settings,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import TemplateConfiguration from './TemplateConfiguration';
@@ -184,13 +187,45 @@ const TemplateList = () => {
                 </div>
 
                 <div className="mb-3 flex flex-wrap gap-2">
+                <div className="mb-3 flex flex-wrap gap-2">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                     {formatDocumentType(template.documentType)}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
                     {template.questions?.length || 0} Questions
                   </span>
-                  {/* AI badge removed */}
+
+                  {/* Generation method badge */}
+                  {template.generatedBy === 'flux_ai_direct' && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                      <Brain className="h-3 w-3 mr-1" />
+                      AI Generated
+                    </span>
+                  )}
+                  {template.generatedBy === 'flux_ai_enhanced' && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      <Zap className="h-3 w-3 mr-1" />
+                      AI Enhanced
+                    </span>
+                  )}
+                  {template.generatedBy === 'flux_ai_fallback' && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                      <Zap className="h-3 w-3 mr-1" />
+                      AI Assisted
+                    </span>
+                  )}
+                  {template.generatedBy === 'standard' && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                      <Settings className="h-3 w-3 mr-1" />
+                      Standard
+                    </span>
+                  )}
+                  {template.generatedBy === 'manual' && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                      <Edit className="h-3 w-3 mr-1" />
+                      Custom
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-sm text-gray-500 mb-3 line-clamp-2">
