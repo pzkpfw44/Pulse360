@@ -195,7 +195,7 @@ const TemplateList = () => {
                   </span>
 
                   {/* Generation method badge */}
-                  {template.generatedBy === 'flux_ai_direct' && (
+                  {(template.generatedBy === 'flux_ai_direct' || template.generatedBy === 'flux_ai') && (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
                       <Brain className="h-3 w-3 mr-1" />
                       AI Generated
@@ -213,10 +213,10 @@ const TemplateList = () => {
                       AI Assisted
                     </span>
                   )}
-                  {template.generatedBy === 'Pre-loaded Template' && (
+                  {(template.generatedBy === 'Pre-loaded Template' || template.generatedBy === 'standard') && (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
                       <Settings className="h-3 w-3 mr-1" />
-                      Standard
+                      Pre-loaded Template
                     </span>
                   )}
                   {template.generatedBy === 'manual' && (

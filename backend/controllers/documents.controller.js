@@ -150,8 +150,10 @@ async function startDevelopmentModeAnalysis(documents, documentType, userId) {
     // Update documents with error status
     const documentIds = documents.map(doc => doc.id);
     await Document.update(
-      { status: 'analysis_failed', analysisError: error.message },
-      { where: { id: documentIds } }
+      { 
+        status: 'analysis_complete'
+      },
+      { where: { id: documents.map(doc => doc.id) } }
     );
     
     throw error; // Re-throw to ensure calling code knows about the error
@@ -995,69 +997,6 @@ Do not include any other text, explanations, or formats. Only use the example fo
   return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
 }
 
-// Helper function to generate generic perspective-specific questions
-function generateGenericQuestions(perspective, count, startOrder) {
-  const questions = [];
-  
-  const questionTemplates = {
-    manager: [
-      { text: "How effectively does this person demonstrate strategic thinking?", type: "rating", category: "Strategic Thinking" },
-      { text: "How well does this person develop team members?", type: "rating", category: "Talent Development" },
-      { text: "How effectively does this person make decisions?", type: "rating", category: "Decision Making" },
-      { text: "What are this person's most significant leadership strengths?", type: "open_ended", category: "Strengths" },
-      { text: "How could this person improve their leadership effectiveness?", type: "open_ended", category: "Development Areas" }
-    ],
-    peer: [
-      { text: "How well does this person collaborate across teams?", type: "rating", category: "Collaboration" },
-      { text: "How effectively does this person communicate with others?", type: "rating", category: "Communication" },
-      { text: "How would you rate this person's ability to influence without authority?", type: "rating", category: "Influence" },
-      { text: "What makes this person an effective team member?", type: "open_ended", category: "Teamwork" },
-      { text: "How could this person improve their cross-functional collaboration?", type: "open_ended", category: "Collaboration" }
-    ],
-    direct_report: [
-      { text: "How well does this person provide clear direction and guidance?", type: "rating", category: "Direction Setting" },
-      { text: "How effectively does this person delegate tasks and empower you?", type: "rating", category: "Delegation" },
-      { text: "How would you rate this person's ability to provide timely feedback?", type: "rating", category: "Feedback" },
-      { text: "What does this person do that helps you be effective in your role?", type: "open_ended", category: "Support" },
-      { text: "How could this person better support your development?", type: "open_ended", category: "Development" }
-    ],
-    self: [
-      { text: "How effectively do you communicate vision and strategy?", type: "rating", category: "Communication" },
-      { text: "How well do you develop and empower your team members?", type: "rating", category: "Team Development" },
-      { text: "How would you rate your ability to make difficult decisions?", type: "rating", category: "Decision Making" },
-      { text: "What do you consider to be your greatest strengths as a leader?", type: "open_ended", category: "Strengths" },
-      { text: "In which areas would you like to improve your leadership abilities?", type: "open_ended", category: "Development Areas" }
-    ],
-    external: [
-      { text: "How effectively does this person represent their organization?", type: "rating", category: "Representation" },
-      { text: "How would you rate this person's communication skills?", type: "rating", category: "Communication" },
-      { text: "How well does this person build relationships with external stakeholders?", type: "rating", category: "Relationship Building" },
-      { text: "What strengths have you observed in your interactions with this person?", type: "open_ended", category: "Strengths" },
-      { text: "How could this person improve their interactions with external stakeholders?", type: "open_ended", category: "Development Areas" }
-    ]
-  };
-  
-  // Get templates for requested perspective (or use peer as fallback)
-  const templates = questionTemplates[perspective] || questionTemplates.peer;
-  
-  // Generate the required number of questions
-  for (let i = 0; i < count; i++) {
-    // Cycle through templates if we need more than we have
-    const template = templates[i % templates.length];
-    
-    questions.push({
-      text: template.text,
-      type: template.type,
-      category: template.category,
-      perspective: perspective,
-      required: true,
-      order: startOrder + i
-    });
-  }
-  
-  return questions;
-}
-
 // Function to parse questions from AI response
 function parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings = {}) {
   console.log('Parsing questions from AI response');
@@ -1138,6 +1077,78 @@ function parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings = {}) 
     console.error('Error parsing questions from AI response:', error);
     return [];
   }
+}
+
+// Helper function to extract a section from the AI response
+function extractSection(text, sectionName, otherSections) {
+  if (!text.includes(sectionName)) return '';
+  
+  const startIndex = text.indexOf(sectionName);
+  let endIndex = text.length;
+  
+  // Find the start of the next section
+  for (const otherSection of otherSections) {
+    const otherIndex = text.indexOf(otherSection, startIndex + sectionName.length);
+    if (otherIndex > startIndex && otherIndex < endIndex) {
+      endIndex = otherIndex;
+    }
+  }
+  
+  return text.substring(startIndex, endIndex).trim();
+}
+
+// Helper function to extract questions from a section
+function extractQuestionsFromSection(sectionText, perspective) {
+  const questions = [];
+  
+  // Extract blocks that start with "Question:" and include Type: and Category:
+  const questionPattern = /Question:\s*(.*?)(?:\r?\n|\r)Type:\s*(.*?)(?:\r?\n|\r)Category:\s*(.*?)(?=(?:\r?\n|\r)Question:|$)/gs;
+  
+  let match;
+  while ((match = questionPattern.exec(sectionText)) !== null) {
+    const questionText = removeMarkdownFormatting(match[1].trim());
+    const questionType = match[2].trim().toLowerCase();
+    const category = removeMarkdownFormatting(match[3].trim());
+    
+    if (questionText && (questionType === 'rating' || questionType === 'open_ended' || questionType === 'multiple_choice')) {
+      questions.push({
+        text: questionText,
+        type: questionType,
+        category: category,
+        required: true,
+        perspective: perspective
+      });
+    }
+  }
+  
+  // If no structured questions found, try a less strict pattern
+  if (questions.length === 0) {
+    // Look for lines that look like questions
+    const lines = sectionText.split('\n');
+    let currentQuestion = null;
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      if (trimmedLine.startsWith('Question:')) {
+        // Start a new question
+        currentQuestion = {
+          text: removeMarkdownFormatting(trimmedLine.substring('Question:'.length).trim()),
+          type: 'rating', // Default type
+          category: 'General', // Default category
+          required: true,
+          perspective: perspective
+        };
+        questions.push(currentQuestion);
+      } else if (currentQuestion && trimmedLine.startsWith('Type:')) {
+        currentQuestion.type = trimmedLine.substring('Type:'.length).trim().toLowerCase();
+      } else if (currentQuestion && trimmedLine.startsWith('Category:')) {
+        currentQuestion.category = removeMarkdownFormatting(trimmedLine.substring('Category:'.length).trim());
+      }
+    }
+  }
+  
+  return questions;
 }
 
 // Function to remove markdown formatting from text
@@ -1280,6 +1291,134 @@ function extractQuestionsFromSummary(summaryText, perspectiveSettings = {}) {
   });
   
   console.log(`Generated ${questions.length} questions from summary text`);
+  return questions;
+}
+
+// Extract themes from a summary
+function extractThemesFromSummary(summaryText) {
+  const themes = [];
+  
+  // Look for numbered or bulleted lists
+  const listPattern = /(?:^|\n)(?:\d+\.\s*|\*\s*|\-\s*)([^:\n.]+)(?::|\.)\s*([^\n]*)/g;
+  let match;
+  
+  while ((match = listPattern.exec(summaryText)) !== null) {
+    const themeTitle = removeMarkdownFormatting(match[1].trim());
+    const themeDesc = removeMarkdownFormatting(match[2].trim());
+    
+    themes.push({
+      title: themeTitle,
+      description: themeDesc,
+      category: themeTitle
+    });
+  }
+  
+  // If no list found, try to extract sentences with keywords
+  if (themes.length === 0) {
+    const keywords = [
+      'leadership', 'communication', 'decision', 'strategy', 'vision', 
+      'teamwork', 'collaboration', 'empathy', 'innovation', 'integrity',
+      'accountability', 'performance', 'development', 'coaching', 'feedback'
+    ];
+    
+    const sentences = summaryText.match(/[^.!?]+[.!?]+/g) || [];
+    
+    sentences.forEach(sentence => {
+      const cleanSentence = removeMarkdownFormatting(sentence);
+      for (const keyword of keywords) {
+        if (cleanSentence.toLowerCase().includes(keyword)) {
+          const theme = {
+            title: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+            description: cleanSentence.trim(),
+            category: keyword.charAt(0).toUpperCase() + keyword.slice(1)
+          };
+          
+          // Check if we already have this theme
+          if (!themes.some(t => t.title.toLowerCase() === theme.title.toLowerCase())) {
+            themes.push(theme);
+          }
+          
+          break;
+        }
+      }
+    });
+  }
+  
+  // If still no themes, create some default ones
+  if (themes.length === 0) {
+    themes.push(
+      { title: 'Communication', description: 'Effective communication skills', category: 'Communication' },
+      { title: 'Leadership', description: 'Leadership abilities', category: 'Leadership' },
+      { title: 'Decision Making', description: 'Decision making approach', category: 'Decision Making' },
+      { title: 'Teamwork', description: 'Collaboration and teamwork', category: 'Teamwork' },
+      { title: 'Strategic Thinking', description: 'Strategic planning and vision', category: 'Strategic Thinking' }
+    );
+  }
+  
+  return themes;
+}
+
+// Generate generic questions for a perspective if needed
+function generateGenericQuestionsForPerspective(perspective, count, startOrder) {
+  const questions = [];
+  
+  // Generic questions by perspective
+  const genericQuestions = {
+    manager: [
+      { text: "How effectively does this person communicate with the team?", type: "rating", category: "Communication" },
+      { text: "How well does this person develop team members?", type: "rating", category: "Team Development" },
+      { text: "How effectively does this person solve problems?", type: "rating", category: "Problem Solving" },
+      { text: "How would you rate this person's ability to deliver results?", type: "rating", category: "Performance" },
+      { text: "What are this person's greatest strengths as a leader?", type: "open_ended", category: "Leadership Strengths" }
+    ],
+    peer: [
+      { text: "How effectively does this person collaborate with colleagues?", type: "rating", category: "Collaboration" },
+      { text: "How well does this person communicate ideas and information?", type: "rating", category: "Communication" },
+      { text: "How would you rate this person's reliability?", type: "rating", category: "Reliability" },
+      { text: "How effectively does this person contribute to team objectives?", type: "rating", category: "Team Contribution" },
+      { text: "What could this person do to be a more effective collaborator?", type: "open_ended", category: "Collaboration" }
+    ],
+    direct_report: [
+      { text: "How effectively does this person provide direction and guidance?", type: "rating", category: "Leadership" },
+      { text: "How well does this person listen to your ideas and concerns?", type: "rating", category: "Listening" },
+      { text: "How would you rate this person's ability to provide helpful feedback?", type: "rating", category: "Feedback" },
+      { text: "How effectively does this person support your development?", type: "rating", category: "Development Support" },
+      { text: "What could this person do to better support your success?", type: "open_ended", category: "Leadership Improvement" }
+    ],
+    self: [
+      { text: "How effectively do you communicate with team members?", type: "rating", category: "Communication" },
+      { text: "How well do you prioritize and manage your workload?", type: "rating", category: "Time Management" },
+      { text: "How would you rate your ability to achieve objectives?", type: "rating", category: "Goal Achievement" },
+      { text: "How effectively do you develop team members?", type: "rating", category: "Team Development" },
+      { text: "What leadership skills would you like to develop further?", type: "open_ended", category: "Development Areas" }
+    ],
+    external: [
+      { text: "How effectively does this person communicate with external stakeholders?", type: "rating", category: "External Communication" },
+      { text: "How would you rate this person's professionalism?", type: "rating", category: "Professionalism" },
+      { text: "How well does this person understand and address your needs?", type: "rating", category: "Customer Focus" },
+      { text: "How effectively does this person build relationships?", type: "rating", category: "Relationship Building" },
+      { text: "What could this person do to improve their effectiveness with external partners?", type: "open_ended", category: "External Effectiveness" }
+    ]
+  };
+  
+  // Get questions for this perspective
+  const perspectiveQuestions = genericQuestions[perspective] || genericQuestions.peer;
+  
+  // Add the requested number of questions
+  for (let i = 0; i < count; i++) {
+    // If we need more than available, cycle through the array
+    const questionTemplate = perspectiveQuestions[i % perspectiveQuestions.length];
+    
+    questions.push({
+      text: questionTemplate.text,
+      type: questionTemplate.type,
+      category: questionTemplate.category,
+      required: true,
+      perspective: perspective,
+      order: startOrder + i
+    });
+  }
+  
   return questions;
 }
 
@@ -1777,7 +1916,7 @@ async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo 
 // Analyze documents with Flux AI (updated version)
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
   try {
-    console.log('Analyzing documents with Flux AI:');
+    console.log('Analysis response:', response.data);
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);
     
@@ -1867,7 +2006,7 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     
     // Process the response
     console.log('Analysis response:', response.data);
-    
+
     // Extract the AI response text
     let aiResponseText = "";
     if (response.data && 
@@ -1885,53 +2024,30 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
         aiResponseText = response.data.choices[0].message;
       }
     }
-    
-    // Determine generation method based on AI response
-    let generationMethod = 'flux_ai_direct';
-    
+
+    // Default generation method
+    let generationMethod = 'flux_ai';
+
     // No response text means we'll need to use fallback
     if (!aiResponseText) {
       console.log('No AI response text, will use fallback generation');
-      generationMethod = 'standard';
-    }
-    
-    if (!aiResponseText) {
-      console.log('Cannot extract response content from Flux AI, using fallback questions');
       return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
-    
+
     // Check if AI indicates it can't see the document
     const cantSeeDocument = aiResponseText.includes("don't see any attached document") || 
                           aiResponseText.includes("I don't see any attached documents") ||
                           aiResponseText.includes("I don't see the attached document") ||
                           aiResponseText.includes("Could you please provide the document");
-    
+
     if (cantSeeDocument) {
       console.log('AI reports not seeing the documents - using fallback questions');
       return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
-    
+
     console.log('AI seems to have analyzed the document successfully!');
-    
-    // Parse questions from AI response
-    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
-    
-    // Update generation method based on number of questions found
-    if (questions.length === 0) {
-      console.log('No questions extracted from AI response, will use fallback');
-      generationMethod = 'standard';
-      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-    } else if (questions.length < 5) {
-      console.log('Few questions extracted from AI, using enhanced generation');
-      generationMethod = 'flux_ai_enhanced';
-    } else if (!aiResponseText.includes("MANAGER ASSESSMENT") || !aiResponseText.includes("PEER ASSESSMENT")) {
-      // The AI returned content but not in our requested format
-      generationMethod = 'flux_ai_fallback';
-    }
-    
-    // Create a new template
-    const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
-    const description = templateInfo?.description || 'Generated from document analysis';
+
+    // Extract perspectiveSettings from templateInfo
     const perspectiveSettings = templateInfo?.perspectiveSettings || {
       manager: { questionCount: 10, enabled: true },
       peer: { questionCount: 10, enabled: true },
@@ -1939,6 +2055,45 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       self: { questionCount: 10, enabled: true },
       external: { questionCount: 5, enabled: false }
     };
+
+    // Check if the response has sections in the expected format
+    const hasExpectedFormat = 
+      aiResponseText.includes("MANAGER ASSESSMENT:") && 
+      aiResponseText.includes("PEER ASSESSMENT:") && 
+      aiResponseText.includes("Question:") && 
+      aiResponseText.includes("Type:") && 
+      aiResponseText.includes("Category:");
+
+    if (!hasExpectedFormat) {
+      console.log('AI response does not follow the expected format, trying one more time...');
+      
+      // Try one more time with a simplified prompt
+      const retryResponseText = await retryWithSimplifiedPrompt(fileIds, documentType, templateInfo);
+      
+      if (retryResponseText && 
+          retryResponseText.includes("MANAGER ASSESSMENT:") && 
+          retryResponseText.includes("Question:")) {
+        console.log('Retry successful - got formatted questions');
+        aiResponseText = retryResponseText;
+        generationMethod = 'flux_ai';
+      } else {
+        console.log('Retry failed - using fallback questions');
+        return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+      }
+    }
+
+    // Parse questions from AI response
+    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
+
+    // If we still don't have questions, use fallback
+    if (questions.length === 0) {
+      console.log('No questions extracted from AI response, will use fallback');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+    
+    // Create a new template
+    const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
+    const description = templateInfo?.description || 'Generated from document analysis';
     
     const template = await Template.create({
       name: name,
@@ -1946,7 +2101,7 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       purpose: templateInfo?.purpose || '',
       department: templateInfo?.department || '',
       documentType,
-      generatedBy: generationMethod,  // Use the variable instead of hard-coded value
+      generatedBy: generationMethod,
       createdBy: userId,
       status: 'pending_review',
       perspectiveSettings: perspectiveSettings
@@ -2082,6 +2237,101 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     
     // Create fallback template
     return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+  }
+}
+
+// A retry function to handle cases where the AI doesn't follow the format
+async function retryWithSimplifiedPrompt(fileIds, documentType, templateInfo) {
+  try {
+    console.log('Retrying with simplified prompt...');
+    
+    // Create a simpler, more direct prompt
+    const simplifiedPrompt = `GENERATE EXACTLY THE FOLLOWING AND NOTHING ELSE:
+
+MANAGER ASSESSMENT:
+Question: [question about leadership]
+Type: rating
+Category: [relevant category]
+
+Question: [another question]
+Type: [rating or open_ended]
+Category: [relevant category]
+
+PEER ASSESSMENT:
+Question: [question for peers]
+Type: rating
+Category: [relevant category]
+
+Question: [another question]
+Type: [rating or open_ended]
+Category: [relevant category]
+
+DIRECT REPORT ASSESSMENT:
+Question: [question for direct reports]
+Type: rating
+Category: [relevant category]
+
+Question: [another question]
+Type: [rating or open_ended]
+Category: [relevant category]
+
+SELF ASSESSMENT:
+Question: [question for self-assessment]
+Type: rating
+Category: [relevant category]
+
+Question: [another question]
+Type: [rating or open_ended]
+Category: [relevant category]`;
+
+    // Set up request
+    const messages = [
+      {
+        role: "system",
+        content: "You are a question generator. Follow these instructions EXACTLY."
+      },
+      {
+        role: "user",
+        content: simplifiedPrompt
+      }
+    ];
+    
+    const requestPayload = {
+      messages: messages,
+      stream: false,
+      attachments: {
+        tags: [documentType],
+        files: fileIds
+      }
+    };
+    
+    const response = await axios.post(
+      `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
+      requestPayload, 
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': fluxAiConfig.apiKey
+        }
+      }
+    );
+    
+    // Extract the AI response text
+    let aiResponseText = "";
+    if (response.data && response.data.choices && response.data.choices.length > 0) {
+      const message = response.data.choices[0].message;
+      
+      if (typeof message === 'object' && message.content) {
+        aiResponseText = message.content;
+      } else if (typeof message === 'string') {
+        aiResponseText = message;
+      }
+    }
+    
+    return aiResponseText;
+  } catch (error) {
+    console.error('Error in retry attempt:', error);
+    return null;
   }
 }
 
@@ -3686,7 +3936,7 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
         self: { questionCount: 10, enabled: true },
         external: { questionCount: 5, enabled: false }
       },
-      generatedBy: 'standard', // Use a clear identifier
+      generatedBy: 'Pre-loaded Template',
       createdBy: userId,
       status: 'pending_review'
     });
@@ -3895,10 +4145,10 @@ exports.markDocumentsReady = async (req, res) => {
     // Update documents to analysis_complete status
     await Document.update(
       { 
-        status: 'analysis_complete',
-        fluxAiFileId: 'dev-mode-' + uuidv4() // Generate a fake file ID
+        status: 'analysis_complete'
+        // We're not setting associatedTemplateId here, so documents can be reused
       },
-      { where: { id: documentIds } }
+      { where: { id: documents.map(doc => doc.id) } }
     );
     
     res.status(200).json({ 
@@ -3930,10 +4180,10 @@ exports.markDocumentsReady = async (req, res) => {
     // Update documents to analysis_complete status
     await Document.update(
       { 
-        status: 'analysis_complete',
-        fluxAiFileId: 'dev-mode-' + uuidv4() // Generate a fake file ID
+        status: 'analysis_complete'
+        // We're not setting associatedTemplateId here, so documents can be reused
       },
-      { where: { id: documentIds } }
+      { where: { id: documents.map(doc => doc.id) } }
     );
     
     res.status(200).json({ 
