@@ -133,21 +133,52 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
     }));
   };
 
+  const validateSettings = () => {
+    let errors = [];
+    
+    // Check template name
+    if (!formData.name.trim()) {
+      errors.push('Please provide a template name');
+    }
+    
+    // Check document selection
+    if (selectedDocumentIds.length === 0) {
+      errors.push('Please select at least one document');
+    }
+    
+    // Check document type
+    if (!formData.documentType) {
+      errors.push('Please select a document type');
+    }
+    
+    // Check that at least one perspective is enabled
+    const enabledPerspectives = Object.values(formData.perspectiveSettings)
+      .filter(settings => settings.enabled);
+      
+    if (enabledPerspectives.length === 0) {
+      errors.push('Please enable at least one perspective');
+    }
+    
+    // Check that enabled perspectives have reasonable question counts
+    Object.entries(formData.perspectiveSettings).forEach(([perspective, settings]) => {
+      if (settings.enabled) {
+        const count = settings.questionCount;
+        if (!count || count < 1 || count > 50) {
+          errors.push(`Invalid question count for ${perspective.replace('_', ' ')} perspective. Please use a number between 1 and 50.`);
+        }
+      }
+    });
+    
+    return errors;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (selectedDocumentIds.length === 0) {
-      setError('Please select at least one document');
-      return;
-    }
+    const validationErrors = validateSettings();
     
-    if (!formData.documentType) {
-      setError('Please select a document type');
-      return;
-    }
-    
-    if (!formData.name.trim()) {
-      setError('Please provide a template name');
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join('\n'));
       return;
     }
     
@@ -159,6 +190,17 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       const generateStatus = document.createElement('div');
       generateStatus.innerHTML = '<div class="fixed top-0 left-0 right-0 bg-blue-600 text-white p-2 text-center z-50">Generating template... This may take a moment.</div>';
       document.body.appendChild(generateStatus);
+      
+      // Log detailed formData for debugging
+      console.log('Submitting template configuration:', {
+        documentIds: selectedDocumentIds,
+        name: formData.name,
+        description: formData.description,
+        purpose: formData.purpose,
+        department: formData.department,
+        documentType: formData.documentType,
+        perspectiveSettings: formData.perspectiveSettings
+      });
       
       const response = await api.post('/templates/generate-configured', {
         documentIds: selectedDocumentIds,
@@ -246,7 +288,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
         <div className="p-5">
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-              <p>{error}</p>
+              <p style={{ whiteSpace: 'pre-line' }}>{error}</p>
             </div>
           )}
           

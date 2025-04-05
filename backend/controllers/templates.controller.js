@@ -90,20 +90,15 @@ exports.createTemplate = async (req, res) => {
     
     // Create the template
     const template = await Template.create({
-      name,
-      description,
-      purpose,
-      department,
+      name: name,
+      description: description,
+      purpose: templateInfo?.purpose || '',
+      department: templateInfo?.department || '',
       documentType,
-      perspectiveSettings: perspectiveSettings || {
-        manager: { questionCount: 10, enabled: true },
-        peer: { questionCount: 10, enabled: true },
-        direct_report: { questionCount: 10, enabled: true },
-        self: { questionCount: 10, enabled: true },
-        external: { questionCount: 5, enabled: false }
-      },
-      generatedBy: 'manual',
-      createdBy: req.user.id
+      generatedBy: 'flux_ai',
+      createdBy: userId,
+      status: 'pending_review',
+      perspectiveSettings: perspectiveSettings
     });
     
     // Add questions if provided
@@ -615,6 +610,18 @@ exports.generateConfiguredTemplate = async (req, res) => {
       return res.status(400).json({ message: 'Document type is required' });
     }
 
+    // Log the template generation request with all parameters
+    console.log('Template generation request details:', {
+      documentIds,
+      name,
+      description,
+      purpose,
+      department,
+      documentType,
+      perspectiveSettings,
+      userId: req.user.id
+    });
+
     // Find the documents
     const documents = await Document.findAll({
       where: { id: documentIds }
@@ -681,7 +688,6 @@ exports.generateConfiguredTemplate = async (req, res) => {
     
     // Log environment
     console.log('Environment:', process.env.NODE_ENV);
-    console.log('Using real AI template generation, even in development mode');
     
     // Start document analysis with template information
     const template = await documentController.startDocumentAnalysis(documents, documentType, req.user.id, templateInfo);
