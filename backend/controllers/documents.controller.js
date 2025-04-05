@@ -1910,7 +1910,6 @@ async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo 
 // Analyze documents with Flux AI (updated version)
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
   try {
-    // REMOVED ERROR-CAUSING LINE: console.log('Analysis response:', response.data);
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);
     
@@ -1920,18 +1919,44 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
     
-    // Create a prompt based on document type and template info
-    const prompt = createAnalysisPrompt(documentType, templateInfo);
+    // Use a much simpler prompt that's focused on getting exactly what we need
+    const simplePrompt = `You are an AI assistant that creates 360-degree feedback assessment questions. I need you to ONLY generate questions in this exact format:
+
+MANAGER ASSESSMENT:
+Question: [question text]
+Type: rating
+Category: [category]
+
+PEER ASSESSMENT:
+Question: [question text]
+Type: rating
+Category: [category]
+
+DIRECT REPORT ASSESSMENT:
+Question: [question text]
+Type: rating
+Category: [category]
+
+SELF ASSESSMENT:
+Question: [question text]
+Type: rating
+Category: [category]
+
+Do NOT provide any explanations, summaries, or information about leadership. ONLY generate questions in the EXACT format shown above.
+
+The questions should be for a 360-degree feedback assessment for a ${templateInfo.purpose || 'senior leader'} in the ${templateInfo.department || 'organization'}.
+
+Focus on: ${templateInfo.description || 'leadership capabilities and strategic thinking'}.`;
     
     // Create messages array for the chat completion
     const messages = [
       {
         role: "system",
-        content: "You are a specialized AI assistant for creating 360-degree feedback assessment questions. Your only job is to generate structured, relevant questions based on document analysis. DO NOT provide general explanations or summaries. ONLY generate specific feedback questions in the exact format requested."
+        content: "You are a specialized questionnaire generator. You ONLY generate feedback questions in a specific format. Do not provide explanations, summaries, or other text."
       },
       {
         role: "user",
-        content: prompt
+        content: simplePrompt
       }
     ];
     
@@ -1939,187 +1964,68 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     console.log('Waiting for file processing...');
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    // MATCH EXACTLY THE FORMAT FROM THE FLUX EXAMPLE
-    const requestPayload = {
-      messages: messages,
-      stream: false,
-      attachments: {
-        tags: [documentType],
-        files: fileIds
-      }
-    };
-    
-    console.log('Using exact example format:', JSON.stringify(requestPayload, null, 2));
-    
-    // Try all possible authentication methods
-    let response = null;
-    let authMethods = [
-      // Method 1: X-API-KEY
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': fluxAiConfig.apiKey
+    // Try with a simpler request - no attachments first
+    try {
+      console.log('Trying simple request without file attachments');
+      const response = await axios.post(
+        `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
+        {
+          messages: messages,
+          stream: false
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': fluxAiConfig.apiKey
+          }
         }
-      },
-      // Method 2: Bearer token
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-        }
-      },
-      // Method 3: No API-KEY prefix
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': fluxAiConfig.apiKey.replace('SHqQ4nah.', '')  // Remove potential prefix
-        }
-      }
-    ];
-    
-    // Try each auth method
-    for (let i = 0; i < authMethods.length; i++) {
-      try {
-        console.log(`Trying auth method ${i+1}`);
-        response = await axios.post(
-          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
-          requestPayload, 
-          authMethods[i]
-        );
-        console.log(`Auth method ${i+1} succeeded!`);
-        break;  // Stop if successful
-      } catch (error) {
-        console.log(`Auth method ${i+1} failed:`, error.message);
-        if (i === authMethods.length - 1) {
-          // If all methods fail, return fallback
-          console.error('All authentication methods failed');
-          return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-        }
-      }
-    }
-    
-    // Process the response
-    console.log('Analysis response:', response.data);
-
-    // Extract the AI response text
-    let aiResponseText = "";
-    if (response.data && 
-        response.data.choices && 
-        response.data.choices.length > 0) {
+      );
       
-      const message = response.data.choices[0].message;
+      console.log('Simple request response:', response.data);
       
-      // Handle different response formats
-      if (typeof message === 'object' && message.content) {
-        aiResponseText = message.content;
-      } else if (typeof message === 'string') {
-        aiResponseText = message;
-      } else if (typeof response.data.choices[0].message === 'string') {
-        aiResponseText = response.data.choices[0].message;
-      }
-    }
-
-    // Default generation method
-    let generationMethod = 'flux_ai';
-
-    // No response text means we'll need to use fallback
-    if (!aiResponseText) {
-      console.log('No AI response text, will use fallback generation');
-      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-    }
-
-    // Check if AI indicates it can't see the document
-    const cantSeeDocument = aiResponseText.includes("don't see any attached document") || 
-                          aiResponseText.includes("I don't see any attached documents") ||
-                          aiResponseText.includes("I don't see the attached document") ||
-                          aiResponseText.includes("Could you please provide the document");
-
-    if (cantSeeDocument) {
-      console.log('AI reports not seeing the documents - using fallback questions');
-      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-    }
-
-    console.log('AI seems to have analyzed the document successfully!');
-
-    // Extract perspectiveSettings from templateInfo
-    const perspectiveSettings = templateInfo?.perspectiveSettings || {
-      manager: { questionCount: 10, enabled: true },
-      peer: { questionCount: 10, enabled: true },
-      direct_report: { questionCount: 10, enabled: true },
-      self: { questionCount: 10, enabled: true },
-      external: { questionCount: 5, enabled: false }
-    };
-
-    // Check if the response has sections in the expected format
-    const hasExpectedFormat = 
-      aiResponseText.includes("MANAGER ASSESSMENT:") && 
-      aiResponseText.includes("PEER ASSESSMENT:") && 
-      aiResponseText.includes("Question:") && 
-      aiResponseText.includes("Type:") && 
-      aiResponseText.includes("Category:");
-
-    if (!hasExpectedFormat) {
-      console.log('AI response does not follow the expected format, trying one more time...');
-      
-      // Try one more time with a simplified prompt
-      const retryResponseText = await retryWithSimplifiedPrompt(fileIds, documentType, templateInfo);
-      
-      if (retryResponseText && 
-          retryResponseText.includes("MANAGER ASSESSMENT:") && 
-          retryResponseText.includes("Question:")) {
-        console.log('Retry successful - got formatted questions');
-        aiResponseText = retryResponseText;
-        generationMethod = 'flux_ai';
-      } else {
-        console.log('Retry failed - using fallback questions');
-        return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-      }
-    }
-
-    // Parse questions from AI response
-    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
-
-    // If we still don't have questions, use fallback
-    if (questions.length === 0) {
-      console.log('No questions extracted from AI response, will use fallback');
-      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-    }
-    
-    // Create a new template
-    const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
-    const description = templateInfo?.description || 'Generated from document analysis';
-    
-    const template = await Template.create({
-      name: name,
-      description: description,
-      purpose: templateInfo?.purpose || '',
-      department: templateInfo?.department || '',
-      documentType,
-      generatedBy: generationMethod,
-      createdBy: userId,
-      status: 'pending_review',
-      perspectiveSettings: perspectiveSettings
-    });
-    
-    // Check if we have enough relevant questions
-    if (questions.length < 5) {
-      console.log('Not enough relevant questions generated in first attempt, trying two-step approach');
-      
-      // Try the two-step approach
-      const twoStepResponse = await tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo);
-      
-      // If we got a response, try to parse questions from it
-      if (twoStepResponse) {
-        const twoStepQuestions = parseQuestionsFromAIResponse(twoStepResponse, perspectiveSettings);
+      // Check if we got a proper response with questions
+      const aiResponseText = response.data?.choices?.[0]?.message?.content || '';
+      if (aiResponseText.includes("Question:") && 
+          (aiResponseText.includes("MANAGER ASSESSMENT") || 
+           aiResponseText.includes("PEER ASSESSMENT"))) {
         
-        // If we found questions, use them instead of fallback
-        if (twoStepQuestions && twoStepQuestions.length >= 5) {
-          console.log(`Found ${twoStepQuestions.length} questions using two-step approach`);
+        console.log('Got formatted questions from simple request!');
+        
+        // Parse the questions from the response
+        const perspectiveSettings = templateInfo?.perspectiveSettings || {
+          manager: { questionCount: 10, enabled: true },
+          peer: { questionCount: 10, enabled: true },
+          direct_report: { questionCount: 10, enabled: true },
+          self: { questionCount: 10, enabled: true },
+          external: { questionCount: 5, enabled: false }
+        };
+        
+        const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
+        
+        // If we got questions, create a template with them
+        if (questions && questions.length > 0) {
+          console.log(`Got ${questions.length} questions from AI`);
           
-          // Balance questions according to perspective settings
-          const balancedQuestions = balanceQuestionsByPerspective(twoStepQuestions, perspectiveSettings);
+          // Create a new template
+          const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
+          const description = templateInfo?.description || 'Generated from document analysis';
           
-          // Create questions for the template using the two-step result
+          const template = await Template.create({
+            name: name,
+            description: description,
+            purpose: templateInfo?.purpose || '',
+            department: templateInfo?.department || '',
+            documentType,
+            generatedBy: 'flux_ai',
+            createdBy: userId,
+            status: 'pending_review',
+            perspectiveSettings: perspectiveSettings
+          });
+          
+          // Balance the questions according to perspective settings
+          const balancedQuestions = balanceQuestionsByPerspective(questions, perspectiveSettings);
+          
+          // Create questions for the template
           await Promise.all(
             balancedQuestions.map(async (q) => {
               return Question.create({
@@ -2128,9 +2034,6 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
               });
             })
           );
-          
-          // Skip to the next steps (creating source documents, etc.)
-          console.log('Successfully created questions using two-step approach');
           
           // Create source document references
           await Promise.all(
@@ -2146,8 +2049,8 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
           // Update documents with analysis complete status
           await Document.update(
             { 
-              status: 'analysis_complete'
-              // We're not setting associatedTemplateId here, so documents can be reused
+              status: 'analysis_complete',
+              associatedTemplateId: template.id
             },
             { where: { id: documents.map(doc => doc.id) } }
           );
@@ -2156,78 +2059,15 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
           return template;
         }
       }
-      
-      console.log('Two-step approach failed or did not generate enough questions, using fallback questions');
-      const fallbackQuestions = generateFallbackQuestions(documentType, perspectiveSettings, templateInfo);
-      
-      // Add any AI-generated questions we did get to the mix
-      const combinedQuestions = [...questions, ...fallbackQuestions.slice(0, Math.max(15 - questions.length, 0))];
-      
-      // Balance the combined questions
-      const balancedQuestions = balanceQuestionsByPerspective(combinedQuestions, perspectiveSettings);
-      
-      // Create questions for the template
-      await Promise.all(
-        balancedQuestions.map(async (q) => {
-          return Question.create({
-            ...q,
-            templateId: template.id
-          });
-        })
-      );
-    } else {
-      // We have enough questions from the first attempt, balance and create them
-      console.log(`Found ${questions.length} questions from first AI response, balancing by perspective`);
-      
-      // Balance questions according to perspective settings
-      const balancedQuestions = balanceQuestionsByPerspective(questions, perspectiveSettings);
-      
-      // Create balanced questions
-      await Promise.all(
-        balancedQuestions.map(async (q) => {
-          return Question.create({
-            ...q,
-            templateId: template.id
-          });
-        })
-      );
+    } catch (simpleRequestError) {
+      console.error('Simple request error:', simpleRequestError);
     }
     
-    // Create source document references
-    await Promise.all(
-      documents.map(async (doc) => {
-        return SourceDocument.create({
-          fluxAiFileId: doc.fluxAiFileId,
-          documentId: doc.id,
-          templateId: template.id
-        });
-      })
-    );
-    
-    // Update documents with analysis complete status
-    await Document.update(
-      { 
-        status: 'analysis_complete'
-        // We're not setting associatedTemplateId here, so documents can be reused
-      },
-      { where: { id: documents.map(doc => doc.id) } }
-    );
-    
-    console.log('Template created with ID:', template.id);
-    return template;
+    // If we get here, we need to use the fallback
+    console.log('AI response inadequate, using fallback questions');
+    return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
   } catch (error) {
-    console.error('Full error details:', error.message);
-    
-    // Check for specific errors that might occur
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      
-      // If there's a specific error about mode, log it
-      if (error.response.data && error.response.data.error) {
-        console.error('API Error:', error.response.data.error);
-      }
-    }
+    console.error('Error in startDocumentAnalysis:', error);
     
     // Create fallback template
     return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
@@ -2444,10 +2284,18 @@ exports.deleteDocument = async (req, res) => {
 
 // Function to generate fallback questions
 function generateFallbackQuestions(documentType = '', perspectiveSettings = null, templateInfo = {}) {
+  console.log('Generating fallback questions with template info:', JSON.stringify(templateInfo));
+  
   // Extract template information
   const { name, description, purpose, department } = templateInfo || {};
-  const domainContext = department ? ` in ${department}` : '';
-  const purposeContext = purpose ? ` for ${purpose}` : '';
+  
+  // Create context strings for questions
+  const purposeContext = purpose ? ` for a ${purpose}` : '';
+  const departmentContext = department ? ` in the ${department} department` : '';
+  const strategyContext = description && description.toLowerCase().includes('strategy') ? 
+    ' related to long-term strategy development' : '';
+  
+  console.log(`Using context: purpose=${purposeContext}, department=${departmentContext}, strategy=${strategyContext}`);
   
   // Get active perspectives
   const activePerspectives = [];
@@ -2483,12 +2331,12 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
     // Common questions for all types and perspectives - but limit to requested count
     const commonCount = Math.min(3, Math.ceil(count * 0.3)); // About 30% of questions are common
     
+    // Self assessment common questions - with context
     if (perspective === 'self') {
-      // Self assessment common questions
       for (let i = 0; i < commonCount; i++) {
         if (i === 0) {
           fallbackQuestions.push({
-            text: `How effectively do you communicate with team members${domainContext}?`,
+            text: `How effectively do you communicate with team members${departmentContext}${purposeContext}?`,
             type: "rating",
             category: "Communication",
             perspective: perspective,
@@ -2497,7 +2345,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 1) {
           fallbackQuestions.push({
-            text: `What do you consider to be your key strengths${purposeContext}? Please provide specific examples.`,
+            text: `What do you consider to be your key strengths${purposeContext}${strategyContext}? Please provide specific examples.`,
             type: "open_ended",
             category: "Strengths",
             perspective: perspective,
@@ -2506,7 +2354,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 2) {
           fallbackQuestions.push({
-            text: `In what areas could you improve${purposeContext}? Please be specific.`,
+            text: `In what areas could you improve${purposeContext}${strategyContext}? Please be specific.`,
             type: "open_ended",
             category: "Development Areas",
             perspective: perspective,
@@ -2516,15 +2364,15 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
         }
       }
     } else {
-      // Other perspectives common questions
+      // Other perspectives common questions - with context
       for (let i = 0; i < commonCount; i++) {
         if (i === 0) {
           fallbackQuestions.push({
             text: perspective === 'manager' 
-              ? `How effectively does this person communicate with the team${domainContext}?`
+              ? `How effectively does this person communicate with the team${departmentContext}${purposeContext}?`
               : perspective === 'direct_report'
-                ? `How effectively does this person communicate with you and others${domainContext}?`
-                : `How effectively does this person communicate with team members${domainContext}?`,
+                ? `How effectively does this person communicate with you and others${departmentContext}${purposeContext}?`
+                : `How effectively does this person communicate with team members${departmentContext}${purposeContext}?`,
             type: "rating",
             category: "Communication",
             perspective: perspective,
@@ -2533,7 +2381,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 1) {
           fallbackQuestions.push({
-            text: `What are this person's key strengths${purposeContext}? Please provide specific examples.`,
+            text: `What are this person's key strengths${purposeContext}${strategyContext}? Please provide specific examples.`,
             type: "open_ended",
             category: "Strengths",
             perspective: perspective,
@@ -2542,7 +2390,7 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
           });
         } else if (i === 2) {
           fallbackQuestions.push({
-            text: `In what areas could this person improve${purposeContext}? Please be specific and constructive.`,
+            text: `In what areas could this person improve${purposeContext}${strategyContext}? Please be specific and constructive.`,
             type: "open_ended",
             category: "Development Areas",
             perspective: perspective,
@@ -2588,9 +2436,12 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
 
 // Modified helper functions that respect question count
 function addLeadershipModelFallbackQuestions(questions, perspective, startOrder, count, templateInfo = {}) {
-  const { department, purpose } = templateInfo || {};
-  const contextStr = department ? ` in the ${department} department` : '';
-  const roleContext = purpose ? ` related to ${purpose}` : '';
+  // Extract context information
+  const { department, purpose, description } = templateInfo || {};
+  const purposeStr = purpose ? ` as a ${purpose}` : '';
+  const deptStr = department ? ` in the ${department} department` : '';
+  const strategyStr = description && description.toLowerCase().includes('strategy') ? 
+    ' for long-term strategy development' : '';
   
   let order = startOrder;
   let questionsAdded = 0;
@@ -2599,166 +2450,171 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   if (perspective === 'manager') {
     candidates.push(
       {
-        text: `How effectively does this person demonstrate strategic thinking${contextStr}?`,
+        text: `How effectively does this person develop and communicate a strategic vision${deptStr}${purposeStr}?`,
         type: "rating",
-        category: "Strategic Thinking"
+        category: "Strategic Vision"
       },
       {
-        text: `How well does this person develop team members${contextStr}?`,
+        text: `How well does this person build and maintain stakeholder engagement${strategyStr}?`,
+        type: "rating",
+        category: "Stakeholder Engagement"
+      },
+      {
+        text: `How effectively does this person develop team members${purposeStr}?`,
         type: "rating",
         category: "Talent Development"
       },
       {
-        text: `How effectively does this person make decisions${roleContext}?`,
+        text: `How well does this person translate strategic goals into actionable plans${deptStr}?`,
         type: "rating",
-        category: "Decision Making"
+        category: "Strategic Planning"
       },
       {
-        text: `How well does this person align team goals with organizational objectives${contextStr}?`,
+        text: `How effectively does this person make decisions that support long-term objectives${strategyStr}?`,
         type: "rating",
-        category: "Strategic Alignment"
+        category: "Strategic Decision Making"
       },
       {
-        text: `How effectively does this person handle complex challenges${contextStr}?`,
+        text: `How well does this person adapt team direction in response to market changes${deptStr}${purposeStr}?`,
         type: "rating",
-        category: "Problem Solving"
+        category: "Adaptability"
       },
       {
-        text: `How would you describe this person's leadership style and its impact${roleContext}?`,
+        text: `What specific examples demonstrate this person's strategic leadership capabilities${purposeStr}?`,
         type: "open_ended",
-        category: "Leadership Style"
+        category: "Strategic Leadership"
       }
     );
   } else if (perspective === 'peer') {
     candidates.push(
       {
-        text: `How well does this person collaborate across teams${contextStr}?`,
+        text: `How effectively does this person collaborate across teams to support strategic initiatives${purposeStr}?`,
         type: "rating",
-        category: "Collaboration"
+        category: "Cross-team Collaboration"
       },
       {
-        text: `How would you rate this person's ability to influence without authority${contextStr}?`,
+        text: `How well does this person communicate complex strategic concepts to peers${deptStr}?`,
         type: "rating",
-        category: "Influence"
+        category: "Strategic Communication"
       },
       {
-        text: `How effectively does this person handle conflicts${roleContext}?`,
+        text: `How effectively does this person engage stakeholders in collaborative processes${strategyStr}?`,
         type: "rating",
-        category: "Conflict Resolution"
+        category: "Stakeholder Engagement"
       },
       {
-        text: `How well does this person share knowledge and resources${contextStr}?`,
+        text: `How would you rate this person's ability to balance short-term needs with long-term vision${purposeStr}?`,
+        type: "rating",
+        category: "Strategic Balance"
+      },
+      {
+        text: `How well does this person share strategic insights and market intelligence${deptStr}?`,
         type: "rating",
         category: "Knowledge Sharing"
       },
       {
-        text: `How effectively does this person contribute to a positive team culture${contextStr}?`,
-        type: "rating",
-        category: "Team Culture"
-      },
-      {
-        text: `How could this person be a more effective peer collaborator${roleContext}?`,
+        text: `What could this person improve in how they engage with peers on strategic initiatives${strategyStr}?`,
         type: "open_ended",
-        category: "Collaboration"
+        category: "Peer Collaboration"
       }
     );
   } else if (perspective === 'direct_report') {
     candidates.push(
       {
-        text: `How well does this person provide clear direction and guidance${roleContext}?`,
+        text: `How effectively does this person communicate the team's strategic direction to you${purposeStr}?`,
         type: "rating",
-        category: "Direction Setting"
+        category: "Vision Communication"
       },
       {
-        text: `How effectively does this person delegate tasks and empower you${contextStr}?`,
+        text: `How well does this person involve team members in strategic planning processes${deptStr}?`,
         type: "rating",
-        category: "Delegation"
+        category: "Inclusive Planning"
       },
       {
-        text: `How well does this person support your professional development${roleContext}?`,
+        text: `How effectively does this person help you understand your role in achieving strategic goals${strategyStr}?`,
         type: "rating",
-        category: "Development Support"
+        category: "Role Clarity"
       },
       {
-        text: `How effectively does this person provide constructive feedback${contextStr}?`,
+        text: `How well does this person balance focusing on strategy while providing operational support${purposeStr}?`,
         type: "rating",
-        category: "Feedback"
+        category: "Operational Balance"
       },
       {
-        text: `How well does this person recognize your achievements${roleContext}?`,
+        text: `How effectively does this person develop your capabilities to contribute to strategic initiatives${deptStr}?`,
         type: "rating",
-        category: "Recognition"
+        category: "Capability Development"
       },
       {
-        text: `What could this person do to be a more effective leader for you${contextStr}?`,
-        type: "open_ended", 
-        category: "Leadership Effectiveness"
+        text: `What specific actions could this person take to better engage you in the strategic direction${strategyStr}?`,
+        type: "open_ended",
+        category: "Team Engagement"
       }
     );
   } else if (perspective === 'self') {
     candidates.push(
       {
-        text: `How effectively do you communicate vision and strategy${contextStr}?`,
+        text: `How effectively do you develop and communicate strategic vision${purposeStr}?`,
         type: "rating",
-        category: "Vision"
+        category: "Strategic Vision"
       },
       {
-        text: `How well do you develop and empower your team members${roleContext}?`,
+        text: `How well do you engage stakeholders in your strategic planning processes${deptStr}?`,
         type: "rating",
-        category: "Team Development"
+        category: "Stakeholder Engagement"
       },
       {
-        text: `How would you rate your ability to make difficult decisions${contextStr}?`,
+        text: `How effectively do you translate strategic goals into actionable plans for your team${strategyStr}?`,
         type: "rating",
-        category: "Decision Making"
+        category: "Strategic Planning"
       },
       {
-        text: `How effectively do you lead through times of change${roleContext}?`,
+        text: `How well do you balance long-term strategic objectives with short-term needs${purposeStr}?`,
         type: "rating",
-        category: "Change Leadership"
+        category: "Strategic Balance"
       },
       {
-        text: `How well do you balance strategic thinking with tactical execution${contextStr}?`,
+        text: `How effectively do you develop your team's capabilities to execute on strategic initiatives${deptStr}?`,
         type: "rating",
-        category: "Strategic Execution"
+        category: "Capability Development"
       },
       {
-        text: `What leadership skills would you like to develop further${roleContext}?`,
+        text: `What specifically do you do to maintain stakeholder engagement throughout strategic initiatives${strategyStr}?`,
         type: "open_ended",
-        category: "Development Goals"
+        category: "Stakeholder Management"
       }
     );
   } else if (perspective === 'external') {
     candidates.push(
       {
-        text: `How effectively does this person represent the organization${contextStr}?`,
+        text: `How effectively does this person represent the organization's strategic direction${purposeStr}?`,
         type: "rating",
-        category: "Representation"
+        category: "Strategic Representation"
       },
       {
-        text: `How well does this person build relationships with external stakeholders${roleContext}?`,
+        text: `How well does this person engage with external stakeholders${deptStr}?`,
         type: "rating",
-        category: "Relationship Building"
+        category: "Stakeholder Engagement"
       },
       {
-        text: `How effectively does this person communicate the organization's vision${contextStr}?`,
+        text: `How effectively does this person communicate complex strategic concepts to external parties${strategyStr}?`,
         type: "rating",
         category: "External Communication"
       },
       {
-        text: `How would you rate this person's professionalism${contextStr}?`,
+        text: `How would you rate this person's ability to build strategic partnerships${purposeStr}?`,
         type: "rating",
-        category: "Professionalism"
+        category: "Partnership Building"
       },
       {
-        text: `How well does this person understand your needs as an external stakeholder${roleContext}?`,
+        text: `How well does this person understand external stakeholder needs and incorporate them into strategy${deptStr}?`,
         type: "rating",
         category: "Stakeholder Understanding"
       },
       {
-        text: `What could this person do to improve their effectiveness in working with external stakeholders${contextStr}?`,
+        text: `What could this person improve in how they engage with external stakeholders on strategic initiatives${strategyStr}?`,
         type: "open_ended",
-        category: "External Effectiveness"
+        category: "External Engagement"
       }
     );
   }
@@ -4039,8 +3895,17 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
       status: 'pending_review'
     });
     
-    // Generate fallback questions with all template information
-    const fallbackQuestions = generateFallbackQuestions(documentType, templateInfo.perspectiveSettings, templateInfo);
+    // Check if we're dealing with marketing strategy questions
+    let fallbackQuestions;
+    if (documentType === 'leadership_model' && 
+        (templateInfo.department || '').toLowerCase().includes('market') &&
+        (templateInfo.description || '').toLowerCase().includes('strategy')) {
+      console.log('Using specialized marketing strategy questions');
+      fallbackQuestions = getMarketingStrategyQuestions(templateInfo);
+    } else {
+      // Generate fallback questions with all template information
+      fallbackQuestions = generateFallbackQuestions(documentType, templateInfo.perspectiveSettings, templateInfo);
+    }
     
     // Create questions for the template
     await Promise.all(
@@ -4296,6 +4161,187 @@ exports.markDocumentsReady = async (req, res) => {
       error: error.message 
     });
   }
+};
+
+// Create predefined marketing strategy questions - as a last resort
+function getMarketingStrategyQuestions(templateInfo = {}) {
+  const { department, purpose } = templateInfo;
+  const deptStr = department || 'Marketing';
+  const roleStr = purpose || 'Marketing Director';
+  
+  const questions = [];
+  let order = 1;
+  
+  // Manager questions
+  questions.push(
+    {
+      text: `How effectively does this person develop and communicate long-term marketing strategies?`,
+      type: "rating",
+      category: "Strategic Vision",
+      perspective: "manager",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How well does this person engage key stakeholders in strategic marketing initiatives?`,
+      type: "rating",
+      category: "Stakeholder Engagement",
+      perspective: "manager",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How effectively does this person align marketing strategies with overall business objectives?`,
+      type: "rating",
+      category: "Strategic Alignment",
+      perspective: "manager",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How well does this person anticipate market trends and incorporate them into long-term planning?`,
+      type: "rating",
+      category: "Market Intelligence",
+      perspective: "manager",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How effectively does this person develop their marketing team's capabilities?`,
+      type: "rating",
+      category: "Team Development",
+      perspective: "manager",
+      required: true,
+      order: order++
+    },
+    {
+      text: `What specific examples demonstrate this person's ability to build long-term marketing strategies?`,
+      type: "open_ended",
+      category: "Strategic Leadership",
+      perspective: "manager",
+      required: true,
+      order: order++
+    }
+  );
+  
+  // Peer questions
+  questions.push(
+    {
+      text: `How effectively does this person collaborate with other departments on long-term marketing initiatives?`,
+      type: "rating",
+      category: "Cross-functional Collaboration",
+      perspective: "peer",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How well does this person communicate complex marketing strategies to colleagues?`,
+      type: "rating",
+      category: "Strategy Communication",
+      perspective: "peer",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How effectively does this person build consensus for strategic marketing initiatives?`,
+      type: "rating",
+      category: "Influence & Persuasion",
+      perspective: "peer",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How well does this person adapt marketing strategies based on feedback and new information?`,
+      type: "rating",
+      category: "Adaptability",
+      perspective: "peer",
+      required: true,
+      order: order++
+    },
+    {
+      text: `What could this person improve in how they engage with peers on strategic marketing initiatives?`,
+      type: "open_ended",
+      category: "Peer Collaboration",
+      perspective: "peer",
+      required: true,
+      order: order++
+    }
+  );
+  
+  // Direct report questions
+  questions.push(
+    {
+      text: `How clearly does this person communicate the team's strategic marketing direction?`,
+      type: "rating",
+      category: "Vision Communication",
+      perspective: "direct_report",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How well does this person involve you in strategic marketing planning?`,
+      type: "rating",
+      category: "Inclusive Planning",
+      perspective: "direct_report",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How effectively does this person develop your skills to contribute to long-term marketing strategies?`,
+      type: "rating",
+      category: "Team Development",
+      perspective: "direct_report",
+      required: true,
+      order: order++
+    }
+  );
+  
+  // Self assessment questions
+  questions.push(
+    {
+      text: `How effectively do you develop long-term marketing strategies?`,
+      type: "rating",
+      category: "Strategic Planning",
+      perspective: "self",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How well do you engage key stakeholders in your strategic marketing initiatives?`,
+      type: "rating",
+      category: "Stakeholder Engagement",
+      perspective: "self",
+      required: true,
+      order: order++
+    },
+    {
+      text: `How effectively do you help your team understand their role in executing long-term strategies?`,
+      type: "rating",
+      category: "Team Alignment",
+      perspective: "self",
+      required: true,
+      order: order++
+    },
+    {
+      text: `What specific approaches do you use to maintain stakeholder engagement in long-term marketing strategies?`,
+      type: "open_ended",
+      category: "Stakeholder Management",
+      perspective: "self",
+      required: true,
+      order: order++
+    }
+  );
+  
+  return questions;
+}
+
+const originalGenerateFallbackQuestions = generateFallbackQuestions;
+generateFallbackQuestions = function(...args) {
+  console.log('generateFallbackQuestions called with:', JSON.stringify(args, null, 2));
+  const result = originalGenerateFallbackQuestions.apply(this, args);
+  console.log(`Generated ${result.length} questions`);
+  console.log('Sample questions:', result.slice(0, 2).map(q => q.text));
+  return result;
 };
 
 exports.startDevelopmentModeAnalysis = startDevelopmentModeAnalysis;
