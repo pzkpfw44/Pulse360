@@ -15,6 +15,7 @@ import Settings from './pages/Settings';
 import Integration from './pages/Integration';
 import { MainLayout } from './components/layout/MainLayout';
 import WorkInProgress from './components/WorkInProgress';
+<Route path="/feedback/assessment" element={<FeedbackAssessmentPage />} />
 
 function App() {
   const [loading, setLoading] = useState(true);
@@ -84,6 +85,8 @@ function App() {
         {/* FeedbackHub */}
         <Route path="/results-360" element={<WorkInProgress title="Results 360" />} />
         <Route path="/insights-360" element={<WorkInProgress title="Insights 360" />} />
+        <Route path="/feedback/assessment" element={<FeedbackAssessmentPage />} />
+        <Route path="/feedback/assessment/:token" element={<FeedbackAssessmentPage />} />
         
         {/* System */}
         <Route path="/integration" element={<Integration />} />

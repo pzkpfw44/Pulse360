@@ -842,9 +842,7 @@ function createAnalysisPrompt(documentType, templateInfo = {}) {
   const { name, description, purpose, department, perspectiveSettings } = templateInfo || {};
   
   // Enhanced base prompt with stronger emphasis on template metadata
-  const basePrompt = `IMPORTANT: I need you to analyze the document and ONLY generate specific questions in the exact format I specify below.
-
-FORMAT INSTRUCTION: Generate questions in this exact format and nothing else:
+  const basePrompt = `IMPORTANT: I need you to analyze the document and ONLY generate specific questions in this format:
 
 MANAGER ASSESSMENT:
 Question: [Question text]
@@ -874,66 +872,7 @@ DO NOT INCLUDE any explanation, summary, or other content. ONLY INCLUDE QUESTION
 
 This is for a 360-degree feedback assessment${purpose ? ` FOR ${purpose.toUpperCase()}` : ''}${department ? ` IN THE ${department.toUpperCase()} DEPARTMENT` : ''}.
 
-${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''}
-
-FORMAT YOUR RESPONSE EXACTLY AS IN THE EXAMPLES BELOW:
-
-MANAGER ASSESSMENT:
-Question: How effectively does this person develop and articulate a clear vision for their team?
-Type: rating
-Category: Strategic Leadership
-
-Question: How well does this person prioritize and align team objectives with organizational goals?
-Type: rating
-Category: Strategic Thinking
-
-Question: What specific strengths have you observed in this person's leadership approach?
-Type: open_ended
-Category: Leadership Effectiveness
-
-PEER ASSESSMENT:
-Question: How effectively does this person collaborate across departments to achieve shared objectives?
-Type: rating
-Category: Collaboration
-
-Question: How would you rate this person's ability to communicate complex ideas clearly?
-Type: rating
-Category: Communication
-
-Question: What could this person do to be a more effective collaborator?
-Type: open_ended
-Category: Teamwork
-
-DIRECT REPORT ASSESSMENT:
-Question: How well does this person provide you with clear direction and guidance?
-Type: rating
-Category: Direction Setting
-
-Question: How effectively does this person recognize and acknowledge your contributions?
-Type: rating
-Category: Recognition
-
-Question: What specific actions could this person take to better support your professional development?
-Type: open_ended
-Category: Team Development
-
-SELF ASSESSMENT:
-Question: How effectively do you foster an environment where team members feel empowered to contribute ideas?
-Type: rating
-Category: Team Empowerment
-
-Question: What do you consider to be your greatest leadership strength? Provide specific examples.
-Type: open_ended
-Category: Leadership Strengths
-
-NOW FOLLOW THIS FORMAT AND GENERATE UNIQUE QUESTIONS FOR EACH PERSPECTIVE BASED ON THE DOCUMENT CONTENT.
-
-PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
-- Manager Assessment (how the person is evaluated by their manager)
-- Peer Assessment (how the person is evaluated by colleagues)
-- Direct Report Assessment (how the person is evaluated by those reporting to them)
-- Self Assessment (how the person evaluates themselves)
-- External Assessment (how the person is evaluated by external stakeholders, if applicable)`;
+${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''}`;
 
   // Contextual information from the template settings - Enhanced with more specific wording
   let contextPrompt = '';
@@ -982,7 +921,6 @@ PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
 - Problem-solving and decision-making within role scope`;
       break;
     
-    // Add similar enhancements for other document types
     case 'competency_framework':
       typeSpecificPrompt = `\n\nFOCUS AREAS FOR COMPETENCY FRAMEWORK QUESTIONS:
 - Core competencies from the framework specific to ${department || 'this organization'}
@@ -1024,19 +962,12 @@ PROVIDE QUESTIONS FOR THESE PERSPECTIVES:
   }
 
   // Final reminder to focus on questions - more specific about quality
-  const finalReminder = `\n\nIMPORTANT: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information about leadership. Generate unique, specific questions that:
-1. Directly relate to the content of the document
-2. Are tailored to ${department || 'the organization'}'s context
-3. Are specific to ${purpose || 'the role'} being assessed
-4. Follow best practices for 360-degree feedback (behavioral, actionable, specific)
-5. Include both strengths assessment and development opportunities
+  const finalReminder = `\n\nIMPORTANT REMINDER: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information. DO NOT introduce each section with explanations.
 
 REMINDER ON FORMAT: For each perspective (MANAGER ASSESSMENT, PEER ASSESSMENT, etc.), provide questions in this exact format:
 Question: [Your question text here]
 Type: [rating or open_ended]
-Category: [The category/theme of the question]
-
-Do not include any other text, explanations, or formats. Only use the example format.`;
+Category: [The category/theme of the question]`;
 
   // Combine all prompt components
   return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
@@ -1171,6 +1102,73 @@ function parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings = {}) 
     const themes = extractThemesFromSummary(aiResponseText);
     return generateQuestionsFromThemes(themes, perspectiveSettings);
   }
+}
+
+// Improved extractQuestionsFromSection function with better regex patterns
+function extractQuestionsFromSection(sectionText, perspective) {
+  const questions = [];
+  
+  // Improved regex pattern to capture more variations in formatting
+  const questionPattern = /Question:\s*(.*?)(?:\r?\n|\r)Type:\s*(.*?)(?:\r?\n|\r)Category:\s*(.*?)(?=(?:\r?\n|\r)Question:|$)/gs;
+  
+  // Fallback pattern for less structured formats
+  const simpleQuestionPattern = /Question:\s*(.*?)(?:\r?\n|\r|$)/gm;
+  
+  let match;
+  // Try the full structured pattern first
+  while ((match = questionPattern.exec(sectionText)) !== null) {
+    const questionText = removeMarkdownFormatting(match[1].trim());
+    const questionType = match[2]?.trim().toLowerCase() || 'rating';
+    const category = removeMarkdownFormatting(match[3]?.trim()) || 'General';
+    
+    if (questionText) {
+      questions.push({
+        text: questionText,
+        type: questionType === 'open_ended' ? 'open_ended' : 'rating', // Default to rating for anything else
+        category: category,
+        required: true,
+        perspective: perspective
+      });
+    }
+  }
+  
+  // If no questions found with the structured pattern, try the simple pattern
+  if (questions.length === 0) {
+    let typeMatch, categoryMatch;
+    const types = ["rating", "open_ended", "multiple_choice"];
+    
+    while ((match = simpleQuestionPattern.exec(sectionText)) !== null) {
+      const questionText = removeMarkdownFormatting(match[1].trim());
+      let questionType = 'rating'; // Default
+      let category = 'General'; // Default
+      
+      // Look for Type: in the text following this question
+      const typeRegex = /Type:\s*(\w+)/i;
+      typeMatch = sectionText.slice(match.index + match[0].length).match(typeRegex);
+      if (typeMatch && types.includes(typeMatch[1].toLowerCase())) {
+        questionType = typeMatch[1].toLowerCase();
+      }
+      
+      // Look for Category: in the text following this question
+      const categoryRegex = /Category:\s*([^:\r\n]+)/i;
+      categoryMatch = sectionText.slice(match.index + match[0].length).match(categoryRegex);
+      if (categoryMatch) {
+        category = removeMarkdownFormatting(categoryMatch[1].trim());
+      }
+      
+      if (questionText) {
+        questions.push({
+          text: questionText,
+          type: questionType,
+          category: category,
+          required: true,
+          perspective: perspective
+        });
+      }
+    }
+  }
+  
+  return questions;
 }
 
 // Helper function to get active perspectives from settings
@@ -1919,44 +1917,18 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
     
-    // Use a much simpler prompt that's focused on getting exactly what we need
-    const simplePrompt = `You are an AI assistant that creates 360-degree feedback assessment questions. I need you to ONLY generate questions in this exact format:
-
-MANAGER ASSESSMENT:
-Question: [question text]
-Type: rating
-Category: [category]
-
-PEER ASSESSMENT:
-Question: [question text]
-Type: rating
-Category: [category]
-
-DIRECT REPORT ASSESSMENT:
-Question: [question text]
-Type: rating
-Category: [category]
-
-SELF ASSESSMENT:
-Question: [question text]
-Type: rating
-Category: [category]
-
-Do NOT provide any explanations, summaries, or information about leadership. ONLY generate questions in the EXACT format shown above.
-
-The questions should be for a 360-degree feedback assessment for a ${templateInfo.purpose || 'senior leader'} in the ${templateInfo.department || 'organization'}.
-
-Focus on: ${templateInfo.description || 'leadership capabilities and strategic thinking'}.`;
+    // Create a prompt based on document type and template info
+    const prompt = createAnalysisPrompt(documentType, templateInfo);
     
     // Create messages array for the chat completion
     const messages = [
       {
         role: "system",
-        content: "You are a specialized questionnaire generator. You ONLY generate feedback questions in a specific format. Do not provide explanations, summaries, or other text."
+        content: "You are a specialized AI assistant for creating 360-degree feedback assessment questions. Your only job is to generate structured, relevant questions based on document analysis. DO NOT provide general explanations or summaries. ONLY generate specific feedback questions in the exact format requested."
       },
       {
         role: "user",
-        content: simplePrompt
+        content: prompt
       }
     ];
     
@@ -1964,10 +1936,12 @@ Focus on: ${templateInfo.description || 'leadership capabilities and strategic t
     console.log('Waiting for file processing...');
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    // Try with a simpler request - no attachments first
+    console.log('Trying simple request without file attachments');
+    let response = null;
+    
     try {
-      console.log('Trying simple request without file attachments');
-      const response = await axios.post(
+      // First try a simple request to see if we can get a response
+      const simpleResponse = await axios.post(
         `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
         {
           messages: messages,
@@ -1981,93 +1955,189 @@ Focus on: ${templateInfo.description || 'leadership capabilities and strategic t
         }
       );
       
-      console.log('Simple request response:', response.data);
+      console.log('Simple request response:', simpleResponse.data);
+      response = simpleResponse;
+    } catch (simpleError) {
+      console.log('Simple request failed, trying with file attachments');
       
-      // Check if we got a proper response with questions
-      const aiResponseText = response.data?.choices?.[0]?.message?.content || '';
-      if (aiResponseText.includes("Question:") && 
-          (aiResponseText.includes("MANAGER ASSESSMENT") || 
-           aiResponseText.includes("PEER ASSESSMENT"))) {
-        
-        console.log('Got formatted questions from simple request!');
-        
-        // Parse the questions from the response
-        const perspectiveSettings = templateInfo?.perspectiveSettings || {
-          manager: { questionCount: 10, enabled: true },
-          peer: { questionCount: 10, enabled: true },
-          direct_report: { questionCount: 10, enabled: true },
-          self: { questionCount: 10, enabled: true },
-          external: { questionCount: 5, enabled: false }
-        };
-        
-        const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
-        
-        // If we got questions, create a template with them
-        if (questions && questions.length > 0) {
-          console.log(`Got ${questions.length} questions from AI`);
-          
-          // Create a new template
-          const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
-          const description = templateInfo?.description || 'Generated from document analysis';
-          
-          const template = await Template.create({
-            name: name,
-            description: description,
-            purpose: templateInfo?.purpose || '',
-            department: templateInfo?.department || '',
-            documentType,
-            generatedBy: 'flux_ai',
-            createdBy: userId,
-            status: 'pending_review',
-            perspectiveSettings: perspectiveSettings
-          });
-          
-          // Balance the questions according to perspective settings
-          const balancedQuestions = balanceQuestionsByPerspective(questions, perspectiveSettings);
-          
-          // Create questions for the template
-          await Promise.all(
-            balancedQuestions.map(async (q) => {
-              return Question.create({
-                ...q,
-                templateId: template.id
-              });
-            })
+      // MATCH EXACTLY THE FORMAT FROM THE FLUX EXAMPLE
+      const requestPayload = {
+        messages: messages,
+        stream: false,
+        attachments: {
+          tags: [documentType],
+          files: fileIds
+        }
+      };
+      
+      console.log('Using exact example format:', JSON.stringify(requestPayload, null, 2));
+      
+      // Try all possible authentication methods
+      let authMethods = [
+        // Method 1: X-API-KEY
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': fluxAiConfig.apiKey
+          }
+        },
+        // Method 2: Bearer token
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+          }
+        },
+        // Method 3: No API-KEY prefix
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': fluxAiConfig.apiKey.replace('SHqQ4nah.', '')  // Remove potential prefix
+          }
+        }
+      ];
+      
+      // Try each auth method
+      for (let i = 0; i < authMethods.length; i++) {
+        try {
+          console.log(`Trying auth method ${i+1}`);
+          response = await axios.post(
+            `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
+            requestPayload, 
+            authMethods[i]
           );
-          
-          // Create source document references
-          await Promise.all(
-            documents.map(async (doc) => {
-              return SourceDocument.create({
-                fluxAiFileId: doc.fluxAiFileId,
-                documentId: doc.id,
-                templateId: template.id
-              });
-            })
-          );
-          
-          // Update documents with analysis complete status
-          await Document.update(
-            { 
-              status: 'analysis_complete',
-              associatedTemplateId: template.id
-            },
-            { where: { id: documents.map(doc => doc.id) } }
-          );
-          
-          console.log('Template created with ID:', template.id);
-          return template;
+          console.log(`Auth method ${i+1} succeeded!`);
+          break;  // Stop if successful
+        } catch (error) {
+          console.log(`Auth method ${i+1} failed:`, error.message);
+          if (i === authMethods.length - 1) {
+            // If all methods fail, return fallback
+            console.error('All authentication methods failed');
+            return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+          }
         }
       }
-    } catch (simpleRequestError) {
-      console.error('Simple request error:', simpleRequestError);
     }
     
-    // If we get here, we need to use the fallback
-    console.log('AI response inadequate, using fallback questions');
-    return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    // Process the response
+    console.log('Analysis response:', response.data);
+
+    // Extract the AI response text
+    let aiResponseText = "";
+    if (response.data && 
+        response.data.choices && 
+        response.data.choices.length > 0) {
+      
+      const message = response.data.choices[0].message;
+      
+      // Handle different response formats
+      if (typeof message === 'object' && message.content) {
+        aiResponseText = message.content;
+      } else if (typeof message === 'string') {
+        aiResponseText = message;
+      } else if (typeof response.data.choices[0].message === 'string') {
+        aiResponseText = response.data.choices[0].message;
+      }
+    }
+
+    // Default generation method
+    let generationMethod = 'flux_ai';
+
+    // No response text means we'll need to use fallback
+    if (!aiResponseText) {
+      console.log('No AI response text, will use fallback generation');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+
+    // Check if AI indicates it can't see the document
+    const cantSeeDocument = aiResponseText.includes("don't see any attached document") || 
+                          aiResponseText.includes("I don't see any attached documents") ||
+                          aiResponseText.includes("I don't see the attached document") ||
+                          aiResponseText.includes("Could you please provide the document");
+
+    if (cantSeeDocument) {
+      console.log('AI reports not seeing the documents - using fallback questions');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+
+    console.log('AI seems to have analyzed the document successfully!');
+    console.log('AI response sample (first 500 chars):', aiResponseText.substring(0, 500));
+
+    // Extract perspectiveSettings from templateInfo
+    const perspectiveSettings = templateInfo?.perspectiveSettings || {
+      manager: { questionCount: 10, enabled: true },
+      peer: { questionCount: 10, enabled: true },
+      direct_report: { questionCount: 10, enabled: true },
+      self: { questionCount: 10, enabled: true },
+      external: { questionCount: 5, enabled: false }
+    };
+
+    // Use the improved parsing logic to extract questions
+    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
+    console.log(`Extracted ${questions.length} questions from AI response`);
+
+    // Only use fallback if we couldn't extract any questions at all
+    if (questions.length === 0) {
+      console.log('No questions extracted from AI response, will use fallback');
+      return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+    
+    // Create a new template
+    const name = templateInfo?.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`;
+    const description = templateInfo?.description || 'Generated from document analysis';
+    
+    const template = await Template.create({
+      name: name,
+      description: description,
+      purpose: templateInfo?.purpose || '',
+      department: templateInfo?.department || '',
+      documentType,
+      generatedBy: generationMethod,
+      createdBy: userId,
+      status: 'pending_review',
+      perspectiveSettings: perspectiveSettings
+    });
+    
+    // If we have enough questions, balance and create them
+    console.log(`Found ${questions.length} questions from AI response, balancing by perspective`);
+    
+    // Balance questions according to perspective settings
+    const balancedQuestions = balanceQuestionsByPerspective(questions, perspectiveSettings);
+    
+    // Create questions for the template
+    await Promise.all(
+      balancedQuestions.map(async (q) => {
+        return Question.create({
+          ...q,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Create source document references
+    await Promise.all(
+      documents.map(async (doc) => {
+        return SourceDocument.create({
+          fluxAiFileId: doc.fluxAiFileId,
+          documentId: doc.id,
+          templateId: template.id
+        });
+      })
+    );
+    
+    // Update documents with analysis complete status
+    await Document.update(
+      { 
+        status: 'analysis_complete',
+        associatedTemplateId: template.id
+      },
+      { where: { id: documents.map(doc => doc.id) } }
+    );
+    
+    console.log('Template created with ID:', template.id);
+    return template;
   } catch (error) {
-    console.error('Error in startDocumentAnalysis:', error);
+    console.error('Error in analyzeDocumentsWithFluxAI:', error);
     
     // Create fallback template
     return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
