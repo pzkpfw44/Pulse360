@@ -1,7 +1,7 @@
 // backend/controllers/feedback.controller.js
 
 const aiFeedbackService = require('../services/ai-feedback-service');
-const { Response } = require('../models');
+const { Response, CampaignParticipant } = require('../models');
 
 /**
  * Controller for handling feedback-related operations
@@ -16,7 +16,7 @@ class FeedbackController {
     try {
       const { responses, assessorType, targetEmployeeId } = req.body;
       
-      if (!responses || Object.keys(responses).length === 0) {
+      if (!responses || responses.length === 0) {
         return res.status(400).json({ 
           message: 'No feedback provided for evaluation' 
         });
@@ -62,10 +62,20 @@ class FeedbackController {
         });
       }
       
+      // Ensure responses is an array
+      if (!Array.isArray(responses)) {
+        return res.status(400).json({
+          message: 'Responses must be provided as an array'
+        });
+      }
+      
       // Store responses
       const savedResponses = [];
       
       for (const response of responses) {
+        // Skip invalid responses
+        if (!response.questionId) continue;
+        
         const savedResponse = await Response.create({
           campaignId,
           questionId: response.questionId,
@@ -74,14 +84,22 @@ class FeedbackController {
           rating: response.rating,
           text: response.text,
           bypassedAiRecommendations: bypassedAiRecommendations || false,
-          aiEvaluationData: bypassedAiRecommendations ? JSON.stringify(aiEvaluationResults) : null
+          aiEvaluationData: aiEvaluationResults ? JSON.stringify(aiEvaluationResults) : null
         });
         
         savedResponses.push(savedResponse);
       }
       
-      // Update participant status in the campaign
-      // This would normally update the CampaignParticipant status to 'completed'
+      // Try to update participant status if using the actual model
+      try {
+        await CampaignParticipant.update(
+          { status: 'completed', completedAt: new Date() },
+          { where: { token: assessorToken, campaignId: campaignId } }
+        );
+      } catch (err) {
+        // Just log the error, don't fail the request if this part fails
+        console.log('Could not update participant status:', err.message);
+      }
       
       return res.status(200).json({
         message: 'Feedback submitted successfully',

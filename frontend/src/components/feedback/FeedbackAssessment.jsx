@@ -1,357 +1,189 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, CheckCircle, ChevronRight, Send, RefreshCw, Info } from 'lucide-react';
+import React, { useState } from 'react';
+import api from '../../services/api';
 
 const FeedbackAssessment = ({ 
   campaignId, 
   assessorToken, 
-  questions,
-  targetEmployee = { name: "Alex Chen", position: "Product Manager" },
-  assessorType = "peer" // Can be: manager, peer, direct_report, self, external
+  questions, 
+  targetEmployee,
+  assessorType
 }) => {
-  // State for responses, validation, and current question
   const [responses, setResponses] = useState({});
-  const [currentStep, setCurrentStep] = useState(0);
-  const [aiEvaluation, setAiEvaluation] = useState(null);
-  const [isEvaluating, setIsEvaluating] = useState(false);
-  const [allQuestionsAnswered, setAllQuestionsAnswered] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [ratings, setRatings] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [aiChecking, setAiChecking] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState(null);
+  const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
-  const [bypassWarning, setBypassWarning] = useState(false);
-  const [assessmentComplete, setAssessmentComplete] = useState(false);
+  const [bypassWarningOpen, setBypassWarningOpen] = useState(false);
 
-  // Check if all questions have responses
-  useEffect(() => {
-    if (!questions || questions.length === 0) return;
-    
-    const requiredQuestions = questions.filter(q => q.required);
-    const answeredRequired = requiredQuestions.every(q => 
-      responses[q.id] && (
-        (q.type === 'rating' && responses[q.id].rating) || 
-        (q.type === 'open_ended' && responses[q.id].text && responses[q.id].text.trim().length > 0)
-      )
-    );
-    
-    setAllQuestionsAnswered(answeredRequired);
-  }, [responses, questions]);
-
-  // Handle response changes
-  const handleResponseChange = (questionId, field, value) => {
-    setResponses(prev => ({
-      ...prev,
-      [questionId]: {
-        ...prev[questionId],
-        [field]: value
-      }
-    }));
-    
-    // Reset AI evaluation when responses change
-    setAiEvaluation(null);
-    setBypassWarning(false);
-  };
-
-  // Get open-ended responses for AI evaluation
-  const getOpenEndedResponses = () => {
-    const openEndedResponses = {};
-    
-    if (!questions) return {};
-    
-    questions.forEach(question => {
-      if (question.type === 'open_ended' && responses[question.id]?.text) {
-        openEndedResponses[question.id] = {
-          question: question.text,
-          response: responses[question.id].text,
-          category: question.category || 'General'
-        };
-      }
+  // Handle text response changes
+  const handleResponseChange = (questionId, value) => {
+    setResponses({
+      ...responses,
+      [questionId]: value
     });
-    
-    return openEndedResponses;
-  };
-
-  // Evaluate feedback using AI
-  const evaluateFeedback = async () => {
-    setIsEvaluating(true);
-    setAiEvaluation(null);
-    
-    try {
-      const openEndedResponses = getOpenEndedResponses();
-      
-      // If no open-ended responses, skip AI evaluation
-      if (Object.keys(openEndedResponses).length === 0) {
-        setAiEvaluation({
-          status: 'success',
-          message: 'No written feedback to evaluate. You can submit your assessment.',
-          suggestions: []
-        });
-        setIsEvaluating(false);
-        return;
-      }
-      
-      // Mock AI evaluation for demo
-      // In production, this would be an API call to your AI service
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call
-      
-      // Perform basic analysis on the feedback
-      const evaluationResult = mockEvaluateFeedback(openEndedResponses, assessorType);
-      setAiEvaluation(evaluationResult);
-    } catch (error) {
-      console.error('Error evaluating feedback:', error);
-      setAiEvaluation({
-        status: 'error',
-        message: 'We encountered a problem evaluating your feedback. You can revise manually or proceed anyway.',
-        suggestions: []
+    // Clear error when user starts typing
+    if (errors[questionId]) {
+      setErrors({
+        ...errors,
+        [questionId]: null
       });
-    } finally {
-      setIsEvaluating(false);
+    }
+    // Reset AI feedback when user makes changes
+    if (aiFeedback) {
+      setAiFeedback(null);
     }
   };
-  
-  // Mock evaluation function that analyzes feedback text
-  const mockEvaluateFeedback = (openEndedResponses, assessorType) => {
-    // Combine all response texts for analysis
-    const feedbackText = Object.values(openEndedResponses)
-      .map(item => item.response)
-      .join(' ');
-    
-    const wordCount = feedbackText.split(/\s+/).length;
-    
-    // Check for balance indicators
-    const hasPositive = /excellent|great|good|strength|well done|impressive|skilled|effective|capable/i.test(feedbackText);
-    const hasNegative = /improve|could be better|challenge|difficult|struggle|weakness|limitation/i.test(feedbackText);
-    const hasActionable = /suggest|try|consider|recommend|could|should|might want to|would benefit from/i.test(feedbackText);
-    const hasIdentifiers = /I|me|my team|our|we worked together|I think|in my opinion/i.test(feedbackText);
-    const containsOffensiveLanguage = /moron|idiot|stupid|incompetent|useless|dumb|sucks|terrible|awful/i.test(feedbackText);
-    const containsUnprofessionalAdvice = /quit|leave|find another|fire|get rid|fired|resign/i.test(feedbackText);
-    const hasMinimalResponses = Object.values(openEndedResponses).some(item => 
-      item.response.trim().length < 5 || item.response === '-');
-    
-    // Different response types based on feedback content
-    if (containsOffensiveLanguage) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback contains inappropriate or offensive language that is not constructive.',
-        suggestions: [
-          'Remove offensive terms like "moron" and use professional language',
-          'Focus on behaviors rather than making personal judgments',
-          'Describe the specific behaviors that concern you rather than using labels'
-        ]
-      };
-    } else if (containsUnprofessionalAdvice) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback contains suggestions that are not constructive for professional development.',
-        suggestions: [
-          'Focus on actionable improvements rather than suggesting career changes',
-          'Provide specific development suggestions that can be implemented in the current role',
-          'Recommend specific skills or behaviors that could be improved'
-        ]
-      };
-    } else if (hasMinimalResponses) {
-      return {
-        status: 'needs_improvement',
-        message: 'Some of your responses are too brief to be meaningful. Please provide more detail.',
-        suggestions: [
-          'Elaborate on all questions with substantive responses',
-          'Provide specific examples to support your feedback',
-          'Ensure all required questions have complete answers'
-        ]
-      };
-    } else if (wordCount < 20) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback is too brief to be meaningful. Consider adding more detail and specific examples.',
-        suggestions: [
-          'Add specific examples of observed behaviors',
-          'Expand your feedback with more context',
-          'Provide actionable suggestions for improvement'
-        ]
-      };
-    } else if (!hasPositive && hasNegative) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback focuses primarily on areas for improvement without acknowledging strengths.',
-        suggestions: [
-          'Balance criticism by acknowledging specific strengths',
-          'Begin with positive observations before addressing areas for improvement',
-          'Consider using the "feedback sandwich" approach: positive-improvement-positive'
-        ]
-      };
-    } else if (hasPositive && !hasNegative) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback is positive but lacks constructive areas for development.',
-        suggestions: [
-          'Include some areas where growth would be beneficial',
-          'Suggest specific skills that could be further developed',
-          'Provide balanced feedback by mentioning both strengths and areas for improvement'
-        ]
-      };
-    } else if (!hasActionable) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback lacks specific, actionable recommendations for improvement.',
-        suggestions: [
-          'Include specific actions the person could take to improve',
-          'Suggest resources or approaches that might help them develop',
-          'Be more specific about how certain behaviors could be enhanced'
-        ]
-      };
-    } else if (hasIdentifiers) {
-      return {
-        status: 'needs_improvement',
-        message: 'Your feedback contains details that might reveal your identity, which could compromise confidentiality.',
-        suggestions: [
-          'Remove personal pronouns that could identify you',
-          'Focus on observed behaviors rather than your interactions',
-          'Avoid mentioning specific projects or events that only you would know about'
-        ]
-      };
-    } else {
-      return {
-        status: 'success',
-        message: 'Your feedback is balanced, specific, and constructive. It provides clear examples and actionable suggestions for improvement.',
-        suggestions: []
-      };
+
+  // Handle rating changes
+  const handleRatingChange = (questionId, value) => {
+    setRatings({
+      ...ratings,
+      [questionId]: value
+    });
+    // Clear error when user selects rating
+    if (errors[questionId]) {
+      setErrors({
+        ...errors,
+        [questionId]: null
+      });
+    }
+    // Reset AI feedback when user makes changes
+    if (aiFeedback) {
+      setAiFeedback(null);
+    }
+  };
+
+  // Validate feedback before submitting
+  const validateFeedback = () => {
+    const newErrors = {};
+    let isValid = true;
+
+    questions.forEach(question => {
+      if (question.required) {
+        if (question.type === 'open_ended' && (!responses[question.id] || responses[question.id].trim() === '')) {
+          newErrors[question.id] = 'This question requires a response';
+          isValid = false;
+        } else if (question.type === 'rating' && !ratings[question.id]) {
+          newErrors[question.id] = 'Please select a rating';
+          isValid = false;
+        }
+      }
+    });
+
+    // Check open-ended responses for minimum length (at least 10 characters)
+    questions.filter(q => q.type === 'open_ended' && q.required).forEach(question => {
+      if (responses[question.id] && responses[question.id].length < 10) {
+        newErrors[question.id] = 'Please provide a more detailed response (at least 10 characters)';
+        isValid = false;
+      }
+    });
+
+    setErrors(newErrors);
+    return isValid;
+  };
+
+  // Check feedback quality with AI
+  const checkFeedbackWithAI = async () => {
+    if (!validateFeedback()) {
+      return;
+    }
+
+    setAiChecking(true);
+    setAiFeedback(null);
+
+    try {
+      // Format the responses for the API
+      const formattedResponses = questions.map(question => {
+        return {
+          questionId: question.id,
+          questionText: question.text,
+          questionType: question.type,
+          category: question.category,
+          rating: ratings[question.id] || null,
+          text: responses[question.id] || ''
+        };
+      });
+
+      const response = await api.post('/feedback/evaluate', {
+        responses: formattedResponses,
+        assessorType,
+        targetEmployeeId: targetEmployee.id
+      });
+
+      setAiFeedback(response.data);
+    } catch (error) {
+      console.error('Error checking feedback with AI:', error);
+      setAiFeedback({
+        quality: 'error',
+        message: 'An error occurred while checking your feedback. Please try again later.'
+      });
+    } finally {
+      setAiChecking(false);
     }
   };
 
   // Submit feedback
-  const submitFeedback = async (bypass = false) => {
-    setSubmitting(true);
-    
+  const submitFeedback = async (bypassAiRecommendations = false) => {
+    if (!validateFeedback()) {
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    // If AI feedback quality is not good and bypass warning is not confirmed
+    if (aiFeedback && aiFeedback.quality !== 'good' && !bypassAiRecommendations) {
+      setBypassWarningOpen(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setBypassWarningOpen(false);
+
     try {
-      // Prepare data for submission
-      const submissionData = {
+      // Format the responses for the API
+      const formattedResponses = questions.map(question => {
+        return {
+          questionId: question.id,
+          questionText: question.text,
+          questionType: question.type,
+          category: question.category,
+          rating: ratings[question.id] || null,
+          text: responses[question.id] || ''
+        };
+      });
+
+      await api.post('/feedback/submit', {
         campaignId,
         assessorToken,
         targetEmployeeId: targetEmployee.id,
-        responses: Object.entries(responses).map(([questionId, response]) => ({
-          questionId,
-          rating: response.rating,
-          text: response.text,
-        })),
-        bypassedAiRecommendations: bypass
-      };
-      
-      // If bypassing and we have AI evaluation, include it
-      if (bypass && aiEvaluation) {
-        submissionData.aiEvaluationResults = aiEvaluation;
-      }
-      
-      // For demo purposes, simulate API submission with a delay
-      console.log('Submitting feedback:', submissionData);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // In a real implementation, you would call your API:
-      // await fetch('/api/feedback/submit', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(submissionData)
-      // });
-      
+        responses: formattedResponses,
+        bypassedAiRecommendations: bypassAiRecommendations,
+        aiEvaluationResults: aiFeedback
+      });
+
       setSubmitted(true);
-      setAssessmentComplete(true);
+      window.scrollTo(0, 0);
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      // Show error message to user
+      setErrors({
+        ...errors,
+        general: 'An error occurred while submitting your feedback. Please try again.'
+      });
+      window.scrollTo(0, 0);
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
-  
-  const renderProgressBar = () => {
-    const progress = Math.round((Object.keys(responses).length / questions.length) * 100);
-    
-    return (
-      <div className="w-full bg-gray-200 rounded-full h-2.5 mb-6">
-        <div 
-          className="bg-blue-600 h-2.5 rounded-full" 
-          style={{ width: `${progress}%` }}
-        ></div>
-      </div>
-    );
-  };
 
-  const renderRatingQuestion = (question) => {
-    const currentResponse = responses[question.id] || {};
-    const rating = currentResponse.rating || 0;
-    
+  // If feedback has been submitted, show thank you message
+  if (submitted) {
     return (
-      <div className="mb-6">
-        <h3 className="text-lg font-medium mb-2">{question.text}</h3>
-        {question.category && (
-          <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mb-3">
-            {question.category}
-          </span>
-        )}
-        
-        <div className="flex items-center justify-between mt-3">
-          <div className="text-sm text-gray-500">Poor</div>
-          <div className="flex-1 mx-4">
-            <div className="flex justify-between space-x-2">
-              {[1, 2, 3, 4, 5].map((value) => (
-                <button
-                  key={value}
-                  className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    rating === value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                  onClick={() => handleResponseChange(question.id, 'rating', value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="text-sm text-gray-500">Excellent</div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderOpenEndedQuestion = (question) => {
-    const currentResponse = responses[question.id] || {};
-    const text = currentResponse.text || '';
-    
-    return (
-      <div className="mb-6">
-        <h3 className="text-lg font-medium mb-2">{question.text}</h3>
-        {question.category && (
-          <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mb-3">
-            {question.category}
-          </span>
-        )}
-        
-        <textarea
-          rows="4"
-          className="w-full px-3 py-2 text-gray-700 border rounded-lg focus:outline-none focus:border-blue-500"
-          placeholder="Enter your feedback here..."
-          value={text}
-          onChange={(e) => handleResponseChange(question.id, 'text', e.target.value)}
-        />
-        
-        <div className="mt-1 text-xs text-gray-500">
-          Provide specific examples and constructive feedback
-        </div>
-      </div>
-    );
-  };
-
-  // Render assessment complete page
-  if (assessmentComplete) {
-    return (
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-6">
-            <CheckCircle className="w-8 h-8 text-green-600" />
-          </div>
-          <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
-          <p className="text-gray-600 mb-6">
-            Your feedback has been submitted successfully. Your insights will help {targetEmployee.name} grow professionally.
-          </p>
-          <div className="p-4 bg-blue-50 rounded-lg text-sm text-blue-800 mb-6">
-            <p>This assessment is now complete. You can close this window.</p>
+      <div className="max-w-3xl mx-auto bg-white rounded-lg shadow p-8">
+        <div className="text-center mb-6">
+          <div className="bg-green-100 text-green-800 p-4 rounded-lg">
+            <h2 className="text-xl font-semibold">Thank You!</h2>
+            <p className="mt-2">Your feedback has been submitted successfully.</p>
           </div>
         </div>
       </div>
@@ -359,152 +191,330 @@ const FeedbackAssessment = ({
   }
 
   return (
-    <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md">
+    <div className="max-w-3xl mx-auto bg-white rounded-lg shadow p-6">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-2">Feedback Assessment</h1>
-        <p className="text-gray-600">
-          You're providing feedback for <span className="font-semibold">{targetEmployee.name}</span> ({targetEmployee.position})
+        <h1 className="text-2xl font-bold">360° Feedback Assessment</h1>
+        <p className="text-gray-600 mt-1">
+          Providing feedback for: <span className="font-semibold">{targetEmployee.name}</span>
+          {targetEmployee.position && <span> - {targetEmployee.position}</span>}
         </p>
-        <div className="mt-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+        <div className="bg-blue-50 text-blue-700 p-3 rounded-lg mt-4">
           <p>Your feedback will help {targetEmployee.name} understand their strengths and areas for growth. Please be specific, constructive, and balanced.</p>
         </div>
       </div>
 
-      {/* Progress Bar */}
-      {renderProgressBar()}
+      {/* Errors at the top */}
+      {errors.general && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <p>{errors.general}</p>
+        </div>
+      )}
+
+      {/* AI Feedback Results */}
+      {aiFeedback && (
+        <div className={`mb-6 p-4 rounded-lg ${
+          aiFeedback.quality === 'good' 
+            ? 'bg-green-50 text-green-800 border border-green-200' 
+            : aiFeedback.quality === 'needs_improvement' 
+              ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          <h3 className="font-semibold mb-2">
+            AI Assistant Feedback {aiFeedback.quality === 'good' && '✓'}
+          </h3>
+          <p>{aiFeedback.message}</p>
+
+          {aiFeedback.suggestions && aiFeedback.suggestions.length > 0 && (
+            <div className="mt-3">
+              <p className="font-medium">Suggestions for improvement:</p>
+              <ul className="list-disc ml-5 mt-1">
+                {aiFeedback.suggestions.map((suggestion, index) => (
+                  <li key={index}>{suggestion}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {aiFeedback.questionFeedback && Object.keys(aiFeedback.questionFeedback).length > 0 && (
+            <div className="mt-3">
+              <p className="font-medium">Specific feedback on responses:</p>
+              {Object.entries(aiFeedback.questionFeedback).map(([questionId, feedback]) => {
+                const questionIndex = questions.findIndex(q => q.id === questionId);
+                return (
+                  <div key={questionId} className="mt-2 text-sm p-2 bg-white bg-opacity-50 rounded">
+                    <p className="font-medium">Question {questionIndex + 1}:</p>
+                    <p>{feedback}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Progress Bar - based on filled in required questions */}
+      <div className="mb-8">
+        <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-blue-600 transition-all duration-500"
+            style={{ 
+              width: `${calculateProgress()}%` 
+            }}
+          ></div>
+        </div>
+      </div>
 
       {/* Questions */}
-      <div className="mb-8">
-        {questions && questions.map((question, index) => (
-          <div key={question.id || index} className="mb-8 p-4 border border-gray-200 rounded-lg">
-            {question.type === 'rating' && renderRatingQuestion(question)}
-            {question.type === 'open_ended' && renderOpenEndedQuestion(question)}
+      <div className="space-y-8">
+        {questions.map((question, index) => (
+          <div key={question.id} className={`p-6 border rounded-lg ${
+            errors[question.id] 
+              ? 'border-red-300 bg-red-50' 
+              : aiFeedback?.questionFeedback?.[question.id]
+                ? 'border-yellow-300 bg-yellow-50'
+                : 'border-gray-200'
+          }`}>
+            <h3 className="text-lg font-medium">{question.text}</h3>
+            
+            {/* Category Tag */}
+            <div className="mt-1 mb-3">
+              <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                {question.category}
+              </span>
+            </div>
+            
+            {/* Rating Input */}
+            {question.type === 'rating' && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Poor</span>
+                  <div className="flex space-x-2">
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handleRatingChange(question.id, value)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors
+                          ${
+                            ratings[question.id] === value
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                          }`}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-sm text-gray-500">Excellent</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Text Input */}
+            {question.type === 'open_ended' && (
+              <div className="mt-4">
+                <textarea
+                  rows="4"
+                  className={`w-full p-3 border ${
+                    errors[question.id] 
+                      ? 'border-red-300' 
+                      : aiFeedback?.questionFeedback?.[question.id]
+                        ? 'border-yellow-300'
+                        : 'border-gray-300'
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                  placeholder="Provide specific examples and constructive feedback"
+                  value={responses[question.id] || ''}
+                  onChange={(e) => handleResponseChange(question.id, e.target.value)}
+                ></textarea>
+                {responses[question.id] && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Character count: {responses[question.id].length}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Error Message */}
+            {errors[question.id] && (
+              <p className="mt-2 text-sm text-red-600">{errors[question.id]}</p>
+            )}
+            
+            {/* AI Feedback on this question */}
+            {aiFeedback?.questionFeedback?.[question.id] && (
+              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  <span className="font-medium">AI Suggestion:</span> {aiFeedback.questionFeedback[question.id]}
+                </p>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      {/* AI Evaluation Section */}
-      <div className="mb-8">
-        <div className="border-t border-gray-200 pt-6 mb-4">
-          <h2 className="text-xl font-bold mb-4">Review Your Feedback</h2>
-          
-          {!aiEvaluation && !isEvaluating && (
-            <button
-              onClick={evaluateFeedback}
-              disabled={!allQuestionsAnswered}
-              className={`w-full flex items-center justify-center px-4 py-3 rounded-md ${
-                allQuestionsAnswered
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <Info className="w-5 h-5 mr-2" />
-              {allQuestionsAnswered 
-                ? "Check My Feedback with AI Assistant" 
-                : "Please answer all required questions first"}
-            </button>
-          )}
-          
-          {isEvaluating && (
-            <div className="flex items-center justify-center p-4 bg-blue-50 rounded-lg">
-              <RefreshCw className="w-5 h-5 text-blue-500 animate-spin mr-2" />
-              <span>Analyzing your feedback...</span>
-            </div>
-          )}
-          
-          {aiEvaluation && (
-            <div className={`p-4 rounded-lg mb-4 ${
-              aiEvaluation.status === 'success' ? 'bg-green-50' : 'bg-yellow-50'
-            }`}>
-              <div className="flex items-start">
-                {aiEvaluation.status === 'success' ? (
-                  <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5" />
+      {/* Review and Submit Section */}
+      <div className="mt-10 border-t border-gray-200 pt-6">
+        <h2 className="text-xl font-bold mb-4">Review Your Feedback</h2>
+        
+        {/* Initially show only AI Check button */}
+        {!aiFeedback ? (
+          <button
+            type="button"
+            onClick={checkFeedbackWithAI}
+            disabled={aiChecking}
+            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors flex items-center justify-center"
+          >
+            {aiChecking ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Checking with AI...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                </svg>
+                Check My Feedback with AI Assistant
+              </>
+            )}
+          </button>
+        ) : (
+          // After AI check, show appropriate buttons based on feedback quality
+          <div className="space-y-4">
+            {/* For good feedback quality, show submit button */}
+            {aiFeedback.quality === 'good' ? (
+              <button
+                type="button"
+                onClick={() => submitFeedback(false)}
+                disabled={isSubmitting}
+                className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-md shadow-sm transition-colors flex items-center justify-center"
+              >
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Submitting...
+                  </>
                 ) : (
-                  <AlertCircle className="w-5 h-5 text-yellow-500 mr-2 mt-0.5" />
+                  <>
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    Submit Feedback
+                  </>
                 )}
-                <div>
-                  <h3 className={`font-medium ${
-                    aiEvaluation.status === 'success' ? 'text-green-800' : 'text-yellow-800'
-                  }`}>
-                    {aiEvaluation.status === 'success' ? 'Feedback looks good!' : 'Suggestions for improvement:'}
-                  </h3>
-                  <p className="text-gray-700 mt-1">{aiEvaluation.message}</p>
-                  
-                  {aiEvaluation.suggestions && aiEvaluation.suggestions.length > 0 && (
-                    <ul className="mt-3 space-y-2">
-                      {aiEvaluation.suggestions.map((suggestion, index) => (
-                        <li key={index} className="flex items-start">
-                          <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mr-2 mt-0.5">Tip</span>
-                          <span>{suggestion}</span>
-                        </li>
-                      ))}
-                    </ul>
+              </button>
+            ) : (
+              // For needs improvement or poor feedback, show revision options
+              <>
+                <button
+                  type="button"
+                  onClick={checkFeedbackWithAI}
+                  disabled={aiChecking}
+                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors flex items-center justify-center"
+                >
+                  {aiChecking ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Checking with AI...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                      </svg>
+                      Check Again After Making Changes
+                    </>
                   )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBypassWarningOpen(true)}
+                  disabled={isSubmitting}
+                  className="w-full py-3 px-4 bg-gray-600 hover:bg-gray-700 text-white rounded-md shadow-sm transition-colors flex items-center justify-center"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                  </svg>
+                  Submit Anyway
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Submission controls */}
-      <div className="flex flex-col gap-3">
-        {aiEvaluation && aiEvaluation.status !== 'success' && !bypassWarning && (
-          <button
-            onClick={() => setBypassWarning(true)}
-            className="px-4 py-3 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 flex items-center justify-center"
-          >
-            <ChevronRight className="w-5 h-5 mr-2" />
-            Submit Anyway
-          </button>
-        )}
-        
-        {bypassWarning && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg mb-4">
-            <h4 className="font-medium text-red-800 mb-1">Are you sure?</h4>
-            <p className="text-sm text-gray-700 mb-3">
-              Your feedback may not be as constructive as it could be. The HR/admin team will receive the AI's suggestions along with your feedback.
-            </p>
-            <div className="flex gap-3">
+      {/* Bypass Warning Modal */}
+      {bypassWarningOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="mb-4">
+              <div className="flex items-center">
+                <svg className="w-6 h-6 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <h3 className="text-lg font-semibold">Submit Anyway?</h3>
+              </div>
+            </div>
+            <div className="mb-6">
+              <p className="text-gray-700 mb-3">
+                Our AI assistant has flagged potential issues with your feedback. Are you sure you want to submit it as is?
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-md text-sm">
+                <p><strong>Important:</strong> If you proceed, the AI's concerns about your feedback will be shared with HR/administrators (not with {targetEmployee.name}).</p>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setBypassWarning(false)}
-                className="px-3 py-2 bg-white text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
+                type="button"
+                onClick={() => setBypassWarningOpen(false)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors"
               >
-                Revise My Feedback
+                Go Back & Revise
               </button>
               <button
+                type="button"
                 onClick={() => submitFeedback(true)}
-                className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
-                disabled={submitting}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
               >
-                {submitting ? 'Submitting...' : 'Submit Anyway'}
+                {isSubmitting ? 'Submitting...' : 'Submit Anyway'}
               </button>
             </div>
           </div>
-        )}
-        
-        <button
-          onClick={() => submitFeedback(false)}
-          disabled={submitting || !allQuestionsAnswered || (!bypassWarning && aiEvaluation && aiEvaluation.status !== 'success')}
-          className={`px-4 py-3 rounded-md flex items-center justify-center ${
-            submitting || !allQuestionsAnswered || (!bypassWarning && aiEvaluation && aiEvaluation.status !== 'success')
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
-        >
-          <Send className="w-5 h-5 mr-2" />
-          {submitting 
-            ? 'Submitting...' 
-            : !allQuestionsAnswered 
-              ? 'Please answer all required questions' 
-              : (!aiEvaluation) 
-                ? 'Check Feedback Before Submitting' 
-                : 'Submit Feedback'}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
+
+  // Helper function to calculate progress
+  function calculateProgress() {
+    const totalRequired = questions.filter(q => q.required).length;
+    
+    if (totalRequired === 0) return 100;
+    
+    let completed = 0;
+    
+    questions.forEach(question => {
+      if (!question.required) return;
+      
+      if (question.type === 'rating' && ratings[question.id]) {
+        completed++;
+      } else if (question.type === 'open_ended' && responses[question.id] && responses[question.id].trim() !== '') {
+        completed++;
+      }
+    });
+    
+    return Math.round((completed / totalRequired) * 100);
+  }
 };
 
 export default FeedbackAssessment;
