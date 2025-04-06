@@ -1,3 +1,5 @@
+// frontend/src/App.jsx
+
 import React, { useState, useEffect } from "react";
 import api from "./services/api";
 import { Routes, Route, Navigate } from 'react-router-dom';
@@ -15,7 +17,7 @@ import Settings from './pages/Settings';
 import Integration from './pages/Integration';
 import { MainLayout } from './components/layout/MainLayout';
 import WorkInProgress from './components/WorkInProgress';
-<Route path="/feedback/assessment" element={<FeedbackAssessmentPage />} />
+import FeedbackAssessmentPage from './pages/FeedbackAssessmentPage';
 
 function App() {
   const [loading, setLoading] = useState(true);

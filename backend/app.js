@@ -32,6 +32,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/settings/email', emailSettingsRoutes);
 app.use('/api/campaigns', require('./routes/campaigns.routes'));
+app.use('/api/feedback', require('./routes/feedback.routes'));
 
 const testRoutes = require('./routes/test.routes');
 app.use('/api/flux-test', testRoutes);  // Using a different path to avoid conflicts
