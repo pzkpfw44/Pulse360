@@ -109,11 +109,34 @@ class AiFeedbackService {
             console.log('AI response content:', aiContent);
             
             // Check for refusal patterns or very short responses - these often indicate the AI detected inappropriate content
-            if (aiContent.length < 50 || 
-                aiContent.toLowerCase().includes('cannot') || 
-                aiContent.toLowerCase().includes('unable to') ||
-                aiContent.toLowerCase().includes('would not be appropriate')) {
-              console.log('AI likely refused to analyze inappropriate content');
+            if (aiContent.includes('**QUALITY:') || aiContent.includes('QUALITY:')) {
+              console.log('AI provided a proper structured analysis');
+              
+              // Extract structured information from AI response
+              const quality = this.extractQualityFromAIResponse(aiContent);
+              const suggestions = this.extractSuggestionsFromAIResponse(aiContent);
+              const questionFeedback = this.extractQuestionFeedbackFromAIResponse(aiContent, responses);
+              
+              // Generate appropriate message based on quality assessment
+              const message = this.generateMessageFromQuality(quality);
+              
+              return {
+                quality,
+                message,
+                suggestions,
+                questionFeedback,
+                analysisDetails: { 
+                  aiResponse: aiContent,
+                  extractedQuality: quality,
+                  usedAI: true
+                }
+              };
+            } 
+            // Only fall back if the response is very short or contains explicit refusal language
+            else if (aiContent.length < 50 || 
+                     aiContent.match(/i (cannot|can't|am unable to) (analyze|evaluate|review|provide)/i) ||
+                     aiContent.match(/would not be (appropriate|ethical|responsible)/i)) {
+              console.log('AI likely refused to analyze the content');
               return this.fallbackEvaluation(responses, assessorType);
             }
             
@@ -214,6 +237,30 @@ Question Y: [specific feedback]"`;
   
   // Extract quality assessment from AI response
   extractQualityFromAIResponse(aiResponse) {
+    // Look for a structured quality assessment first
+    const qualityMatch = aiResponse.match(/\*\*QUALITY:\s*(\w+)\*\*/i) || 
+                         aiResponse.match(/QUALITY:\s*(\w+)/i);
+    
+    if (qualityMatch && qualityMatch[1]) {
+      const explicitQuality = qualityMatch[1].toLowerCase().trim();
+      console.log(`AI explicitly rated quality as: ${explicitQuality}`);
+      
+      // Map the AI's quality assessment to our quality levels
+      if (explicitQuality === 'poor' || explicitQuality === 'bad') {
+        return 'poor';
+      } else if (explicitQuality === 'needs_improvement' || 
+                 explicitQuality === 'needs improvement' || 
+                 explicitQuality === 'fair' ||
+                 explicitQuality === 'average') {
+        return 'needs_improvement';
+      } else if (explicitQuality === 'good' || 
+                 explicitQuality === 'excellent' || 
+                 explicitQuality === 'great') {
+        return 'good';
+      }
+    }
+    
+    // Fallback to text analysis if no structured quality found
     const lowerResponse = aiResponse.toLowerCase();
     
     // Check for AI refusal patterns which indicate inappropriate content
@@ -228,11 +275,14 @@ Question Y: [specific feedback]"`;
       return 'poor';
     }
     
-    // Explicit checks for offensive content indicators
+    // Explicit checks for feedback quality indicators
     if (lowerResponse.includes('offensive') || 
         lowerResponse.includes('inappropriate') || 
         lowerResponse.includes('unprofessional') ||
-        lowerResponse.includes('derogatory')) {
+        lowerResponse.includes('derogatory') ||
+        lowerResponse.includes('lack of specificity') ||
+        lowerResponse.includes('lacks specificity') ||
+        lowerResponse.includes('too general')) {
       return 'poor';
     } else if (lowerResponse.includes('needs improvement') || 
                lowerResponse.includes('could be more') || 
@@ -240,8 +290,7 @@ Question Y: [specific feedback]"`;
                lowerResponse.includes('too brief')) {
       return 'needs_improvement';
     } else {
-      // If we get a non-specific or unclear response, run our own check
-      // for offensive terms, just to be safe
+      // If we can't determine quality from the content, default to good
       return 'good';
     }
   }

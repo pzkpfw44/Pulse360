@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../../services/api';
+import { formatAiFeedback } from '../../utils/formatAiFeedback';
 
 const FeedbackAssessment = ({ 
   campaignId, 
@@ -13,6 +14,7 @@ const FeedbackAssessment = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [aiChecking, setAiChecking] = useState(false);
   const [aiFeedback, setAiFeedback] = useState(null);
+  const [formattedFeedback, setFormattedFeedback] = useState(null);
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [bypassWarningOpen, setBypassWarningOpen] = useState(false);
@@ -33,6 +35,7 @@ const FeedbackAssessment = ({
     // Reset AI feedback when user makes changes
     if (aiFeedback) {
       setAiFeedback(null);
+      setFormattedFeedback(null);
     }
   };
 
@@ -52,6 +55,7 @@ const FeedbackAssessment = ({
     // Reset AI feedback when user makes changes
     if (aiFeedback) {
       setAiFeedback(null);
+      setFormattedFeedback(null);
     }
   };
 
@@ -92,6 +96,7 @@ const FeedbackAssessment = ({
 
     setAiChecking(true);
     setAiFeedback(null);
+    setFormattedFeedback(null);
 
     try {
       // Format the responses for the API
@@ -112,12 +117,23 @@ const FeedbackAssessment = ({
         targetEmployeeId: targetEmployee.id
       });
 
+      // Process the AI feedback data
       setAiFeedback(response.data);
+      
+      // Format the AI feedback for display
+      const formatted = formatAiFeedback(response.data, formattedResponses);
+      setFormattedFeedback(formatted);
     } catch (error) {
       console.error('Error checking feedback with AI:', error);
       setAiFeedback({
         quality: 'error',
         message: 'An error occurred while checking your feedback. Please try again later.'
+      });
+      setFormattedFeedback({
+        quality: 'error',
+        message: 'An error occurred while checking your feedback. Please try again later.',
+        suggestions: [],
+        questionFeedback: {}
       });
     } finally {
       setAiChecking(false);
@@ -132,7 +148,7 @@ const FeedbackAssessment = ({
     }
 
     // If AI feedback quality is not good and bypass warning is not confirmed
-    if (aiFeedback && aiFeedback.quality !== 'good' && !bypassAiRecommendations) {
+    if (formattedFeedback && formattedFeedback.quality !== 'good' && !bypassAiRecommendations) {
       setBypassWarningOpen(true);
       return;
     }
@@ -212,42 +228,51 @@ const FeedbackAssessment = ({
       )}
 
       {/* AI Feedback Results */}
-      {aiFeedback && (
+      {formattedFeedback && (
         <div className={`mb-6 p-4 rounded-lg ${
-          aiFeedback.quality === 'good' 
+          formattedFeedback.quality === 'good' 
             ? 'bg-green-50 text-green-800 border border-green-200' 
-            : aiFeedback.quality === 'needs_improvement' 
+            : formattedFeedback.quality === 'needs_improvement' 
               ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
               : 'bg-red-50 text-red-800 border border-red-200'
         }`}>
           <h3 className="font-semibold mb-2">
-            AI Assistant Feedback {aiFeedback.quality === 'good' && '✓'}
+            AI Assistant Feedback {formattedFeedback.quality === 'good' && '✓'}
           </h3>
-          <p>{aiFeedback.message}</p>
+          <p>{formattedFeedback.message}</p>
 
-          {aiFeedback.suggestions && aiFeedback.suggestions.length > 0 && (
+          {formattedFeedback.suggestions && formattedFeedback.suggestions.length > 0 && (
             <div className="mt-3">
               <p className="font-medium">Suggestions for improvement:</p>
               <ul className="list-disc ml-5 mt-1">
-                {aiFeedback.suggestions.map((suggestion, index) => (
+                {formattedFeedback.suggestions.map((suggestion, index) => (
                   <li key={index}>{suggestion}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          {aiFeedback.questionFeedback && Object.keys(aiFeedback.questionFeedback).length > 0 && (
+          {formattedFeedback.quality !== 'good' && (
             <div className="mt-3">
               <p className="font-medium">Specific feedback on responses:</p>
-              {Object.entries(aiFeedback.questionFeedback).map(([questionId, feedback]) => {
-                const questionIndex = questions.findIndex(q => q.id === questionId);
-                return (
-                  <div key={questionId} className="mt-2 text-sm p-2 bg-white bg-opacity-50 rounded">
-                    <p className="font-medium">Question {questionIndex + 1}:</p>
-                    <p>{feedback}</p>
-                  </div>
-                );
-              })}
+              <div className="mt-2 bg-white bg-opacity-50 rounded-md p-3">
+                {Object.keys(formattedFeedback.questionFeedback).length > 0 ? (
+                  questions.map((question, index) => {
+                    const feedback = formattedFeedback.questionFeedback[question.id];
+                    if (!feedback) return null;
+                    
+                    return (
+                      <div key={question.id} className="mb-3 last:mb-0">
+                        <p className="font-medium">Question {index + 1}:</p>
+                        <p className="text-sm italic mb-1">"{question.text}"</p>
+                        <p className="text-sm bg-yellow-50 p-2 rounded">{feedback}</p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm italic">Your feedback contains general issues. Please review and apply the suggestions above.</p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -271,7 +296,7 @@ const FeedbackAssessment = ({
           <div key={question.id} className={`p-6 border rounded-lg ${
             errors[question.id] 
               ? 'border-red-300 bg-red-50' 
-              : aiFeedback?.questionFeedback?.[question.id]
+              : formattedFeedback?.questionFeedback?.[question.id]
                 ? 'border-yellow-300 bg-yellow-50'
                 : 'border-gray-200'
           }`}>
@@ -319,7 +344,7 @@ const FeedbackAssessment = ({
                   className={`w-full p-3 border ${
                     errors[question.id] 
                       ? 'border-red-300' 
-                      : aiFeedback?.questionFeedback?.[question.id]
+                      : formattedFeedback?.questionFeedback?.[question.id]
                         ? 'border-yellow-300'
                         : 'border-gray-300'
                   } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
@@ -341,10 +366,10 @@ const FeedbackAssessment = ({
             )}
             
             {/* AI Feedback on this question */}
-            {aiFeedback?.questionFeedback?.[question.id] && (
+            {formattedFeedback?.questionFeedback?.[question.id] && (
               <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
                 <p className="text-sm text-yellow-800">
-                  <span className="font-medium">AI Suggestion:</span> {aiFeedback.questionFeedback[question.id]}
+                  <span className="font-medium">AI Suggestion:</span> {formattedFeedback.questionFeedback[question.id]}
                 </p>
               </div>
             )}
@@ -357,7 +382,7 @@ const FeedbackAssessment = ({
         <h2 className="text-xl font-bold mb-4">Review Your Feedback</h2>
         
         {/* Initially show only AI Check button */}
-        {!aiFeedback ? (
+        {!formattedFeedback ? (
           <button
             type="button"
             onClick={checkFeedbackWithAI}
@@ -385,7 +410,7 @@ const FeedbackAssessment = ({
           // After AI check, show appropriate buttons based on feedback quality
           <div className="space-y-4">
             {/* For good feedback quality, show submit button */}
-            {aiFeedback.quality === 'good' ? (
+            {formattedFeedback.quality === 'good' ? (
               <button
                 type="button"
                 onClick={() => submitFeedback(false)}
