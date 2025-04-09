@@ -1,5 +1,9 @@
+// backend/server.js
+// Update the existing server.js to run the migration before starting
+
 const app = require('./app');
 const { testConnection, syncDatabase } = require('./models');
+const addUseFullAiSupportColumn = require('./migrations/add-useFullAiSupport-column');
 require('dotenv').config();
 
 const PORT = process.env.PORT || 5000;
@@ -11,6 +15,10 @@ const startServer = async () => {
     const isConnected = await testConnection();
     
     if (isConnected) {
+      // Run migrations
+      console.log('Running migrations...');
+      await addUseFullAiSupportColumn();
+      
       // Sync database models (set force to true to reset database in development)
       const force = false;
       await syncDatabase(force);

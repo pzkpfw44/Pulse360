@@ -14,7 +14,30 @@ const {
   // Get all campaigns
   exports.getAllCampaigns = async (req, res) => {
     try {
+      // Check if the useFullAiSupport column exists in the database
+      let includeUseFullAiSupport = true;
+      try {
+        const tableDescription = await sequelize.getQueryInterface().describeTable('campaigns');
+        includeUseFullAiSupport = !!tableDescription.useFullAiSupport;
+      } catch (describeError) {
+        console.warn('Warning: Could not describe campaigns table', describeError);
+        includeUseFullAiSupport = false;
+      }
+      
+      // Select attributes dynamically based on schema
+      const attributes = [
+        'id', 'name', 'description', 'startDate', 'endDate', 
+        'status', 'templateId', 'targetEmployeeId', 'completionRate', 
+        'lastReminderSent', 'settings', 'createdBy', 'createdAt', 'updatedAt'
+      ];
+      
+      // Only include the useFullAiSupport attribute if it exists
+      if (includeUseFullAiSupport) {
+        attributes.push('useFullAiSupport');
+      }
+      
       const campaigns = await Campaign.findAll({
+        attributes: attributes,
         where: { createdBy: req.user.id },
         include: [
           { 
@@ -30,6 +53,13 @@ const {
         ],
         order: [['createdAt', 'DESC']]
       });
+      
+      // If useFullAiSupport doesn't exist, add it as true by default in the response
+      if (!includeUseFullAiSupport) {
+        campaigns.forEach(campaign => {
+          campaign.dataValues.useFullAiSupport = true; // Default value
+        });
+      }
       
       res.status(200).json({
         count: campaigns.length,
@@ -90,55 +120,57 @@ const {
   
 // Create new campaign
 exports.createCampaign = async (req, res) => {
-    try {
-      const { 
-        name, 
-        description, 
-        startDate,
-        endDate,
-        templateId, 
-        targetEmployeeId,
-        participants,
-        status = 'draft',
-        settings
-      } = req.body;
-      
-      // Validate fields only for non-draft campaigns
-      if (status !== 'draft' && (!name || !templateId || !targetEmployeeId)) {
-        return res.status(400).json({ 
-          message: 'Name, template ID, and target employee ID are required for non-draft campaigns' 
-        });
-      }
-      
-      // Check if template exists (if provided)
-      if (templateId) {
-        const template = await Template.findByPk(templateId);
-        if (!template) {
-          return res.status(404).json({ message: 'Template not found' });
-        }
-      }
-      
-      // Check if target employee exists (only if an ID is provided)
-      if (targetEmployeeId && targetEmployeeId.trim() !== '') {
-        const targetEmployee = await Employee.findByPk(targetEmployeeId);
-        if (!targetEmployee) {
-          return res.status(404).json({ message: 'Target employee not found' });
-        }
-      }
-      
-      // Create the campaign
-      const campaign = await Campaign.create({
-        name,
-        description,
-        startDate,
-        endDate,
-        templateId,
-        targetEmployeeId: targetEmployeeId && targetEmployeeId.trim() !== '' ? targetEmployeeId : null,
-        status,
-        settings,
-        createdBy: req.user.id,
-        completionRate: 0
+  try {
+    const { 
+      name, 
+      description, 
+      startDate,
+      endDate,
+      templateId, 
+      targetEmployeeId,
+      participants,
+      status = 'draft',
+      settings,
+      useFullAiSupport = true // Default to true if not provided
+    } = req.body;
+    
+    // Validate fields only for non-draft campaigns
+    if (status !== 'draft' && (!name || !templateId || !targetEmployeeId)) {
+      return res.status(400).json({ 
+        message: 'Name, template ID, and target employee ID are required for non-draft campaigns' 
       });
+    }
+    
+    // Check if template exists (if provided)
+    if (templateId) {
+      const template = await Template.findByPk(templateId);
+      if (!template) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
+    }
+    
+    // Check if target employee exists (only if an ID is provided)
+    if (targetEmployeeId && targetEmployeeId.trim() !== '') {
+      const targetEmployee = await Employee.findByPk(targetEmployeeId);
+      if (!targetEmployee) {
+        return res.status(404).json({ message: 'Target employee not found' });
+      }
+    }
+    
+    // Create the campaign with the new field
+    const campaign = await Campaign.create({
+      name,
+      description,
+      startDate,
+      endDate,
+      templateId,
+      targetEmployeeId: targetEmployeeId && targetEmployeeId.trim() !== '' ? targetEmployeeId : null,
+      status,
+      settings,
+      useFullAiSupport, // Include the new field
+      createdBy: req.user.id,
+      completionRate: 0
+    });
       
       // Add participants if provided
       if (participants && Array.isArray(participants)) {
@@ -209,7 +241,8 @@ exports.createCampaign = async (req, res) => {
         targetEmployeeId,
         participants,
         status,
-        settings
+        settings,
+        useFullAiSupport
       } = req.body;
       
       // Find the campaign
@@ -231,7 +264,7 @@ exports.createCampaign = async (req, res) => {
         });
       }
       
-      // Update campaign fields
+      // Update campaign fields including the new useFullAiSupport field
       await campaign.update({
         name: name || campaign.name,
         description: description !== undefined ? description : campaign.description,
@@ -240,7 +273,8 @@ exports.createCampaign = async (req, res) => {
         templateId: templateId || campaign.templateId,
         targetEmployeeId: targetEmployeeId || campaign.targetEmployeeId,
         status: status || campaign.status,
-        settings: settings || campaign.settings
+        settings: settings || campaign.settings,
+        useFullAiSupport: useFullAiSupport !== undefined ? useFullAiSupport : campaign.useFullAiSupport
       });
       
       // Update participants if provided

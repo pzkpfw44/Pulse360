@@ -1,4 +1,5 @@
 // backend/models/campaign.model.js
+// Add this field to the Campaign model schema
 
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
@@ -17,11 +18,6 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  status: {
-    type: DataTypes.ENUM,
-    values: ['draft', 'active', 'paused', 'completed', 'canceled'],
-    defaultValue: 'draft'
-  },
   startDate: {
     type: DataTypes.DATE,
     allowNull: true
@@ -30,18 +26,44 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.DATE,
     allowNull: true
   },
-  reminderFrequency: {
-    type: DataTypes.INTEGER,
-    defaultValue: 7, // Default to weekly reminders
-    comment: 'Reminder frequency in days'
+  status: {
+    type: DataTypes.ENUM,
+    values: ['draft', 'active', 'completed', 'canceled'],
+    defaultValue: 'draft'
   },
   templateId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'Templates',
       key: 'id'
     }
+  },
+  targetEmployeeId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Employees',
+      key: 'id'
+    }
+  },
+  completionRate: {
+    type: DataTypes.FLOAT,
+    defaultValue: 0
+  },
+  lastReminderSent: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  settings: {
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  // New field for AI support preference
+  useFullAiSupport: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    allowNull: false
   },
   createdBy: {
     type: DataTypes.UUID,
@@ -50,28 +72,6 @@ const Campaign = sequelize.define('Campaign', {
       model: 'Users',
       key: 'id'
     }
-  },
-  lastReminderSent: {
-    type: DataTypes.DATE,
-    allowNull: true
-  },
-  completionRate: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0
-  },
-  targetEmployeeId: {
-    type: DataTypes.UUID,
-    allowNull: true, // Change this from false to true
-    references: {
-      model: 'Employees',
-      key: 'id'
-    },
-    comment: 'The employee who is the subject of the 360 feedback'
-  },
-  settings: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    comment: 'Additional campaign settings (e.g., anonymity level, custom messaging)'
   },
   createdAt: {
     type: DataTypes.DATE,

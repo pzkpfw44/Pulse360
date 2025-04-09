@@ -21,7 +21,8 @@ const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
     startDate: null,
     endDate: null,
     emailTemplates: {},
-    settings: {}
+    settings: {},
+    useFullAiSupport: true // Default to true for full AI support
   });
 
   // Initialize with provided data, if any
@@ -33,7 +34,8 @@ const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
         // Ensure we don't lose any fields that might not be in initialData
         participants: initialData.participants || prevData.participants,
         emailTemplates: initialData.emailTemplates || prevData.emailTemplates,
-        settings: initialData.settings || prevData.settings
+        settings: initialData.settings || prevData.settings,
+        useFullAiSupport: initialData.useFullAiSupport !== undefined ? initialData.useFullAiSupport : prevData.useFullAiSupport
       }));
     }
   }, [initialData]);

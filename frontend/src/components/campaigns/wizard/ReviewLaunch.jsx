@@ -11,11 +11,12 @@ import {
   Users, 
   ChevronDown, 
   ChevronUp,
-  Edit
+  Edit,
+  Brain
 } from 'lucide-react';
 import api from '../../../services/api';
 
-const ReviewLaunch = ({ data, onLaunch }) => {
+const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
   const [loading, setLoading] = useState(false);
   const [template, setTemplate] = useState(null);
   const [targetEmployee, setTargetEmployee] = useState(null);
@@ -23,7 +24,8 @@ const ReviewLaunch = ({ data, onLaunch }) => {
     basic: true,
     participants: true,
     schedule: true,
-    emails: false
+    emails: false,
+    aiSettings: true // New section for AI settings
   });
   const [validationErrors, setValidationErrors] = useState([]);
   const [launchConfirmation, setLaunchConfirmation] = useState(false);
@@ -141,6 +143,13 @@ const ReviewLaunch = ({ data, onLaunch }) => {
   // Get participants by relationship type
   const getParticipantsByType = (type) => {
     return (data.participants || []).filter(p => p.relationshipType === type);
+  };
+
+  // Handle AI support toggle
+  const handleAiSupportChange = (useFullAiSupport) => {
+    if (onDataChange) {
+      onDataChange({ useFullAiSupport });
+    }
   };
 
   // Handle launch button click
@@ -453,6 +462,93 @@ const ReviewLaunch = ({ data, onLaunch }) => {
                   {data.reminderFrequency === 0 ? 'No automatic reminders' : `Every ${data.reminderFrequency} days`}
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* AI Support Settings Section - NEW */}
+      <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+        <div 
+          className="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer"
+          onClick={() => toggleSection('aiSettings')}
+        >
+          <div className="flex items-center">
+            <Brain className="h-5 w-5 text-gray-400 mr-2" />
+            <h3 className="font-medium text-gray-900">AI Support Settings</h3>
+          </div>
+          {openSections.aiSettings ? (
+            <ChevronUp className="h-5 w-5 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-gray-500" />
+          )}
+        </div>
+        
+        {openSections.aiSettings && (
+          <div className="p-4 bg-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-gray-900 mb-2">AI Feedback Support</p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Configure how Flux AI assists assessors during feedback collection
+                </p>
+                
+                <div className={`mt-2 p-3 rounded-md ${data.useFullAiSupport !== false ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50 border border-gray-200'}`}>
+                  {data.useFullAiSupport !== false ? (
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <Brain className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="ml-3">
+                        <h4 className="text-sm font-medium text-blue-800">Full AI Support Enabled</h4>
+                        <p className="mt-1 text-sm text-blue-700">
+                          Assessors will receive real-time AI feedback on their responses to help improve quality.
+                          This includes suggestions for more specific examples and balanced feedback.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <AlertTriangle className="h-5 w-5 text-amber-500" />
+                      </div>
+                      <div className="ml-3">
+                        <h4 className="text-sm font-medium text-gray-800">Using Fallback Mode</h4>
+                        <p className="mt-1 text-sm text-gray-600">
+                          Assessors will receive basic validation but no AI-assisted feedback or suggestions.
+                          This mode uses less system resources but provides a more basic experience.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="relative inline-block w-12 align-middle select-none mt-1">
+                <input
+                  type="checkbox"
+                  name="aiSupport"
+                  id="aiSupport"
+                  checked={data.useFullAiSupport !== false}
+                  onChange={(e) => handleAiSupportChange(e.target.checked)}
+                  className="absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer checked:right-0 checked:border-blue-600 top-0 bottom-0"
+                />
+                <label
+                  htmlFor="aiSupport"
+                  className={`block overflow-hidden h-6 rounded-full cursor-pointer ${
+                    data.useFullAiSupport !== false ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                ></label>
+              </div>
+            </div>
+            
+            <div className="mt-3 flex items-start">
+              <div className="flex-shrink-0">
+                <AlertTriangle className="h-4 w-4 text-gray-400" />
+              </div>
+              <p className="ml-2 text-xs text-gray-500">
+                This setting affects all assessors in this campaign and cannot be changed after the campaign is launched.
+              </p>
             </div>
           </div>
         )}

@@ -68,7 +68,12 @@ const settingsApi = {
   updateEmailSettings: (data) => api.put('/settings/email', data),
   testEmailConnection: (data) => api.post('/settings/email/test', data),
   getFluxModels: () => api.get('/settings/flux/models'),
-  getFluxBalance: () => api.get('/settings/flux/balance')
+  getFluxBalance: () => api.get('/settings/flux/balance'),
+  
+  // Danger Zone operations
+  dangerZone: {
+    disableAiForAllCampaigns: () => api.post('/settings/danger-zone/disable-ai-for-all-campaigns')
+  }
 };
 
 const campaignsApi = {

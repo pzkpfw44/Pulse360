@@ -12,6 +12,7 @@ const templatesRoutes = require('./routes/templates.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const employeesRoutes = require('./routes/employees.routes');
 const emailSettingsRoutes = require('./routes/email-settings.routes');
+const dangerZoneRoutes = require('./routes/danger-zone.routes'); // Add this line
 const documentsController = require('./controllers/documents.controller');
 const upload = require('./middleware/upload.middleware');
 
@@ -31,6 +32,7 @@ app.use('/api/templates', templatesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/settings/email', emailSettingsRoutes);
+app.use('/api/settings/danger-zone', dangerZoneRoutes); // Add this line
 app.use('/api/campaigns', require('./routes/campaigns.routes'));
 app.use('/api/feedback', require('./routes/feedback.routes'));
 
