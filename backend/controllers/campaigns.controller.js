@@ -6,7 +6,8 @@ const {
     Template, 
     Employee, 
     Question,
-    EmailSettings
+    EmailSettings,
+    sequelize
   } = require('../models');
   const { v4: uuidv4 } = require('uuid');
   const emailService = require('../services/email.service');
