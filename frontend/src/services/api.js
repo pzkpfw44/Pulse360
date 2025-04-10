@@ -98,7 +98,7 @@ const campaignsApi = {
 };
 
 // Export all API services
-export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesAp };
+export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesApi };
 
 // Default export for backward compatibility
 export default api;

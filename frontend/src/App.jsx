@@ -75,7 +75,7 @@ function App() {
         <Route path="/contexthub" element={<ContextHub />} />
         <Route path="/contexthub/templates/:id" element={<TemplateReview />} />
         <Route path="/templates" element={<TemplateList />} />
-        <Route path="/communication-templates" element={<WorkInProgress title="Communication Templates" />} />
+        <Route path="/communication-templates" element={<CommunicationTemplates />} />
         
         {/* ControlHub */}
         <Route path="/start-360" element={<CampaignCreate />} />

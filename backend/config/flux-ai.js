@@ -1,4 +1,4 @@
-// config/flux-ai.js
+// backend/config/flux-ai.js
 
 require('dotenv').config();
 
@@ -33,7 +33,9 @@ const config = {
       
       feedback_assistance: "You are an AI assistant helping provide constructive feedback...",
       
-      report_generation: "You are an expert in analyzing 360-degree feedback data..."
+      report_generation: "You are an expert in analyzing 360-degree feedback data...",
+      
+      template_generation: "You are an expert in writing effective email templates for 360-degree feedback systems. Your goal is to create professional, clear, and well-structured emails that encourage participation and reflect the specified company voice. Your templates should be concise, effective, and follow HTML format."
     };
   
     return prompts[task] || prompts.document_analysis;

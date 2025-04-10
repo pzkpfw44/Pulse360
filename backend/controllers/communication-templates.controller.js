@@ -192,44 +192,69 @@ exports.generateAiTemplates = async (req, res) => {
     
     // Use development mode placeholder if AI is not configured or in dev mode
     if (!fluxAiConfig.isConfigured() || fluxAiConfig.isDevelopment) {
-      const demoTemplate = generateDemoTemplate(templateType, recipientType);
+      // Extract branding parameters
+      const tone = companyVoice?.tone || 'professional';
+      const formality = companyVoice?.formality || 'formal';
+      const personality = companyVoice?.personality || 'helpful';
+      
+      // Pass branding parameters to demo template generator
+      const demoTemplate = generateDemoTemplate(templateType, recipientType, { tone, formality, personality });
       templateContent = demoTemplate.content;
       templateSubject = demoTemplate.subject;
     } else {
       // Call the AI service to generate template
       const tone = companyVoice?.tone || 'professional';
       const formality = companyVoice?.formality || 'formal';
+      const personality = companyVoice?.personality || 'helpful';
       
-      const aiPrompt = generateAiPrompt(templateType, recipientType, tone, formality);
+      const aiPrompt = generateAiPrompt(templateType, recipientType, tone, formality, personality);
       
-      const response = await axios.post(
-        fluxAiConfig.getEndpointUrl('chat'),
-        {
-          model: fluxAiConfig.model,
-          messages: [
-            { role: 'system', content: fluxAiConfig.getSystemPrompt('template_generation') },
-            { role: 'user', content: aiPrompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 1000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
-            'Content-Type': 'application/json'
+      console.log('Sending prompt to AI:', aiPrompt);
+      
+      try {
+        const response = await axios.post(
+          fluxAiConfig.getEndpointUrl('chat'),
+          {
+            model: fluxAiConfig.model,
+            messages: [
+              { role: 'system', content: fluxAiConfig.getSystemPrompt('template_generation') },
+              { role: 'user', content: aiPrompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 1000
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
+              'Content-Type': 'application/json'
+            }
           }
+        );
+        
+        // Parse AI response to extract template subject and content
+        const aiResponse = response.data.choices[0].message.content;
+        console.log('AI Response:', aiResponse);
+        
+        // Extract subject and content from AI response
+        const subjectMatch = aiResponse.match(/SUBJECT:(.*?)(?=CONTENT:|$)/s);
+        const contentMatch = aiResponse.match(/CONTENT:(.*?)(?=$)/s);
+        
+        if (subjectMatch && contentMatch) {
+          templateSubject = subjectMatch[1].trim();
+          templateContent = contentMatch[1].trim();
+        } else {
+          console.error('AI response format was incorrect. Using fallback template.');
+          const fallbackTemplate = generateDemoTemplate(templateType, recipientType, { tone, formality, personality });
+          templateSubject = fallbackTemplate.subject;
+          templateContent = fallbackTemplate.content;
         }
-      );
-      
-      // Parse AI response to extract template subject and content
-      const aiResponse = response.data.choices[0].message.content;
-      
-      // Extract subject and content from AI response
-      const subjectMatch = aiResponse.match(/SUBJECT:(.*?)(?=CONTENT:|$)/s);
-      const contentMatch = aiResponse.match(/CONTENT:(.*?)(?=$)/s);
-      
-      templateSubject = subjectMatch ? subjectMatch[1].trim() : generateDefaultSubject(templateType, recipientType);
-      templateContent = contentMatch ? contentMatch[1].trim() : generateDefaultContent(templateType, recipientType);
+      } catch (aiError) {
+        console.error('Error calling AI service:', aiError);
+        // Fall back to demo template on error
+        const fallbackTemplate = generateDemoTemplate(templateType, recipientType, { tone, formality, personality });
+        templateSubject = fallbackTemplate.subject;
+        templateContent = fallbackTemplate.content;
+      }
     }
     
     // Create the template
@@ -344,9 +369,12 @@ async function createInitialDefaultTemplates(userId) {
 }
 
 // Helper function to generate demo template
-function generateDemoTemplate(templateType, recipientType) {
-  let subject = '';
-  let content = '';
+function generateDemoTemplate(templateType, recipientType, branding = {}) {
+    let subject = '';
+    let content = '';
+    
+    // Extract branding parameters with defaults
+    const { tone = 'professional', formality = 'formal', personality = 'helpful' } = branding;
   
   switch (templateType) {
     case 'invitation':
@@ -505,11 +533,39 @@ The {companyName} Feedback Team</p>
       subject = `Default subject for ${templateType} - ${recipientType}`;
   }
   
+  // Apply tone adjustments based on branding
+  if (tone === 'friendly') {
+    content = content.replace('You\'ve been invited', 'We\'re excited to invite you')
+                     .replace('Thank you for', 'We really appreciate');
+    subject = subject.replace('Invitation to provide', 'We\'d love your');
+  } else if (tone === 'casual') {
+    content = content.replace('You\'ve been invited', 'Hey! We\'d like you')
+                     .replace('Thank you for', 'Thanks so much for');
+    subject = subject.replace('Invitation to provide', 'Hey! Can you share some');
+  }
+  
+  // Apply formality adjustments
+  if (formality === 'informal') {
+    content = content.replace('Please complete', 'Hope you can complete')
+                     .replace('your participation', 'joining in');
+  } else if (formality === 'formal') {
+    content = content.replace('you\'re', 'you are')
+                     .replace('we\'re', 'we are')
+                     .replace('can\'t', 'cannot');
+  }
+  
+  // Add personality traits
+  if (personality === 'empathetic') {
+    content += `<p>We understand that providing thoughtful feedback takes time and energy, and we truly appreciate your valuable contribution.</p>`;
+  } else if (personality === 'direct') {
+    content += `<p>Your clear, honest feedback is essential for making meaningful improvements.</p>`;
+  }
+  
   return { subject, content };
 }
 
 // Helper function to generate AI prompt
-function generateAiPrompt(templateType, recipientType, tone, formality) {
+function generateAiPrompt(templateType, recipientType, tone, formality, personality = 'helpful') {
   const templateTypeDesc = formatTemplateType(templateType);
   const recipientTypeDesc = formatRecipientType(recipientType);
   
@@ -532,7 +588,10 @@ function generateAiPrompt(templateType, recipientType, tone, formality) {
   }
   
   // Add tone and formality guidance
-  prompt += `\n\nThe tone should be ${tone} and the formality level should be ${formality}.`;
+  prompt += `\n\nThe email should have the following characteristics:
+- Tone: ${tone} (${describeTone(tone)})
+- Formality: ${formality} (${describeFormality(formality)})
+- Personality: ${personality} (${describePersonality(personality)})`;
   
   // Add placeholders information
   prompt += `\n\nInclude the following placeholders that will be replaced with actual values:
@@ -548,9 +607,43 @@ The email should have HTML formatting and include a button-style link to the fee
   // Add output format instructions
   prompt += `\n\nProvide your response in this format:
 SUBJECT: [Write email subject line here]
-CONTENT: [Write the full HTML email content here]`;
+CONTENT: [Write the full HTML email content here]
+
+The content should be valid HTML that can be directly used in an email. Make sure to include paragraph tags and appropriate formatting.`;
   
   return prompt;
+}
+
+// Helper functions to describe tone, formality, and personality
+function describeTone(tone) {
+  const descriptions = {
+    'professional': 'Businesslike, respected, and appropriate for corporate environments',
+    'friendly': 'Warm, personable, and approachable while maintaining professionalism',
+    'casual': 'Relaxed and conversational, but still respectful',
+    'enthusiastic': 'Energetic, positive, and showing excitement about the feedback process',
+    'authoritative': 'Confident, direct, and conveying expertise'
+  };
+  return descriptions[tone] || descriptions.professional;
+}
+
+function describeFormality(formality) {
+  const descriptions = {
+    'formal': 'Using proper language, full words rather than contractions, and traditional business etiquette',
+    'semiformal': 'Balanced approach that is neither too stiff nor too casual',
+    'informal': 'More relaxed language that may include contractions and a conversational style'
+  };
+  return descriptions[formality] || descriptions.formal;
+}
+
+function describePersonality(personality) {
+  const descriptions = {
+    'helpful': 'Showing willingness to assist and support throughout the process',
+    'innovative': 'Forward-thinking and emphasizing the value of new ideas and approaches',
+    'collaborative': 'Emphasizing teamwork and the collective nature of the feedback process',
+    'direct': 'Straightforward and concise, valuing clarity above all else',
+    'empathetic': 'Understanding of the recipient\'s perspective and acknowledging their contribution'
+  };
+  return descriptions[personality] || descriptions.helpful;
 }
 
 // Helper function to format template type for display

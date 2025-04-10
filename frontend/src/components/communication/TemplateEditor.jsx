@@ -85,13 +85,19 @@ const TemplateEditor = ({ template, onSave, onCancel }) => {
     try {
       setIsSaving(true);
       
+      // This would normally fetch branding settings from the API
+      // For now, use defaults
+      const brandingSettings = {
+        tone: 'professional',
+        formality: 'formal',
+        personality: 'helpful'
+      };
+      
+      // Pass branding settings to the API
       const response = await communicationTemplatesApi.generateAi({
         templateType: formData.templateType,
         recipientType: formData.recipientType,
-        companyVoice: {
-          tone: 'professional',
-          formality: 'formal'
-        }
+        companyVoice: brandingSettings
       });
       
       const generatedTemplate = response.data;

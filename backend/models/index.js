@@ -1,7 +1,7 @@
 // backend/models/index.js
 
-const { sequelize, testConnection, Sequelize } = require('../config/database');
-const { Op } = Sequelize;
+const { sequelize, testConnection } = require('../config/database');
+const { Op } = require('sequelize');
 const User = require('./user.model');
 const Document = require('./document.model');
 const Employee = require('./employee.model');
@@ -104,5 +104,5 @@ module.exports = {
   Response,
   EmailSettings,
   CommunicationTemplate,
-  Op
+  Op 
 };
