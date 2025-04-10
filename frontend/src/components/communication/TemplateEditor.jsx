@@ -146,13 +146,28 @@ const TemplateEditor = ({ template, onSave, onCancel }) => {
   // Replace placeholders with example values for preview
   const getPreviewContent = () => {
     let previewContent = formData.content;
+    
+    // Try to get company name from localStorage if available
+    let companyName = 'Acme Corp'; // Default fallback
+    try {
+      const brandingSettings = localStorage.getItem('brandingSettings');
+      if (brandingSettings) {
+        const settings = JSON.parse(brandingSettings);
+        if (settings && settings.companyName) {
+          companyName = settings.companyName;
+        }
+      }
+    } catch (err) {
+      console.warn('Error getting company name from settings:', err);
+    }
+    
     const exampleValues = {
       '{assessorName}': 'John Smith',
       '{targetName}': 'Jane Doe',
       '{campaignName}': 'Q2 Leadership Review',
       '{deadline}': new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString(),
       '{feedbackUrl}': 'https://pulse360.example.com/feedback/xyz123',
-      '{companyName}': 'Acme Corp'
+      '{companyName}': companyName // Use the actual company name from settings
     };
     
     for (const [placeholder, value] of Object.entries(exampleValues)) {

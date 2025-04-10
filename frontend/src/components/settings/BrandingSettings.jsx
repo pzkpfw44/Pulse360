@@ -31,14 +31,19 @@ const BrandingSettings = () => {
       setLoading(true);
       const response = await api.get('/settings/branding');
       
-      setFormData({
+      const newSettings = {
         companyName: response.data.companyName || '',
         industry: response.data.industry || '',
         keyValues: response.data.keyValues || '',
         tone: response.data.tone || 'professional',
         formality: response.data.formality || 'formal',
         personality: response.data.personality || 'helpful'
-      });
+      };
+      
+      setFormData(newSettings);
+      
+      // Save settings to localStorage when loaded
+      localStorage.setItem('brandingSettings', JSON.stringify(newSettings));
       
       setError(null);
     } catch (err) {
@@ -63,6 +68,9 @@ const BrandingSettings = () => {
     try {
       setSaving(true);
       await api.put('/settings/branding', formData);
+      
+      // Save settings to localStorage when updated
+      localStorage.setItem('brandingSettings', JSON.stringify(formData));
       
       setSuccess(true);
       setError(null);

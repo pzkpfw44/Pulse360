@@ -271,6 +271,7 @@ exports.generateAiTemplates = async (req, res) => {
         );
         
         console.log('Flux AI response status:', response.status);
+        console.log('Flux AI response data (sample):', JSON.stringify(response.data).substring(0, 500));
         
         // Check response structure
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -278,14 +279,33 @@ exports.generateAiTemplates = async (req, res) => {
           throw new Error('Invalid response structure from Flux AI');
         }
         
-        // According to Flux AI docs, the response contains choices with finish_reason and message
-        const aiMessage = response.data.choices[0].message;
-        const aiResponse = aiMessage?.content;
+        // Extract the content from the response, handling different possible formats
+        let aiResponse = null;
+        const choice = response.data.choices[0];
         
-        console.log('AI Response:', aiResponse);
+        if (typeof choice.message === 'object' && choice.message.content) {
+          // Standard format: choice.message is an object with content property
+          aiResponse = choice.message.content;
+        } else if (typeof choice.message === 'string') {
+          // Alternative format: choice.message is a string directly
+          aiResponse = choice.message;
+        } else if (choice.content) {
+          // Another alternative: content directly on choice
+          aiResponse = choice.content;
+        } else if (typeof choice === 'string') {
+          // Fallback if choice itself is a string
+          aiResponse = choice;
+        } else {
+          // Last resort: try to stringify the choice
+          aiResponse = JSON.stringify(choice);
+        }
+        
+        console.log('AI Response extracted:', aiResponse ? 'Content found' : 'No content');
+        console.log('AI Response sample:', aiResponse ? aiResponse.substring(0, 200) : 'Empty');
         
         if (!aiResponse) {
           console.error('Empty response content from Flux AI');
+          console.error('Full response data:', JSON.stringify(response.data, null, 2));
           throw new Error('Empty response from Flux AI');
         }
         
