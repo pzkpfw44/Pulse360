@@ -7,6 +7,7 @@ const config = {
   apiKey: process.env.FLUX_AI_API_KEY,
   model: process.env.FLUX_AI_MODEL || 'DeepSeek R1 Distill Qwen 32B',
   maxUploadSize: parseInt(process.env.MAX_UPLOAD_SIZE || '10485760', 10), // 10MB default
+  forceAiInDevelopment: process.env.FORCE_AI_IN_DEV === 'true' || false,
 
   endpoints: {
     balance: '/v1/balance',

@@ -85,19 +85,45 @@ const TemplateEditor = ({ template, onSave, onCancel }) => {
     try {
       setIsSaving(true);
       
-      // This would normally fetch branding settings from the API
-      // For now, use defaults
-      const brandingSettings = {
-        tone: 'professional',
-        formality: 'formal',
-        personality: 'helpful'
-      };
+      // Check if API key is configured first
+      try {
+        const fluxStatusResponse = await api.get('/settings/flux/status');
+        if (!fluxStatusResponse.data.isConfigured) {
+          setErrorMessage('AI generation is not available: Flux AI API key is not configured. Please add your API key in Settings > Flux AI.');
+          setSaving(false);
+          return;
+        }
+      } catch (error) {
+        console.warn('Could not check Flux AI configuration status:', error);
+        // Continue anyway, the actual generation call will fail if there's an issue
+      }
       
-      // Pass branding settings to the API
+      // First fetch company branding settings
+      let brandingSettings;
+      try {
+        const settingsResponse = await api.get('/settings/branding');
+        brandingSettings = {
+          tone: settingsResponse.data.tone || 'professional',
+          formality: settingsResponse.data.formality || 'formal',
+          personality: settingsResponse.data.personality || 'helpful'
+        };
+        console.log('Using branding settings:', brandingSettings);
+      } catch (settingsError) {
+        console.warn('Failed to fetch branding settings:', settingsError);
+        brandingSettings = {
+          tone: 'professional',
+          formality: 'formal',
+          personality: 'helpful'
+        };
+      }
+      
+      // Pass branding settings and forceAI flag to the API
       const response = await communicationTemplatesApi.generateAi({
         templateType: formData.templateType,
         recipientType: formData.recipientType,
-        companyVoice: brandingSettings
+        companyVoice: brandingSettings,
+        templateId: formData.id,
+        forceAI: true  // Add this to force AI even in dev mode
       });
       
       const generatedTemplate = response.data;

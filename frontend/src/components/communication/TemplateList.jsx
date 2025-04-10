@@ -24,6 +24,15 @@ const TemplateList = ({ onEditTemplate, onCreateTemplate }) => {
   const [filterType, setFilterType] = useState('all');
   const [activeTab, setActiveTab] = useState('invitation');
 
+  // Load saved tab preference
+  useEffect(() => {
+    // Retrieve saved tab from localStorage if available
+    const savedTab = localStorage.getItem('communicationActiveTab');
+    if (savedTab) {
+      setActiveTab(savedTab);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTemplates();
   }, []);
@@ -40,6 +49,13 @@ const TemplateList = ({ onEditTemplate, onCreateTemplate }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle tab changes and persist to localStorage
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    // Save to localStorage
+    localStorage.setItem('communicationActiveTab', tabId);
   };
 
   const handleDeleteTemplate = async (id) => {
@@ -186,7 +202,7 @@ const TemplateList = ({ onEditTemplate, onCreateTemplate }) => {
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => setActiveTab('invitation')}
+            onClick={() => handleTabChange('invitation')}
           >
             <div className="flex items-center">
               <Mail className="h-4 w-4 mr-2" />
@@ -199,7 +215,7 @@ const TemplateList = ({ onEditTemplate, onCreateTemplate }) => {
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => setActiveTab('reminder')}
+            onClick={() => handleTabChange('reminder')}
           >
             <div className="flex items-center">
               <Clock className="h-4 w-4 mr-2" />
@@ -212,7 +228,7 @@ const TemplateList = ({ onEditTemplate, onCreateTemplate }) => {
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => setActiveTab('thank_you')}
+            onClick={() => handleTabChange('thank_you')}
           >
             <div className="flex items-center">
               <ThumbsUp className="h-4 w-4 mr-2" />
@@ -225,7 +241,7 @@ const TemplateList = ({ onEditTemplate, onCreateTemplate }) => {
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
-            onClick={() => setActiveTab('instruction')}
+            onClick={() => handleTabChange('instruction')}
           >
             <div className="flex items-center">
               <AlertTriangle className="h-4 w-4 mr-2" />

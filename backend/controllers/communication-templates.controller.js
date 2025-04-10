@@ -3,6 +3,7 @@
 const { CommunicationTemplate } = require('../models');
 const fluxAiConfig = require('../config/flux-ai');
 const axios = require('axios');
+const { sequelize } = require('../config/database');
 
 // Get all communication templates
 exports.getAllTemplates = async (req, res) => {
@@ -179,7 +180,7 @@ exports.deleteTemplate = async (req, res) => {
 // Generate AI templates
 exports.generateAiTemplates = async (req, res) => {
   try {
-    const { templateType, recipientType, companyVoice } = req.body;
+    const { templateType, recipientType, companyVoice, templateId } = req.body;
     
     if (!templateType || !recipientType) {
       return res.status(400).json({ 
@@ -187,42 +188,80 @@ exports.generateAiTemplates = async (req, res) => {
       });
     }
     
-    let templateContent;
-    let templateSubject;
+    // Get the user's branding settings if not provided
+    let brandingSettings = companyVoice;
+    if (!brandingSettings) {
+      const { BrandingSettings } = require('../models');
+      const userSettings = await BrandingSettings.findOne({
+        where: { userId: req.user.id }
+      });
+      
+      brandingSettings = userSettings ? {
+        tone: userSettings.tone,
+        formality: userSettings.formality,
+        personality: userSettings.personality
+      } : {
+        tone: 'professional',
+        formality: 'formal',
+        personality: 'helpful'
+      };
+    }
     
-    // Use development mode placeholder if AI is not configured or in dev mode
-    if (!fluxAiConfig.isConfigured() || fluxAiConfig.isDevelopment) {
+
+    // Check if AI is configured
+    const useForceAI = req.body.forceAI === true;
+    const skipDevCheck = fluxAiConfig.forceAiInDevelopment || useForceAI;
+
+    // Check if AI is configured
+    if (!fluxAiConfig.isConfigured() || (fluxAiConfig.isDevelopment && !skipDevCheck)) {
+      console.log(`Using fallback template. Configured: ${fluxAiConfig.isConfigured()}, isDev: ${fluxAiConfig.isDevelopment}, skipDevCheck: ${skipDevCheck}`);
+    } else if (fluxAiConfig.isDevelopment) {
+      console.log('Running in development mode, using fallback template');
+    }
+    
+    // For development or when AI is not configured
+    if (!fluxAiConfig.isConfigured()) {
+      console.log('AI not configured, using fallback template');
+      
       // Extract branding parameters
-      const tone = companyVoice?.tone || 'professional';
-      const formality = companyVoice?.formality || 'formal';
-      const personality = companyVoice?.personality || 'helpful';
+      const tone = brandingSettings.tone || 'professional';
+      const formality = brandingSettings.formality || 'formal';
+      const personality = brandingSettings.personality || 'helpful';
+      
+      console.log('Using branding settings:', {tone, formality, personality});
       
       // Pass branding parameters to demo template generator
       const demoTemplate = generateDemoTemplate(templateType, recipientType, { tone, formality, personality });
       templateContent = demoTemplate.content;
       templateSubject = demoTemplate.subject;
     } else {
-      // Call the AI service to generate template
-      const tone = companyVoice?.tone || 'professional';
-      const formality = companyVoice?.formality || 'formal';
-      const personality = companyVoice?.personality || 'helpful';
+      // Always use AI if API key is configured
+      const tone = brandingSettings.tone || 'professional';
+      const formality = brandingSettings.formality || 'formal';
+      const personality = brandingSettings.personality || 'helpful';
       
       const aiPrompt = generateAiPrompt(templateType, recipientType, tone, formality, personality);
       
       console.log('Sending prompt to AI:', aiPrompt);
       
       try {
+        // Structure the request according to Flux AI documentation
+        const requestData = {
+          messages: [
+            {
+              role: "user",
+              content: aiPrompt
+            }
+          ],
+          // Use preamble instead of including system prompt in messages
+          preamble: fluxAiConfig.getSystemPrompt('template_generation')
+        };
+        
+        console.log('Flux AI request payload:', JSON.stringify(requestData, null, 2));
+        
         const response = await axios.post(
           fluxAiConfig.getEndpointUrl('chat'),
-          {
-            model: fluxAiConfig.model,
-            messages: [
-              { role: 'system', content: fluxAiConfig.getSystemPrompt('template_generation') },
-              { role: 'user', content: aiPrompt }
-            ],
-            temperature: 0.7,
-            max_tokens: 1000
-          },
+          requestData,
           {
             headers: {
               'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
@@ -231,9 +270,24 @@ exports.generateAiTemplates = async (req, res) => {
           }
         );
         
-        // Parse AI response to extract template subject and content
-        const aiResponse = response.data.choices[0].message.content;
+        console.log('Flux AI response status:', response.status);
+        
+        // Check response structure
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+          console.error('Invalid Flux AI response structure:', JSON.stringify(response.data, null, 2));
+          throw new Error('Invalid response structure from Flux AI');
+        }
+        
+        // According to Flux AI docs, the response contains choices with finish_reason and message
+        const aiMessage = response.data.choices[0].message;
+        const aiResponse = aiMessage?.content;
+        
         console.log('AI Response:', aiResponse);
+        
+        if (!aiResponse) {
+          console.error('Empty response content from Flux AI');
+          throw new Error('Empty response from Flux AI');
+        }
         
         // Extract subject and content from AI response
         const subjectMatch = aiResponse.match(/SUBJECT:(.*?)(?=CONTENT:|$)/s);
@@ -257,20 +311,43 @@ exports.generateAiTemplates = async (req, res) => {
       }
     }
     
-    // Create the template
-    const template = await CommunicationTemplate.create({
-      name: `${formatRecipientType(recipientType)} ${formatTemplateType(templateType)} Template`,
-      description: `AI-generated ${formatTemplateType(templateType).toLowerCase()} template for ${formatRecipientType(recipientType).toLowerCase()}`,
-      templateType,
-      recipientType,
-      subject: templateSubject,
-      content: templateContent,
-      isDefault: false,
-      isAiGenerated: true,
-      createdBy: req.user.id
-    });
-    
-    res.status(201).json(template);
+    // If templateId is provided, update existing template instead of creating a new one
+    if (templateId) {
+      const existingTemplate = await CommunicationTemplate.findOne({
+        where: { 
+          id: templateId,
+          createdBy: req.user.id
+        }
+      });
+      
+      if (!existingTemplate) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      
+      // Update the existing template
+      await existingTemplate.update({
+        subject: templateSubject,
+        content: templateContent,
+        isAiGenerated: true
+      });
+      
+      res.status(200).json(existingTemplate);
+    } else {
+      // Create a new template if no templateId was provided
+      const template = await CommunicationTemplate.create({
+        name: `${formatRecipientType(recipientType)} ${formatTemplateType(templateType)} Template`,
+        description: `AI-generated ${formatTemplateType(templateType).toLowerCase()} template for ${formatRecipientType(recipientType).toLowerCase()}`,
+        templateType,
+        recipientType,
+        subject: templateSubject,
+        content: templateContent,
+        isDefault: false,
+        isAiGenerated: true,
+        createdBy: req.user.id
+      });
+      
+      res.status(201).json(template);
+    }
   } catch (error) {
     console.error('Error generating AI template:', error);
     res.status(500).json({ message: 'Failed to generate template', error: error.message });
@@ -375,6 +452,8 @@ function generateDemoTemplate(templateType, recipientType, branding = {}) {
     
     // Extract branding parameters with defaults
     const { tone = 'professional', formality = 'formal', personality = 'helpful' } = branding;
+    
+    console.log('Generating demo template with branding:', { tone, formality, personality });
   
   switch (templateType) {
     case 'invitation':
@@ -542,12 +621,22 @@ The {companyName} Feedback Team</p>
     content = content.replace('You\'ve been invited', 'Hey! We\'d like you')
                      .replace('Thank you for', 'Thanks so much for');
     subject = subject.replace('Invitation to provide', 'Hey! Can you share some');
+  } else if (tone === 'enthusiastic') {
+    content = content.replace('You\'ve been invited', 'We\'re thrilled to invite you')
+                     .replace('Thank you for', 'We\'re incredibly grateful for');
+    subject = subject.replace('Invitation to provide', 'Exciting opportunity to share');
+  } else if (tone === 'authoritative') {
+    content = content.replace('You\'ve been invited', 'You are requested')
+                     .replace('Thank you for', 'We acknowledge');
+    subject = subject.replace('Invitation to provide', 'Request for');
   }
   
   // Apply formality adjustments
   if (formality === 'informal') {
     content = content.replace('Please complete', 'Hope you can complete')
                      .replace('your participation', 'joining in');
+  } else if (formality === 'semiformal') {
+    content = content.replace('your participation', 'taking part');
   } else if (formality === 'formal') {
     content = content.replace('you\'re', 'you are')
                      .replace('we\'re', 'we are')
@@ -557,9 +646,17 @@ The {companyName} Feedback Team</p>
   // Add personality traits
   if (personality === 'empathetic') {
     content += `<p>We understand that providing thoughtful feedback takes time and energy, and we truly appreciate your valuable contribution.</p>`;
+  } else if (personality === 'innovative') {
+    content += `<p>Your insights will help drive innovation and new approaches to professional development.</p>`;
+  } else if (personality === 'collaborative') {
+    content += `<p>Together, we're building a culture of continuous improvement through shared feedback and growth.</p>`;
   } else if (personality === 'direct') {
     content += `<p>Your clear, honest feedback is essential for making meaningful improvements.</p>`;
+  } else if (personality === 'helpful') {
+    content += `<p>We're here to support you throughout this process. Please reach out if you need any assistance.</p>`;
   }
+  
+  console.log('Generated demo template with subject:', subject);
   
   return { subject, content };
 }

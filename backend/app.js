@@ -37,12 +37,15 @@ app.use('/api/settings/danger-zone', dangerZoneRoutes);
 app.use('/api/campaigns', require('./routes/campaigns.routes'));
 app.use('/api/feedback', require('./routes/feedback.routes'));
 app.use('/api/communication-templates', communicationTemplatesRoutes);
+const brandingSettingsRoutes = require('./routes/branding-settings.routes');
 
 const testRoutes = require('./routes/test.routes');
 app.use('/api/flux-test', testRoutes);  // Using a different path to avoid conflicts
 
 // Direct endpoint for document upload
 app.post('/api/documents/upload', upload.array('files'), documentsController.uploadDocuments);
+
+app.use('/api/settings/branding', brandingSettingsRoutes);
 
 app.get('/api/test', (req, res) => {
   res.status(200).json({ message: 'API is working!' });

@@ -11,6 +11,7 @@ const Response = require('./response.model');
 const EmailSettings = require('./email-settings.model');
 const CommunicationTemplate = require('./communication-template.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
+const BrandingSettings = require('./branding-settings.model');
 
 // Define associations between models
 User.hasMany(Document, { foreignKey: 'uploadedBy' });
@@ -104,5 +105,6 @@ module.exports = {
   Response,
   EmailSettings,
   CommunicationTemplate,
+  BrandingSettings,
   Op 
 };
