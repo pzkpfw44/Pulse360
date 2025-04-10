@@ -1,6 +1,7 @@
 // backend/models/index.js
 
-const { sequelize, testConnection } = require('../config/database');
+const { sequelize, testConnection, Sequelize } = require('../config/database');
+const { Op } = Sequelize;
 const User = require('./user.model');
 const Document = require('./document.model');
 const Employee = require('./employee.model');
@@ -8,6 +9,7 @@ const Campaign = require('./campaign.model');
 const CampaignParticipant = require('./campaign-participant.model');
 const Response = require('./response.model');
 const EmailSettings = require('./email-settings.model');
+const CommunicationTemplate = require('./communication-template.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 
 // Define associations between models
@@ -23,6 +25,9 @@ Template.hasMany(Document, { foreignKey: 'associatedTemplateId', onDelete: 'CASC
 // Campaign associations
 User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'campaigns' });
 Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+
+User.hasMany(CommunicationTemplate, { foreignKey: 'createdBy' });
+CommunicationTemplate.belongsTo(User, { foreignKey: 'createdBy' });
 
 // Updated: Add onDelete: 'SET NULL' to Template-Campaign association
 Template.hasMany(Campaign, { 
@@ -97,5 +102,7 @@ module.exports = {
   Campaign,
   CampaignParticipant,
   Response,
-  EmailSettings
+  EmailSettings,
+  CommunicationTemplate,
+  Op
 };

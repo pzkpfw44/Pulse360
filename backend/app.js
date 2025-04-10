@@ -15,6 +15,7 @@ const emailSettingsRoutes = require('./routes/email-settings.routes');
 const dangerZoneRoutes = require('./routes/danger-zone.routes'); // Add this line
 const documentsController = require('./controllers/documents.controller');
 const upload = require('./middleware/upload.middleware');
+const communicationTemplatesRoutes = require('./routes/communication-templates.routes');
 
 // Initialize express app
 const app = express();
@@ -32,14 +33,15 @@ app.use('/api/templates', templatesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/employees', employeesRoutes);
 app.use('/api/settings/email', emailSettingsRoutes);
-app.use('/api/settings/danger-zone', dangerZoneRoutes); // Add this line
+app.use('/api/settings/danger-zone', dangerZoneRoutes); 
 app.use('/api/campaigns', require('./routes/campaigns.routes'));
 app.use('/api/feedback', require('./routes/feedback.routes'));
+app.use('/api/communication-templates', communicationTemplatesRoutes);
 
 const testRoutes = require('./routes/test.routes');
 app.use('/api/flux-test', testRoutes);  // Using a different path to avoid conflicts
 
-// Add direct endpoint for document upload
+// Direct endpoint for document upload
 app.post('/api/documents/upload', upload.array('files'), documentsController.uploadDocuments);
 
 app.get('/api/test', (req, res) => {

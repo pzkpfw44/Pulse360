@@ -1,12 +1,14 @@
 // frontend/src/components/campaigns/wizard/EmailSetup.jsx
 
 import React, { useState, useEffect } from 'react';
-import { Mail, Sparkles, Check, Clipboard, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Mail, Sparkles, Check, Clipboard, AlertTriangle, RefreshCw, Settings } from 'lucide-react';
 import api from '../../../services/api';
+import { communicationTemplatesApi } from '../../../services/api';
 
 const EmailSetup = ({ data, onDataChange, onNext }) => {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [error, setError] = useState(null);
   const [emailTemplates, setEmailTemplates] = useState(data.emailTemplates || {
     invitation: {
@@ -16,7 +18,7 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
     reminder: {
       general: ''
     },
-    thankYou: {
+    thank_you: {
       general: ''
     }
   });
@@ -24,12 +26,13 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
   const [activeSubTab, setActiveSubTab] = useState('general');
   const [targetEmployee, setTargetEmployee] = useState(null);
   const [copySuccess, setCopySuccess] = useState('');
+  const [availableTemplates, setAvailableTemplates] = useState([]);
 
   // Email template types
   const templateTypes = [
     { id: 'invitation', label: 'Invitation', description: 'Initial email sent to assessors' },
     { id: 'reminder', label: 'Reminder', description: 'Follow-up for assessors who haven\'t completed' },
-    { id: 'thankYou', label: 'Thank You', description: 'Sent after feedback completion' }
+    { id: 'thank_you', label: 'Thank You', description: 'Sent after feedback completion' }
   ];
 
   // Sub-types only for invitation emails
@@ -49,6 +52,9 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
     } else {
       setLoading(false);
     }
+
+    // Load available templates
+    fetchAvailableTemplates();
   }, [data.targetEmployeeId]);
 
   const fetchTargetEmployee = async (employeeId) => {
@@ -58,6 +64,18 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
     } catch (err) {
       console.error('Error fetching target employee:', err);
       setError('Failed to load target employee details');
+    }
+  };
+
+  const fetchAvailableTemplates = async () => {
+    try {
+      setLoadingTemplates(true);
+      const response = await communicationTemplatesApi.getDefaults();
+      setAvailableTemplates(response.data.templates || []);
+    } catch (err) {
+      console.error('Error fetching templates:', err);
+    } finally {
+      setLoadingTemplates(false);
     }
   };
 
@@ -109,7 +127,7 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
             <p>Thank you for your participation!</p>
           `
         },
-        thankYou: {
+        thank_you: {
           general: `
             <p>Hello [Assessor Name],</p>
             <p>Thank you for completing your feedback for [Target Name].</p>
@@ -131,8 +149,10 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
     const newTemplates = { ...emailTemplates };
     
     if (activeTab === 'invitation') {
+      if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
       newTemplates[activeTab][activeSubTab] = e.target.value;
     } else {
+      if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
       newTemplates[activeTab].general = e.target.value;
     }
     
@@ -142,8 +162,8 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
 
   const handleCopyTemplate = () => {
     const textToCopy = activeTab === 'invitation' 
-      ? emailTemplates[activeTab][activeSubTab]
-      : emailTemplates[activeTab].general;
+      ? emailTemplates[activeTab]?.[activeSubTab] || ''
+      : emailTemplates[activeTab]?.general || '';
     
     navigator.clipboard.writeText(textToCopy).then(
       () => {
@@ -160,12 +180,44 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
     onNext({ emailTemplates });
   };
 
+  // Use a saved template
+  const handleUseTemplate = (templateId) => {
+    try {
+      const template = availableTemplates.find(t => t.id === templateId);
+      if (!template) return;
+      
+      const newTemplates = { ...emailTemplates };
+      
+      if (activeTab === 'invitation') {
+        if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
+        // For invitation, we need to check recipient type to determine which sub-template to update
+        if (activeSubTab === 'self' && template.recipientType === 'self') {
+          newTemplates[activeTab][activeSubTab] = template.content;
+        } else if (activeSubTab === 'general' && template.recipientType !== 'self') {
+          newTemplates[activeTab][activeSubTab] = template.content;
+        } else {
+          // Skip if template doesn't match subTab
+          return;
+        }
+      } else {
+        if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
+        // For other types, just update the general content
+        newTemplates[activeTab].general = template.content;
+      }
+      
+      setEmailTemplates(newTemplates);
+      onDataChange({ emailTemplates: newTemplates });
+    } catch (err) {
+      console.error('Error applying template:', err);
+    }
+  };
+
   // Get current template content based on active tabs
   const getCurrentTemplate = () => {
     if (activeTab === 'invitation') {
-      return emailTemplates[activeTab][activeSubTab] || '';
+      return emailTemplates[activeTab]?.[activeSubTab] || '';
     }
-    return emailTemplates[activeTab].general || '';
+    return emailTemplates[activeTab]?.general || '';
   };
 
   // Preview the email with placeholders replaced
@@ -188,6 +240,25 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
     });
     
     return content;
+  };
+
+  // Filter templates for current active tab/subtab
+  const getFilteredTemplates = () => {
+    if (!Array.isArray(availableTemplates) || availableTemplates.length === 0) return [];
+    
+    return availableTemplates.filter(template => {
+      if (!template) return false;
+      // First filter by template type (invitation, reminder, etc)
+      if (template.templateType !== activeTab) return false;
+      
+      // For invitation templates, also filter by recipient type based on subtab
+      if (activeTab === 'invitation') {
+        if (activeSubTab === 'self' && template.recipientType !== 'self') return false;
+        if (activeSubTab === 'general' && template.recipientType === 'self') return false;
+      }
+      
+      return true;
+    });
   };
 
   if (loading) {
@@ -215,7 +286,7 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
         </div>
       )}
 
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-4 space-x-3">
         <button
           onClick={generateTemplates}
           disabled={generating}
@@ -233,6 +304,16 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
             </>
           )}
         </button>
+
+        <a
+          href="/communication-templates"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <Settings className="h-4 w-4 mr-2" />
+          Manage Templates
+        </a>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -298,6 +379,60 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
               </nav>
             </div>
           )}
+          
+          {/* Available Templates Section */}
+          <div className="mt-4 bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-sm font-medium text-gray-700">Available Templates</h3>
+            </div>
+            <div className="p-4">
+              {loadingTemplates ? (
+                <div className="text-center py-4">
+                  <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-2"></div>
+                  <p className="text-xs text-gray-500">Loading templates...</p>
+                </div>
+              ) : getFilteredTemplates().length > 0 ? (
+                <div className="space-y-2">
+                  {getFilteredTemplates().map(template => (
+                    <div 
+                      key={template.id}
+                      className="p-2 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
+                      onClick={() => handleUseTemplate(template.id)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{template.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{template.subject}</p>
+                        </div>
+                        {template.isDefault && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-2">
+                  No templates available for this type
+                </p>
+              )}
+              
+              <div className="mt-4 text-xs text-gray-500">
+                <p>You can customize email templates in the Communication Templates section.</p>
+                <a 
+                  href="/communication-templates" 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 inline-flex items-center mt-1"
+                >
+                  <Settings className="h-3 w-3 mr-1" />
+                  Manage Templates
+                </a>
+              </div>
+            </div>
+          </div>
           
           {/* Placeholders Help */}
           <div className="mt-4 bg-white rounded-lg border border-gray-200 overflow-hidden">

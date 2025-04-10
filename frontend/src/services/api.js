@@ -61,6 +61,16 @@ const employeesApi = {
   })
 };
 
+const communicationTemplatesApi = {
+  getAll: () => api.get('/communication-templates'),
+  getDefaults: () => api.get('/communication-templates/defaults'),
+  getById: (id) => api.get(`/communication-templates/${id}`),
+  create: (data) => api.post('/communication-templates', data),
+  update: (id, data) => api.put(`/communication-templates/${id}`, data),
+  delete: (id) => api.delete(`/communication-templates/${id}`),
+  generateAi: (data) => api.post('/communication-templates/generate-ai', data)
+};
+
 const settingsApi = {
   getAll: () => api.get('/settings'),
   update: (data) => api.put('/settings', data),
@@ -88,7 +98,7 @@ const campaignsApi = {
 };
 
 // Export all API services
-export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi };
+export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesAp };
 
 // Default export for backward compatibility
 export default api;
