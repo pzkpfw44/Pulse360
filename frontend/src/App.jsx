@@ -87,6 +87,7 @@ function App() {
         {/* FeedbackHub */}
         <Route path="/results-360" element={<WorkInProgress title="Results 360" />} />
         <Route path="/insights-360" element={<WorkInProgress title="Insights 360" />} />
+        <Route path="/feedback/:token" element={<FeedbackAssessmentPage />} />
         <Route path="/feedback/assessment" element={<FeedbackAssessmentPage />} />
         <Route path="/feedback/assessment/:token" element={<FeedbackAssessmentPage />} />
         

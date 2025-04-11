@@ -1,7 +1,7 @@
 // backend/controllers/feedback.controller.js
 
 const aiFeedbackService = require('../services/ai-feedback-service');
-const { Response, CampaignParticipant, Campaign } = require('../models');
+const { Response, CampaignParticipant, Campaign, Template, Question, Employee } = require('../models');
 
 /**
  * Controller for handling feedback-related operations
@@ -185,7 +185,7 @@ class FeedbackController {
       try {
         await CampaignParticipant.update(
           { status: 'completed', completedAt: new Date() },
-          { where: { token: assessorToken, campaignId: campaignId } }
+          { where: { invitationToken: assessorToken, campaignId: campaignId } }
         );
       } catch (err) {
         // Just log the error, don't fail the request if this part fails
@@ -201,6 +201,242 @@ class FeedbackController {
       
       return res.status(500).json({
         message: 'An error occurred while submitting feedback',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /**
+   * Get assessment data by token
+   * @param {Request} req - Express request object
+   * @param {Response} res - Express response object
+   */
+  async getAssessmentByToken(req, res) {
+    try {
+      const { token } = req.params;
+      
+      if (!token) {
+        return res.status(400).json({ 
+          message: 'Assessment token is required' 
+        });
+      }
+      
+      // Find the participant by token
+      const participant = await CampaignParticipant.findOne({
+        where: { invitationToken: token },
+        include: [
+          { 
+            model: Campaign, 
+            as: 'campaign',
+            include: [
+              { 
+                model: Template, 
+                as: 'template',
+                include: [
+                  { model: Question, as: 'questions' }
+                ]
+              },
+              { model: Employee, as: 'targetEmployee' }
+            ]
+          },
+          { model: Employee, as: 'employee' }
+        ]
+      });
+      
+      if (!participant) {
+        return res.status(404).json({ 
+          message: 'Assessment not found',
+          error: 'invalid_token'
+        });
+      }
+      
+      // Check if the campaign is still active
+      if (participant.campaign.status !== 'active') {
+        return res.status(400).json({ 
+          message: 'This campaign is no longer active',
+          error: 'campaign_inactive',
+          status: participant.campaign.status
+        });
+      }
+      
+      // Check if the participant has already completed the assessment
+      if (participant.status === 'completed') {
+        return res.status(400).json({ 
+          message: 'You have already completed this assessment',
+          error: 'already_completed',
+          completedAt: participant.completedAt
+        });
+      }
+      
+      // Check if campaign is past its deadline
+      const now = new Date();
+      const endDate = new Date(participant.campaign.endDate);
+      if (now > endDate) {
+        return res.status(400).json({ 
+          message: 'This campaign has ended',
+          error: 'campaign_ended',
+          endDate: participant.campaign.endDate
+        });
+      }
+      
+      // Find any existing draft responses
+      const responses = await Response.findAll({
+        where: { 
+          participantToken: token
+        }
+      });
+      
+      // Update participant status to 'in_progress' if it was 'pending' or 'invited'
+      if (['pending', 'invited'].includes(participant.status)) {
+        await participant.update({ 
+          status: 'in_progress',
+          lastAccessedAt: new Date()
+        });
+      }
+      
+      // Format question data with any existing responses
+      const questions = participant.campaign.template.questions.map(question => {
+        const existingResponse = responses.find(r => r.questionId === question.id);
+        
+        return {
+          id: question.id,
+          text: question.text,
+          type: question.type,
+          category: question.category,
+          required: question.required,
+          order: question.order,
+          // Include existing response data if available
+          response: existingResponse ? {
+            rating: existingResponse.rating,
+            text: existingResponse.textResponse
+          } : null
+        };
+      }).sort((a, b) => a.order - b.order); // Sort by question order
+      
+      // Format and return the assessment data
+      return res.status(200).json({
+        campaign: {
+          id: participant.campaign.id,
+          name: participant.campaign.name,
+          endDate: participant.campaign.endDate
+        },
+        targetEmployee: {
+          id: participant.campaign.targetEmployee.id,
+          name: `${participant.campaign.targetEmployee.firstName} ${participant.campaign.targetEmployee.lastName}`,
+          position: participant.campaign.targetEmployee.jobTitle || ''
+        },
+        assessorType: participant.relationshipType,
+        questions,
+        token
+      });
+    } catch (error) {
+      console.error('Error getting assessment by token:', error);
+      
+      return res.status(500).json({
+        message: 'An error occurred while retrieving the assessment',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /**
+   * Save feedback draft
+   * @param {Request} req - Express request object
+   * @param {Response} res - Express response object
+   */
+  async saveFeedbackDraft(req, res) {
+    try {
+      const { assessorToken, responses } = req.body;
+      
+      if (!assessorToken || !responses || !Array.isArray(responses)) {
+        return res.status(400).json({ 
+          message: 'Token and responses are required' 
+        });
+      }
+      
+      // Find the participant by token
+      const participant = await CampaignParticipant.findOne({
+        where: { invitationToken: assessorToken },
+        include: [{ model: Campaign, as: 'campaign' }]
+      });
+      
+      if (!participant) {
+        return res.status(404).json({ 
+          message: 'Assessment not found',
+          error: 'invalid_token'
+        });
+      }
+      
+      // Check if the campaign is still active
+      if (participant.campaign.status !== 'active') {
+        return res.status(400).json({ 
+          message: 'This campaign is no longer active',
+          error: 'campaign_inactive'
+        });
+      }
+      
+      // Check if the participant has already completed the assessment
+      if (participant.status === 'completed') {
+        return res.status(400).json({ 
+          message: 'You have already completed this assessment',
+          error: 'already_completed'
+        });
+      }
+      
+      // Update or create responses
+      const savedResponses = [];
+      
+      for (const response of responses) {
+        if (!response.questionId) continue;
+        
+        // Check if response already exists
+        let existingResponse = await Response.findOne({
+          where: {
+            participantToken: assessorToken,
+            questionId: response.questionId
+          }
+        });
+        
+        if (existingResponse) {
+          // Update existing response
+          await existingResponse.update({
+            rating: response.rating,
+            textResponse: response.text,
+            updatedAt: new Date()
+          });
+          savedResponses.push(existingResponse);
+        } else {
+          // Create new response
+          const newResponse = await Response.create({
+            campaignId: participant.campaign.id,
+            participantToken: assessorToken,
+            questionId: response.questionId,
+            rating: response.rating,
+            textResponse: response.text,
+            targetEmployeeId: participant.campaign.targetEmployeeId
+          });
+          savedResponses.push(newResponse);
+        }
+      }
+      
+      // Update participant status to 'in_progress' if it was 'pending' or 'invited'
+      if (['pending', 'invited'].includes(participant.status)) {
+        await participant.update({ 
+          status: 'in_progress',
+          lastAccessedAt: new Date()
+        });
+      }
+      
+      return res.status(200).json({
+        message: 'Draft saved successfully',
+        responseCount: savedResponses.length,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.error('Error saving feedback draft:', error);
+      
+      return res.status(500).json({
+        message: 'An error occurred while saving the draft',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
