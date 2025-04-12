@@ -167,15 +167,39 @@ const TemplateEditor = ({ template, onSave, onCancel }) => {
       '{campaignName}': 'Q2 Leadership Review',
       '{deadline}': new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString(),
       '{feedbackUrl}': 'https://pulse360.example.com/feedback/xyz123',
-      '{companyName}': companyName // Use the actual company name from settings
+      '{companyName}': companyName
     };
     
+    // Replace all placeholders with example values
     for (const [placeholder, value] of Object.entries(exampleValues)) {
       previewContent = previewContent.replace(new RegExp(placeholder, 'g'), value);
     }
     
     return previewContent;
   };
+  
+  // Also update the preview container to add proper styling
+  {previewMode ? (
+    <div className="preview-container">
+      <div 
+        className="border border-gray-300 rounded-md shadow-sm p-4 min-h-[300px] prose prose-sm max-w-none bg-white"
+        dangerouslySetInnerHTML={{ __html: getPreviewContent() }}
+      />
+      <div className="mt-3 text-xs text-gray-500">
+        <p>This is a preview with example values. Actual emails will use recipient-specific information.</p>
+      </div>
+    </div>
+  ) : (
+    <textarea
+      id="content"
+      name="content"
+      value={formData.content}
+      onChange={handleInputChange}
+      rows={12}
+      className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md font-mono"
+      required
+    />
+  )}
 
   return (
     <div className="bg-white shadow sm:rounded-lg overflow-hidden">

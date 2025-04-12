@@ -357,7 +357,10 @@ const AssessorSelection = ({ data, onDataChange, onNext }) => {
                     )}
                   </div>
                   <button
-                    onClick={() => removeParticipant(participant.id)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Add this line to prevent event bubbling
+                      removeParticipant(participant.id);
+                    }}
                     className="text-gray-400 hover:text-red-500"
                     aria-label="Remove participant"
                   >

@@ -420,19 +420,24 @@ const EmailSettings = () => {
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="sendReminders"
-                name="sendReminders"
-                checked={emailSettings.sendReminders}
-                onChange={handleEmailSettingsChange}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="sendReminders" className="ml-2 block text-sm text-gray-700">
-                Send Automated Reminders
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="devMode"
+              name="devMode"
+              checked={emailSettings.devMode}
+              onChange={handleEmailSettingsChange}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <div className="ml-2">
+              <label htmlFor="devMode" className="block text-sm font-medium text-gray-700">
+                Development Mode
               </label>
+              <p className="text-xs text-red-600 font-bold">
+                When enabled, emails are logged but NOT sent. Disable this to send actual emails.
+              </p>
             </div>
+          </div>
             
             {emailSettings.sendReminders && (
               <>

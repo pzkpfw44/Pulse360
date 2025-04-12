@@ -464,24 +464,45 @@ exports.createCampaign = async (req, res) => {
             // Create feedback URL with token
             const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
             
-            // Get appropriate email template
-            const emailTemplate = getEmailTemplate(participant.relationshipType, 'invitation');
-            
-            // Replace placeholders in template
-            const emailContent = replaceEmailPlaceholders(emailTemplate, {
+            // Common email variables
+            const emailVars = {
               assessorName: participant.employee.firstName,
               targetName: campaign.targetEmployee.firstName + ' ' + campaign.targetEmployee.lastName,
               campaignName: campaign.name,
               deadline: new Date(campaign.endDate).toLocaleDateString(),
-              feedbackUrl
-            });
+              feedbackUrl,
+              companyName: 'Your Company' // Add default company name
+            };
             
-            // Send email
-            await emailService.sendEmail({
-              to: participant.employee.email,
-              subject: `360 Feedback Request: ${campaign.name}`,
-              html: emailContent
-            });
+            try {
+              // Step 1: Get and send invitation email
+              const invitationTemplate = await getEmailTemplate(participant.relationshipType, 'invitation');
+              
+              // Send invitation email
+              await emailService.sendEmail({
+                to: participant.employee.email,
+                subject: replaceEmailPlaceholders(invitationTemplate.subject, emailVars),
+                html: replaceEmailPlaceholders(invitationTemplate.content, emailVars)
+              });
+              
+              // Step 2: Wait a short time before sending instructions
+              await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
+              
+              // Step 3: Get and send instruction email
+              const instructionTemplate = await getEmailTemplate(participant.relationshipType, 'instruction');
+              
+              // Send instruction email
+              await emailService.sendEmail({
+                to: participant.employee.email,
+                subject: replaceEmailPlaceholders(instructionTemplate.subject, emailVars),
+                html: replaceEmailPlaceholders(instructionTemplate.content, emailVars)
+              });
+              
+              console.log(`Sent invitation and instruction emails to ${participant.employee.email}`);
+            } catch (individualEmailError) {
+              console.error(`Error sending emails to ${participant.employee.email}:`, individualEmailError);
+              // Continue with other participants even if this one fails
+            }
           }
         } else {
           // In development mode, just update status without sending emails
@@ -839,33 +860,117 @@ exports.createCampaign = async (req, res) => {
   };
   
   // Helper function to get appropriate email template
-  function getEmailTemplate(relationshipType, templateType) {
-    // This is a placeholder - in a production environment, you would:
-    // 1. Retrieve templates from the database
-    // 2. Select based on relationship type and template type
-    
-    const defaultTemplate = `
-      <p>Hello {assessorName},</p>
-      <p>You've been invited to provide feedback for {targetName} as part of the "{campaignName}" feedback campaign.</p>
-      <p>Please complete your feedback by {deadline}.</p>
-      <p>To provide your feedback, please click on the link below:</p>
-      <p><a href="{feedbackUrl}">Complete your feedback</a></p>
-      <p>Thank you for your participation!</p>
-    `;
-    
-    if (templateType === 'invitation' && relationshipType === 'self') {
-      return `
-        <p>Hello {assessorName},</p>
-        <p>As part of the "{campaignName}" feedback campaign, you're invited to complete a self-assessment.</p>
-        <p>Your self-reflection is an important part of the 360-degree feedback process.</p>
-        <p>Please complete your self-assessment by {deadline}.</p>
-        <p>To begin, please click on the link below:</p>
-        <p><a href="{feedbackUrl}">Complete your self-assessment</a></p>
-        <p>Thank you for your participation!</p>
-      `;
+  async function getEmailTemplate(relationshipType, templateType) {
+    try {
+      const { CommunicationTemplate } = require('../models');
+      
+      // First try to find a template specifically for this relationship type
+      let template = await CommunicationTemplate.findOne({
+        where: {
+          templateType: templateType,
+          recipientType: relationshipType,
+          isDefault: true
+        }
+      });
+      
+      // If no specific template exists, fall back to the "all" recipient type
+      if (!template) {
+        template = await CommunicationTemplate.findOne({
+          where: {
+            templateType: templateType,
+            recipientType: 'all',
+            isDefault: true
+          }
+        });
+      }
+      
+      // If still no template, use a hardcoded fallback
+      if (!template) {
+        console.warn(`No template found for ${templateType}-${relationshipType}, using fallback`);
+        
+        // Fallback templates
+        if (templateType === 'invitation' && relationshipType === 'self') {
+          return {
+            subject: 'Complete your Self-Assessment for {campaignName}',
+            content: `
+              <p>Hello {assessorName},</p>
+              <p>As part of the <strong>{campaignName}</strong> feedback campaign, you're invited to complete a self-assessment.</p>
+              <p>Self-assessment is a crucial part of the 360-degree feedback process, giving you an opportunity to reflect on your own performance.</p>
+              <p>Please complete your self-assessment by {deadline}.</p>
+              <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Start Self-Assessment</a></p>
+              <p>Thank you for your participation!</p>
+            `
+          };
+        } else if (templateType === 'instruction' && relationshipType === 'self') {
+          return {
+            subject: 'Instructions for Your Self-Assessment',
+            content: `
+              <p>Hello {assessorName},</p>
+              <p>Here are some guidelines for completing your self-assessment as part of the <strong>{campaignName}</strong> feedback campaign:</p>
+              <ul>
+                <li>Be honest and reflective</li>
+                <li>Provide specific examples to support your assessment</li>
+                <li>Consider both your strengths and areas for development</li>
+                <li>Take your time to provide thoughtful responses</li>
+              </ul>
+              <p>Your self-assessment provides valuable context and will be considered alongside feedback from others.</p>
+              <p>If you haven't completed your assessment yet, please do so by {deadline}:</p>
+              <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Complete Self-Assessment</a></p>
+            `
+          };
+        } else if (templateType === 'invitation') {
+          return {
+            subject: 'Invitation to provide feedback for {targetName}',
+            content: `
+              <p>Hello {assessorName},</p>
+              <p>You've been invited to provide feedback for <strong>{targetName}</strong> as part of the <strong>{campaignName}</strong> feedback campaign.</p>
+              <p>Your insights are valuable for {targetName}'s professional development.</p>
+              <p>Please complete your feedback by {deadline}.</p>
+              <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Provide Feedback</a></p>
+              <p>Thank you for your participation!</p>
+            `
+          };
+        } else if (templateType === 'instruction') {
+          return {
+            subject: 'Guidelines for Providing Effective Feedback',
+            content: `
+              <p>Hello {assessorName},</p>
+              <p>Here are some guidelines for providing effective feedback for <strong>{targetName}</strong>:</p>
+              <ul>
+                <li>Be specific and provide examples</li>
+                <li>Focus on behaviors, not personality</li>
+                <li>Balance positive feedback with areas for development</li>
+                <li>Be constructive and actionable</li>
+              </ul>
+              <p>If you haven't completed your feedback yet, please do so by {deadline}:</p>
+              <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Provide Feedback</a></p>
+            `
+          };
+        } else {
+          return {
+            subject: '360 Feedback Request: {campaignName}',
+            content: `
+              <p>Hello {assessorName},</p>
+              <p>Please complete your feedback for the <strong>{campaignName}</strong> campaign by {deadline}.</p>
+              <p><a href="{feedbackUrl}">Click here to provide feedback</a></p>
+            `
+          };
+        }
+      }
+      
+      // Return the template from the database
+      return {
+        subject: template.subject,
+        content: template.content
+      };
+    } catch (error) {
+      console.error('Error fetching email template:', error);
+      // Return a very basic fallback
+      return {
+        subject: '360 Feedback for {campaignName}',
+        content: `<p>Hello {assessorName},</p><p>Please provide your feedback by clicking <a href="{feedbackUrl}">here</a>.</p>`
+      };
     }
-    
-    return defaultTemplate;
   }
   
   // Helper function to replace placeholders in email templates

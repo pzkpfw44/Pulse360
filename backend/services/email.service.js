@@ -68,7 +68,7 @@ class EmailService {
           sendReminders: true,
           reminderFrequency: 3,
           maxReminders: 3,
-          devMode: true // Default to dev mode for safety
+          devMode: false 
         });
         
         console.log('Created default email settings');
