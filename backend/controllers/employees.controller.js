@@ -2,6 +2,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const csv = require('csv');
+const xlsx = require('xlsx');
 const { v4: uuidv4 } = require('uuid');
 const { Employee, sequelize } = require('../models');
 const { processEmployeeFile } = require('../services/import.service');
@@ -13,50 +15,209 @@ exports.importEmployees = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    // Get mapping and startRow from request body
-    const { columnMapping, startRow, updateExisting } = req.body;
+    const filePath = req.file.path;
+    const fileExt = path.extname(req.file.originalname).toLowerCase();
     
-    if (!columnMapping) {
-      return res.status(400).json({ message: 'Column mapping is required' });
+    // Generate a unique batch ID for this import
+    const importBatch = uuidv4();
+    
+    let data = [];
+    let successCount = 0;
+    let updateCount = 0;
+    let errorRecords = [];
+    let duplicateRecords = [];
+    
+    // Process CSV files
+    if (fileExt === '.csv') {
+      // Use our custom CSV parser instead of the csv package
+      data = await parseCSV(filePath);
+    } 
+    // Process Excel files (xlsx, xls)
+    else if (fileExt === '.xlsx' || fileExt === '.xls') {
+      const workbook = xlsx.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      
+      // Convert Excel to JSON with header row
+      data = xlsx.utils.sheet_to_json(worksheet, { raw: false, defval: '' });
+    } else {
+      return res.status(400).json({ message: 'Unsupported file format' });
     }
-
-    // Parse column mapping from JSON string if needed
-    const mapping = typeof columnMapping === 'string' 
-      ? JSON.parse(columnMapping) 
-      : columnMapping;
-
-    // Generate batch ID for this import
-    const batchId = `import-${uuidv4()}`;
     
-    // Process the file
-    const result = await processEmployeeFile({
-      filePath: req.file.path,
-      mapping,
-      startRow: parseInt(startRow || '1', 10),
-      updateExisting: updateExisting === 'true' || updateExisting === true,
-      batchId,
-      userId: req.user.id
+    // If no data found
+    if (!data || data.length === 0) {
+      return res.status(400).json({ message: 'No data found in file' });
+    }
+    
+    console.log('Raw data sample:', data.slice(0, 2));
+    
+    // Standardize field names (map Excel/CSV headers to DB fields)
+    const standardizedData = data.map((record, index) => {
+      // Get all keys from the record
+      const keys = Object.keys(record);
+      
+      // Create a new standardized record
+      const standardized = {};
+      
+      // Map known fields with various possible names to standard field names
+      // This is a critical section that handles different header naming conventions
+      for (const key of keys) {
+        const lowerKey = key.toLowerCase().trim();
+        
+        if (lowerKey === 'id' || lowerKey === 'employee id' || lowerKey === 'employeeid' || lowerKey === 'employee_id') {
+          standardized.employeeId = record[key].toString().trim();
+        }
+        else if (lowerKey === 'firstname' || lowerKey === 'first name' || lowerKey === 'first_name' || lowerKey === 'fname') {
+          standardized.firstName = record[key].toString().trim();
+        }
+        else if (lowerKey === 'lastname' || lowerKey === 'last name' || lowerKey === 'last_name' || lowerKey === 'lname' || lowerKey === 'second name') {
+          standardized.lastName = record[key].toString().trim();
+        }
+        else if (lowerKey === 'email' || lowerKey === 'email address' || lowerKey === 'emailaddress') {
+          standardized.email = record[key].toString().trim();
+        }
+        else if (lowerKey === 'job title' || lowerKey === 'jobtitle' || lowerKey === 'title' || lowerKey === 'position') {
+          standardized.jobTitle = record[key].toString().trim();
+        }
+        else if (lowerKey === 'department' || lowerKey === 'function' || lowerKey === 'mainfunction') {
+          standardized.mainFunction = record[key].toString().trim();
+        }
+        else if (lowerKey === 'subfunction' || lowerKey === 'sub function' || lowerKey === 'sub-function') {
+          standardized.subFunction = record[key].toString().trim();
+        }
+        else if (lowerKey === 'manager id' || lowerKey === 'managerid' || lowerKey === 'manager_id') {
+          standardized.managerId = record[key].toString().trim();
+        }
+        else if (lowerKey === 'level' || lowerKey === 'level identification' || lowerKey === 'levelidentification') {
+          standardized.levelIdentification = record[key].toString().trim();
+        }
+        else if (lowerKey === 'role') {
+          standardized.role = record[key].toString().trim();
+          // Also use Role as jobTitle if no specific job title is provided
+          if (!standardized.jobTitle) {
+            standardized.jobTitle = record[key].toString().trim();
+          }
+        }
+      }
+      
+      // Store original record for debugging
+      standardized._original = record;
+      standardized._rowNumber = index + 2; // +2 because index starts at 0 and we have a header row
+      
+      console.log(`Row ${index + 2} mapped:`, standardized);
+      
+      return standardized;
     });
     
-    // Remove the temporary file
-    try {
-      fs.unlinkSync(req.file.path);
-    } catch (err) {
-      console.warn('Failed to remove temporary file:', err);
+    // Now process each record
+    for (const record of standardizedData) {
+      try {
+        console.log('Processing record:', record);
+        
+        // Skip if missing required fields
+        if (!record.employeeId || !record.firstName || !record.lastName) {
+          console.log('Missing required fields:', { employeeId: record.employeeId, firstName: record.firstName, lastName: record.lastName });
+          errorRecords.push({
+            row: record._rowNumber,
+            error: 'Missing required fields (Employee ID, First Name, or Last Name)',
+            data: record
+          });
+          continue;
+        }
+        
+        // Check email format if provided
+        if (record.email && !validateEmail(record.email)) {
+          console.log('Invalid email format:', record.email);
+          errorRecords.push({
+            row: record._rowNumber,
+            error: 'Invalid email format',
+            data: record
+          });
+          continue;
+        }
+        
+        // Check for duplicate employee ID in current import
+        const isDuplicateInBatch = duplicateRecords.some(
+          dr => dr.employeeId === record.employeeId
+        );
+        
+        if (isDuplicateInBatch) {
+          console.log('Duplicate in batch:', record.employeeId);
+          duplicateRecords.push({
+            row: record._rowNumber,
+            employeeId: record.employeeId,
+            message: 'Duplicate employee ID in import file'
+          });
+          continue;
+        }
+        
+        // Check if employee exists in database
+        const existingEmployee = await Employee.findOne({
+          where: { employeeId: record.employeeId }
+        });
+        
+        if (existingEmployee) {
+          console.log('Updating existing employee:', record.employeeId);
+          // Update existing employee
+          await existingEmployee.update({
+            ...record,
+            importBatch,
+            lastUpdatedAt: new Date()
+          });
+          updateCount++;
+        } else {
+          console.log('Creating new employee:', record.employeeId);
+          // Create new employee
+          await Employee.create({
+            ...record,
+            status: 'active',
+            importBatch,
+            importedAt: new Date()
+          });
+          successCount++;
+        }
+      } catch (error) {
+        console.error(`Error processing record at row ${record._rowNumber}:`, error);
+        errorRecords.push({
+          row: record._rowNumber,
+          error: error.message,
+          data: record
+        });
+      }
     }
-
-    res.status(200).json({
-      message: 'File processed successfully',
-      result
+    
+    // Clean up the uploaded file - using the proper Promise API
+    try {
+      await fs.unlink(filePath);
+    } catch (err) {
+      console.error('Error deleting temporary file:', err);
+    }
+    
+    return res.status(200).json({
+      message: 'Import completed',
+      totalRecords: data.length,
+      newEmployees: successCount,
+      updatedEmployees: updateCount,
+      errors: errorRecords.map(e => ({
+        row: e.row,
+        error: e.error
+      })),
+      duplicates: duplicateRecords
     });
   } catch (error) {
     console.error('Error importing employees:', error);
-    res.status(500).json({ 
-      message: 'Failed to import employees', 
-      error: error.message 
+    return res.status(500).json({
+      message: 'Failed to import employees',
+      error: error.message
     });
   }
 };
+
+// Helper function to validate email format
+function validateEmail(email) {
+  const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  return re.test(String(email).toLowerCase());
+}
 
 // Create a new employee
 exports.createEmployee = async (req, res) => {
