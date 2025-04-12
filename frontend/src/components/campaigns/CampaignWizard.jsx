@@ -8,6 +8,7 @@ import AssessorSelection from './wizard/AssessorSelection';
 import ScheduleSetup from './wizard/ScheduleSetup';
 import EmailSetup from './wizard/EmailSetup';
 import ReviewLaunch from './wizard/ReviewLaunch';
+import { validateCampaignTemplates, prepareCampaignForSubmission } from '../utils/CampaignUtils';
 
 const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -116,8 +117,9 @@ const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
       case 4: // Schedule Setup
         return !!data.startDate && !!data.endDate;
       case 5: // Email Templates
-        // Just check that we have a name (basic info is filled out)
-        return !!data.name;
+        const templateValidation = validateCampaignTemplates(data);
+        return templateValidation.success;
+        
       default:
         return true;
     }
@@ -153,6 +155,7 @@ const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
             onDataChange={updateCampaignData}
             onNext={handleNextStep}
             onPrev={handlePrevStep}
+            showValidationErrors={true} // This line to show validation errors
           />
         );
       case 4:
@@ -243,54 +246,68 @@ const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
         {renderStep()}
 
         {/* Step Navigation Buttons - Controlled by individual steps */}
-        <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
-          <button
-            type="button"
-            onClick={handlePrevStep}
-            disabled={currentStep === 1 || isLoading}
-            className={`inline-flex items-center px-4 py-2 ${
-              currentStep === 1
-                ? 'opacity-50 cursor-not-allowed'
-                : 'hover:bg-gray-50'
-            } border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white`}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Previous
-          </button>
-
-          {currentStep < totalSteps ? (
+        <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-200">
+          <div> {/* Left container for Previous button */}
             <button
               type="button"
-              onClick={() => handleNextStep(campaignData)}
-              disabled={isLoading}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+              onClick={handlePrevStep}
+              disabled={currentStep === 1 || isLoading}
+              className={`inline-flex items-center px-4 py-2 ${
+                currentStep === 1
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'hover:bg-gray-50'
+              } border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white`}
             >
-              Next
-              <ArrowRight className="h-4 w-4 ml-2" />
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Previous
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleLaunch}
-              disabled={isLoading}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-            >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Launching...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  Launch Campaign
-                </>
-              )}
-            </button>
-          )}
+          </div>
+          
+          {/* Center container for error messages */}
+          <div className="text-center flex-grow mx-4">
+            {currentStep === 3 && !validateStep(3, campaignData) && (
+              <div className="text-red-600 text-sm font-medium">
+                Please select at least 1 Manager and 3 Peers to continue
+              </div>
+            )}
+          </div>
+          
+          {/* Right container for Next/Launch button */}
+          <div>
+            {currentStep < totalSteps ? (
+              <button
+                type="button"
+                onClick={() => handleNextStep(campaignData)}
+                disabled={isLoading || !validateStep(currentStep, campaignData)}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                Next
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleLaunch}
+                disabled={isLoading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+              >
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Launching...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Launch Campaign
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

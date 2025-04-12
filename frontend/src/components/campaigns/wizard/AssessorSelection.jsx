@@ -1,55 +1,141 @@
 // frontend/src/components/campaigns/wizard/AssessorSelection.jsx
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Check, 
-  Users, 
-  AlertTriangle, 
-  User, 
-  UserPlus, 
-  RefreshCw,
-  Shield,
-  UserMinus,
-  X
-} from 'lucide-react';
+import { Users, UserPlus, Check, AlertTriangle, RefreshCw, Search } from 'lucide-react';
 import api from '../../../services/api';
 
-const AssessorSelection = ({ data, onDataChange, onNext }) => {
+const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationErrors = false }) => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [participants, setParticipants] = useState(data.participants || []);
-  const [selectedTab, setSelectedTab] = useState('self');
-  const [targetEmployee, setTargetEmployee] = useState(null);
-  const [suggestionLoading, setSuggestionLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState({});
-  const [hasSufficientData, setHasSufficientData] = useState({});
-  const [showAll, setShowAll] = useState(false);
+  const [selectedParticipants, setSelectedParticipants] = useState(data.participants || []);
+  const [suggestedAssessors, setSuggestedAssessors] = useState(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
+  
+  // Define relationship colors
+  const relationshipColors = {
+    'self': 'bg-purple-100 text-purple-800',
+    'manager': 'bg-blue-100 text-blue-800',
+    'peer': 'bg-green-100 text-green-800',
+    'direct_report': 'bg-amber-100 text-amber-800',
+    'external': 'bg-gray-100 text-gray-800'
+  };
 
-  // Define relationship types and their requirements
-  const relationshipTypes = [
-    { id: 'self', label: 'Self', min: 1, max: 1, description: 'Self-assessment by the individual' },
-    { id: 'manager', label: 'Manager', min: 1, max: 2, description: 'Direct and indirect managers' },
-    { id: 'peer', label: 'Peers', min: 3, max: 10, description: 'Colleagues at the same level' },
-    { id: 'direct_report', label: 'Direct Reports', min: 0, max: 10, description: 'Team members reporting to this person' },
-    { id: 'external', label: 'External', min: 0, max: 5, description: 'Outside stakeholders (clients, partners)' }
-  ];
+  // Group participants by relationship type
+  const getParticipantsByType = () => {
+    const grouped = {
+      self: selectedParticipants.filter(p => p.relationshipType === 'self'),
+      manager: selectedParticipants.filter(p => p.relationshipType === 'manager'),
+      peer: selectedParticipants.filter(p => p.relationshipType === 'peer'),
+      direct_report: selectedParticipants.filter(p => p.relationshipType === 'direct_report'),
+      external: selectedParticipants.filter(p => p.relationshipType === 'external')
+    };
+    
+    return grouped;
+  };
 
+  // Generate counts for each relationship type
+  const getCounts = () => {
+    const grouped = getParticipantsByType();
+    
+    return {
+      self: {
+        current: grouped.self.length,
+        required: 1,
+        complete: grouped.self.length >= 1
+      },
+      manager: {
+        current: grouped.manager.length,
+        required: 1,
+        complete: grouped.manager.length >= 1
+      },
+      peer: {
+        current: grouped.peer.length,
+        required: 3,
+        complete: grouped.peer.length >= 3
+      },
+      direct_report: {
+        current: grouped.direct_report.length,
+        required: 0,
+        complete: true
+      },
+      external: {
+        current: grouped.external.length,
+        required: 0,
+        complete: true
+      }
+    };
+  };
+
+  // Validate selection
+  const validateSelection = () => {
+    const counts = getCounts();
+    const errors = {};
+    
+    if (!counts.self.complete) {
+      errors.self = 'Self-assessment is required';
+    }
+    
+    if (!counts.manager.complete) {
+      errors.manager = 'At least one manager is required';
+    }
+    
+    if (!counts.peer.complete) {
+      errors.peer = 'At least three peers are required';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Fetch employees on component mount
   useEffect(() => {
     fetchEmployees();
-    if (data.targetEmployeeId) {
-      fetchTargetEmployee(data.targetEmployeeId);
-    }
-  }, [data.targetEmployeeId]);
-
-  useEffect(() => {
-    if (data.templateId && data.targetEmployeeId && employees.length > 0) {
+    
+    // If target employee and template are selected, get AI suggestions
+    if (data.targetEmployeeId && data.templateId) {
       getSuggestedAssessors();
     }
-  }, [data.templateId, data.targetEmployeeId, employees]);
+  }, [data.targetEmployeeId, data.templateId]);
 
+  // Initialize selected participants from data
+  useEffect(() => {
+    if (data.participants) {
+      setSelectedParticipants(data.participants);
+    }
+  }, [data.participants]);
+
+
+  useEffect(() => {
+    // If target employee data exists but isn't in the self-assessment list yet, add them automatically
+    if (data.targetEmployeeId && data.targetEmployeeDetails) {
+      const hasSelfAssessment = selectedParticipants.some(
+        p => p.relationshipType === 'self'
+      );
+      
+      if (!hasSelfAssessment) {
+        // Add target employee as self-assessor automatically
+        const targetAsSelf = {
+          employeeId: data.targetEmployeeId,
+          relationshipType: 'self',
+          employee: {
+            id: data.targetEmployeeId,
+            firstName: data.targetEmployeeDetails.firstName,
+            lastName: data.targetEmployeeDetails.lastName,
+            email: data.targetEmployeeDetails.email,
+            jobTitle: data.targetEmployeeDetails.jobTitle || ''
+          }
+        };
+        
+        setSelectedParticipants(prev => [...prev, targetAsSelf]);
+        onDataChange({ participants: [...selectedParticipants, targetAsSelf] });
+      }
+    }
+  }, [data.targetEmployeeId, data.targetEmployeeDetails]);
+
+  // Fetch employees
   const fetchEmployees = async () => {
     try {
       setLoading(true);
@@ -70,555 +156,790 @@ const AssessorSelection = ({ data, onDataChange, onNext }) => {
     }
   };
 
-  const fetchTargetEmployee = async (employeeId) => {
-    try {
-      const employee = employees.find(e => e.id === employeeId);
-      if (employee) {
-        setTargetEmployee(employee);
-      } else {
-        const response = await api.get(`/employees/${employeeId}`);
-        setTargetEmployee(response.data);
-      }
-    } catch (err) {
-      console.error('Error fetching target employee:', err);
-    }
-  };
-
+  // Get suggested assessors from AI
   const getSuggestedAssessors = async () => {
     try {
-      setSuggestionLoading(true);
-      
+      setLoadingSuggestions(true);
       const response = await api.post('/campaigns/suggest-assessors', {
         templateId: data.templateId,
         employeeId: data.targetEmployeeId
       });
       
-      setSuggestions(response.data.suggestions || {});
-      setHasSufficientData(response.data.hasSufficientData || {});
-      
-      // Pre-populate participants with suggestions
-      const newParticipants = [...participants];
-      
-      // Add self-assessment automatically
-      if (response.data.suggestions.self && response.data.suggestions.self.length > 0 && 
-          !participants.some(p => p.relationshipType === 'self')) {
-        const self = response.data.suggestions.self[0];
-        newParticipants.push({
-          id: `new-${Date.now()}-self`,
-          employeeId: self.id,
-          relationshipType: 'self',
-          employeeName: self.name,
-          employeeEmail: self.email,
-          employeeJobTitle: self.jobTitle,
-          aiSuggested: true
-        });
-      }
-      
-      // Add manager automatically
-      if (response.data.suggestions.manager && response.data.suggestions.manager.length > 0 && 
-          !participants.some(p => p.relationshipType === 'manager')) {
-        const manager = response.data.suggestions.manager[0];
-        newParticipants.push({
-          id: `new-${Date.now()}-manager`,
-          employeeId: manager.id,
-          relationshipType: 'manager',
-          employeeName: manager.name,
-          employeeEmail: manager.email,
-          employeeJobTitle: manager.jobTitle,
-          aiSuggested: true
-        });
-      }
-      
-      setParticipants(newParticipants);
-      updateParticipants(newParticipants);
-      
+      setSuggestedAssessors(response.data);
     } catch (err) {
       console.error('Error getting suggested assessors:', err);
+      // Don't show an error message, just disable suggestions
     } finally {
-      setSuggestionLoading(false);
+      setLoadingSuggestions(false);
     }
   };
 
+  // Add a participant
   const addParticipant = (employee, relationshipType) => {
-    // Check if employee is already selected for this relationship type
-    const exists = participants.some(
+    // Check if participant already exists
+    const existingIndex = selectedParticipants.findIndex(
       p => p.employeeId === employee.id && p.relationshipType === relationshipType
     );
     
-    if (exists) return;
+    const exists = existingIndex !== -1;
     
-    // For self assessment, remove any existing self entries first
-    if (relationshipType === 'self') {
-      const filtered = participants.filter(p => p.relationshipType !== 'self');
+    // If exists, REMOVE instead of ignoring
+    if (exists) {
+      // Create a new array without the removed participant
+      const updatedParticipants = [...selectedParticipants];
+      updatedParticipants.splice(existingIndex, 1);
       
-      const newParticipant = {
-        id: `new-${Date.now()}`,
-        employeeId: employee.id,
-        relationshipType,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        employeeEmail: employee.email,
-        employeeJobTitle: employee.jobTitle || '',
-        aiSuggested: false
-      };
-      
-      const newParticipants = [...filtered, newParticipant];
-      setParticipants(newParticipants);
-      updateParticipants(newParticipants);
+      setSelectedParticipants(updatedParticipants);
+      onDataChange({ participants: updatedParticipants });
       return;
     }
     
-    // Check if we've reached the maximum for this relationship type
-    const typeConfig = relationshipTypes.find(type => type.id === relationshipType);
-    const currentCount = participants.filter(p => p.relationshipType === relationshipType).length;
+    // For self, only allow one and replace existing
+    if (relationshipType === 'self') {
+      // Remove existing self if any
+      const newParticipants = selectedParticipants.filter(
+        p => p.relationshipType !== 'self'
+      );
+      
+      const newParticipant = {
+        employeeId: employee.id,
+        relationshipType,
+        employee: {
+          id: employee.id,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          email: employee.email,
+          jobTitle: employee.jobTitle || ''
+        }
+      };
+      
+      const updatedParticipants = [...newParticipants, newParticipant];
+      setSelectedParticipants(updatedParticipants);
+      onDataChange({ participants: updatedParticipants });
+      
+      return;
+    }
     
-    if (typeConfig && currentCount >= typeConfig.max) return;
-    
+    // For other relationship types, add to the list
     const newParticipant = {
-      id: `new-${Date.now()}`,
       employeeId: employee.id,
       relationshipType,
-      employeeName: `${employee.firstName} ${employee.lastName}`,
-      employeeEmail: employee.email,
-      employeeJobTitle: employee.jobTitle || '',
-      aiSuggested: false
+      employee: {
+        id: employee.id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        email: employee.email,
+        jobTitle: employee.jobTitle || ''
+      }
     };
     
-    const newParticipants = [...participants, newParticipant];
-    setParticipants(newParticipants);
-    updateParticipants(newParticipants);
+    const updatedParticipants = [...selectedParticipants, newParticipant];
+    setSelectedParticipants(updatedParticipants);
+    onDataChange({ participants: updatedParticipants });
   };
 
-  const removeParticipant = (participantId) => {
-    const newParticipants = participants.filter(p => p.id !== participantId);
-    setParticipants(newParticipants);
-    updateParticipants(newParticipants);
+  // Remove a participant
+  const removeParticipant = (participantIndex) => {
+    const updatedParticipants = selectedParticipants.filter((_, index) => index !== participantIndex);
+    setSelectedParticipants(updatedParticipants);
+    onDataChange({ participants: updatedParticipants });
   };
 
-  const updateParticipants = (newParticipants) => {
-    onDataChange({ participants: newParticipants });
-  };
-
-  const handleSuggestionRefresh = () => {
-    getSuggestedAssessors();
-  };
-
+  // Handle next click
   const handleNextClick = () => {
-    console.log("Next button clicked, participants:", participants);
-    // Make sure we're passing the full participants array
-    onNext({ participants: [...participants] });
+    if (validateSelection()) {
+      onNext({ participants: selectedParticipants });
+    } else {
+      // Scroll to top to show validation errors
+      window.scrollTo(0, 0);
+    }
+  };
+
+  // Calculate progress
+  const isSelectionComplete = () => {
+    const counts = getCounts();
+    return counts.self.complete && counts.manager.complete && counts.peer.complete;
   };
 
   // Filter employees based on search term
-  const filteredEmployees = employees.filter(employee => {
-    // Special handling for self tab - show all employees for manual selection
-    if (selectedTab === 'self') {
-      // Don't restrict to just target employee for manual selection
-      return `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (employee.jobTitle && employee.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()));
-    }
-    
-    // For other tabs, exclude the target employee
-    if (employee.id === data.targetEmployeeId) {
-      return false;
-    }
-    
-    return `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (employee.jobTitle && employee.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()));
-  });
+  const filteredEmployees = employees.filter(employee =>
+    `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (employee.jobTitle && employee.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
-  // Get counts for each relationship type
-  const getCounts = () => {
-    const counts = {};
-    relationshipTypes.forEach(type => {
-      counts[type.id] = participants.filter(p => p.relationshipType === type.id).length;
-    });
-    return counts;
+  // Format relationship type for display
+  const formatRelationshipType = (type) => {
+    const formats = {
+      'self': 'Self',
+      'manager': 'Manager',
+      'peer': 'Peer',
+      'direct_report': 'Direct Report',
+      'external': 'External'
+    };
+    return formats[type] || type;
   };
 
-  const relationshipCounts = getCounts();
-
-  // Check if we meet minimum requirements
-  const meetsRequirements = () => {
-    // Self-assessment is not strictly required to proceed
-    // Check if at least some assessors are selected
-    const totalAssessors = Object.values(relationshipCounts).reduce((sum, count) => sum + count, 0);
+  // Render assessor card for selection
+  const renderAssessorCard = (employee, relationshipType, isSelected, confidence = null) => {
+    // Prevent target employee from being added as anything other than Self
+    const isTargetEmployee = employee.id === data.targetEmployeeId;
+    const isDisabled = isTargetEmployee && relationshipType !== 'self';
     
-    if (totalAssessors > 0) {
-      // As long as some assessors are selected, allow proceeding
-      return true;
-    }
-    
-    return false;
-  };
-
-  const renderWarningForType = (typeId) => {
-    const typeConfig = relationshipTypes.find(type => type.id === typeId);
-    const count = relationshipCounts[typeId] || 0;
-    
-    if (!typeConfig) return null;
-    
-    if (count < typeConfig.min) {
-      return (
-        <div className="flex items-center text-amber-600 text-sm mt-1">
-          <AlertTriangle className="h-4 w-4 mr-1" />
-          <span>Need at least {typeConfig.min} {typeConfig.label}</span>
+    return (
+      <div 
+        className={`border rounded-lg p-4 ${
+          isSelected ? 'border-blue-500 bg-blue-50' : 
+          isDisabled ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed' :
+          'border-gray-200 hover:border-blue-300'
+        } transition-all`}
+        onClick={() => isDisabled ? null : addParticipant(employee, relationshipType)}
+      >
+        <div className="flex justify-between items-start">
+          <div>
+            <h3 className="font-medium text-gray-900">
+              {employee.firstName} {employee.lastName}
+              {isTargetEmployee && <span className="ml-2 text-xs text-blue-600">(Target Employee)</span>}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              {employee.email}
+            </p>
+          </div>
+          {isSelected && (
+            <div className="bg-blue-500 text-white p-1 rounded-full">
+              <Check size={16} />
+            </div>
+          )}
         </div>
-      );
-    }
+        {/* Rest of the card content... */}
+      </div>
+    );
+  };
+
+  // Render participant list
+  const renderParticipantList = () => {
+    const grouped = getParticipantsByType();
+    const counts = getCounts();
     
-    return null;
+    return (
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold mb-4">Selected Assessors</h3>
+        
+        {/* Self */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center">
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${relationshipColors.self} mr-2`}>
+                Self
+              </span>
+              <span className="text-sm">
+                {counts.self.current}/{counts.self.required}
+              </span>
+            </div>
+            {validationErrors.self && showValidationErrors && (
+              <span className="text-xs text-red-600">{validationErrors.self}</span>
+            )}
+          </div>
+          
+          <div className="bg-gray-50 rounded-lg p-3">
+            {grouped.self.length > 0 ? (
+              grouped.self.map((participant, index) => (
+                <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
+                  <div>
+                    <span className="text-sm font-medium">
+                      {participant.employee.firstName} {participant.employee.lastName}
+                    </span>
+                    <span className="text-xs text-gray-500 block">
+                      {participant.employee.email}
+                    </span>
+                  </div>
+                  <button
+                    className="text-red-600 hover:text-red-800 transition-colors"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                      p.employeeId === participant.employeeId && p.relationshipType === 'self'
+                    ))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-gray-500 italic">No self-assessment selected</div>
+            )}
+          </div>
+        </div>
+        
+        {/* Manager */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center">
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${relationshipColors.manager} mr-2`}>
+                Manager
+              </span>
+              <span className="text-sm">
+                {counts.manager.current}/{counts.manager.required}
+              </span>
+            </div>
+            {validationErrors.manager && showValidationErrors && (
+              <span className="text-xs text-red-600">{validationErrors.manager}</span>
+            )}
+          </div>
+          
+          <div className="bg-gray-50 rounded-lg p-3">
+            {grouped.manager.length > 0 ? (
+              grouped.manager.map((participant, index) => (
+                <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
+                  <div>
+                    <span className="text-sm font-medium">
+                      {participant.employee.firstName} {participant.employee.lastName}
+                    </span>
+                    <span className="text-xs text-gray-500 block">
+                      {participant.employee.email}
+                    </span>
+                  </div>
+                  <button
+                    className="text-red-600 hover:text-red-800 transition-colors"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                      p.employeeId === participant.employeeId && p.relationshipType === 'manager'
+                    ))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-gray-500 italic">No managers selected</div>
+            )}
+          </div>
+        </div>
+        
+        {/* Peers */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center">
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${relationshipColors.peer} mr-2`}>
+                Peers
+              </span>
+              <span className="text-sm">
+                {counts.peer.current}/{counts.peer.required}
+              </span>
+            </div>
+            {validationErrors.peer && showValidationErrors && (
+              <span className="text-xs text-red-600">{validationErrors.peer}</span>
+            )}
+          </div>
+          
+          <div className="bg-gray-50 rounded-lg p-3">
+            {grouped.peer.length > 0 ? (
+              grouped.peer.map((participant, index) => (
+                <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
+                  <div>
+                    <span className="text-sm font-medium">
+                      {participant.employee.firstName} {participant.employee.lastName}
+                    </span>
+                    <span className="text-xs text-gray-500 block">
+                      {participant.employee.email}
+                    </span>
+                  </div>
+                  <button
+                    className="text-red-600 hover:text-red-800 transition-colors"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                      p.employeeId === participant.employeeId && p.relationshipType === 'peer'
+                    ))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-gray-500 italic">No peers selected</div>
+            )}
+          </div>
+        </div>
+        
+        {/* Direct Reports (if any) */}
+        {grouped.direct_report.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center mb-2">
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${relationshipColors.direct_report} mr-2`}>
+                Direct Reports
+              </span>
+              <span className="text-sm">
+                {counts.direct_report.current}
+              </span>
+            </div>
+            
+            <div className="bg-gray-50 rounded-lg p-3">
+              {grouped.direct_report.map((participant, index) => (
+                <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
+                  <div>
+                    <span className="text-sm font-medium">
+                      {participant.employee.firstName} {participant.employee.lastName}
+                    </span>
+                    <span className="text-xs text-gray-500 block">
+                      {participant.employee.email}
+                    </span>
+                  </div>
+                  <button
+                    className="text-red-600 hover:text-red-800 transition-colors"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                      p.employeeId === participant.employeeId && p.relationshipType === 'direct_report'
+                    ))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* External (if any) */}
+        {grouped.external.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center mb-2">
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${relationshipColors.external} mr-2`}>
+                External
+              </span>
+              <span className="text-sm">
+                {counts.external.current}
+              </span>
+            </div>
+            
+            <div className="bg-gray-50 rounded-lg p-3">
+              {grouped.external.map((participant, index) => (
+                <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
+                  <div>
+                    <span className="text-sm font-medium">
+                      {participant.employee.firstName} {participant.employee.lastName}
+                    </span>
+                    <span className="text-xs text-gray-500 block">
+                      {participant.employee.email}
+                    </span>
+                  </div>
+                  <button
+                    className="text-red-600 hover:text-red-800 transition-colors"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                      p.employeeId === participant.employeeId && p.relationshipType === 'external'
+                    ))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
-  // Get suggested employees for the current tab
-  const getSuggestionsForCurrentTab = () => {
-    return suggestions[selectedTab] || [];
-  };
-
+  // Render loading state
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-        <p className="mt-4 text-gray-600">Loading assessors...</p>
+        <p className="mt-4 text-gray-600">Loading employees...</p>
       </div>
     );
   }
 
+  // Render error state
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+          <p>{error}</p>
+        </div>
+        <button 
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          onClick={fetchEmployees}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Main render
   return (
     <div>
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-2">Select Assessors</h2>
         <p className="text-gray-600">
-          Choose the individuals who will provide feedback for{' '}
-          <strong>{targetEmployee ? `${targetEmployee.firstName} ${targetEmployee.lastName}` : 'the target employee'}</strong>.
+          Choose the individuals who will provide feedback for {data.targetEmployeeName || 'the target employee'}
         </p>
       </div>
 
-      {/* Stats Bar */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-6 flex flex-wrap gap-4">
-        {relationshipTypes.map(type => (
-          <div key={type.id} className="flex-1 min-w-[150px]">
-            <div className="flex justify-between items-center">
-              <h3 className="text-sm font-medium text-gray-700">{type.label}</h3>
-              <span className={`text-sm font-medium ${
-                relationshipCounts[type.id] < type.min ? 'text-amber-600' : 'text-gray-900'
-              }`}>
-                {relationshipCounts[type.id] || 0} / {type.min}+
-              </span>
-            </div>
-            <div className="mt-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-              <div 
-                className={`h-full rounded-full ${
-                  relationshipCounts[type.id] >= type.min ? 'bg-green-500' : 'bg-amber-500'
-                }`}
-                style={{ width: `${Math.min(100, (relationshipCounts[type.id] || 0) / type.min * 100)}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Relationship Type Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          {relationshipTypes.map(type => (
-            <button
-              key={type.id}
-              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
-                selectedTab === type.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setSelectedTab(type.id)}
-            >
-              {type.label}
-              <span className="ml-2 py-0.5 px-2 rounded-full text-xs font-medium bg-gray-100">
-                {relationshipCounts[type.id] || 0}
-              </span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Selected Participants */}
-      {participants.filter(p => p.relationshipType === selectedTab).length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Selected {relationshipTypes.find(t => t.id === selectedTab)?.label}</h3>
-          <div className="space-y-2">
-            {participants
-              .filter(p => p.relationshipType === selectedTab)
-              .map(participant => (
-                <div 
-                  key={participant.id}
-                  className="flex justify-between items-center p-3 bg-blue-50 border border-blue-200 rounded-lg"
-                >
-                  <div className="flex items-center">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mr-3">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{participant.employeeName}</p>
-                      <p className="text-xs text-gray-500">{participant.employeeEmail}</p>
-                    </div>
-                    {participant.aiSuggested && (
-                      <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                        AI Suggested
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation(); // Add this line to prevent event bubbling
-                      removeParticipant(participant.id);
-                    }}
-                    className="text-gray-400 hover:text-red-500"
-                    aria-label="Remove participant"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              ))}
-          </div>
-          {renderWarningForType(selectedTab)}
+      {/* Validation Errors */}
+      {showValidationErrors && Object.keys(validationErrors).length > 0 && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          <h3 className="font-semibold flex items-center">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Selection Requirements Not Met
+          </h3>
+          <ul className="mt-2 ml-6 list-disc">
+            {Object.values(validationErrors).map((error, index) => (
+              <li key={index}>{error}</li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* AI Suggestions and Selection Area */}
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-sm font-medium text-gray-700">
-            {suggestionLoading ? 'Loading Suggestions...' : 'AI Suggested Assessors'}
-          </h3>
-          <button
-            onClick={handleSuggestionRefresh}
-            disabled={suggestionLoading}
-            className={`flex items-center text-xs px-2 py-1 rounded ${
-              suggestionLoading
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-            }`}
-          >
-            <RefreshCw className={`h-3 w-3 mr-1 ${suggestionLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
-
-        {!hasSufficientData[selectedTab] && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-start">
-            <AlertTriangle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm text-amber-700">
-                Limited data available for AI suggestions.
-              </p>
-              <p className="text-xs text-amber-600 mt-1">
-                Please use manual selection to add {relationshipTypes.find(t => t.id === selectedTab)?.label.toLowerCase()}.
-              </p>
+      {/* Progress Bars */}
+      <div className="mb-6 bg-white rounded-lg shadow p-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">Selection Progress</h3>
+        
+        <div className="space-y-4">
+          {/* Self Assessment */}
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <div className="flex items-center">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${relationshipColors.self} mr-2`}>
+                  Self
+                </span>
+                <span>{getCounts().self.current}/{getCounts().self.required}</span>
+              </div>
+              <span>{getCounts().self.complete ? '✓' : ''}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${getCounts().self.complete ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${Math.min(100, (getCounts().self.current / getCounts().self.required) * 100)}%` }}
+              ></div>
             </div>
           </div>
-        )}
+          
+          {/* Manager */}
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <div className="flex items-center">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${relationshipColors.manager} mr-2`}>
+                  Manager
+                </span>
+                <span>{getCounts().manager.current}/{getCounts().manager.required}</span>
+              </div>
+              <span>{getCounts().manager.complete ? '✓' : ''}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${getCounts().manager.complete ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${Math.min(100, (getCounts().manager.current / getCounts().manager.required) * 100)}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* Peers */}
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <div className="flex items-center">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${relationshipColors.peer} mr-2`}>
+                  Peers
+                </span>
+                <span>{getCounts().peer.current}/{getCounts().peer.required}</span>
+              </div>
+              <span>{getCounts().peer.complete ? '✓' : ''}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${getCounts().peer.complete ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${Math.min(100, (getCounts().peer.current / getCounts().peer.required) * 100)}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        {getSuggestionsForCurrentTab().length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-            {getSuggestionsForCurrentTab()
-              .slice(0, showAll ? undefined : 4)
-              .map(suggestion => {
-                const isAlreadySelected = participants.some(
-                  p => p.employeeId === suggestion.id && p.relationshipType === selectedTab
-                );
-                
-                return (
-                  <div
-                    key={suggestion.id}
-                    className={`border rounded-lg p-3 ${
-                      isAlreadySelected 
-                        ? 'bg-blue-50 border-blue-200' 
-                        : 'bg-white border-gray-200 hover:border-blue-300 cursor-pointer'
-                    }`}
-                    onClick={() => {
-                      if (!isAlreadySelected) {
-                        addParticipant({
-                          id: suggestion.id,
-                          firstName: suggestion.name.split(' ')[0],
-                          lastName: suggestion.name.split(' ').slice(1).join(' '),
-                          email: suggestion.email,
-                          jobTitle: suggestion.jobTitle
-                        }, selectedTab);
-                      }
-                    }}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center">
-                        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mr-3">
-                          <User className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{suggestion.name}</p>
-                          <p className="text-xs text-gray-500">{suggestion.email}</p>
-                          {suggestion.jobTitle && (
-                            <p className="text-xs text-gray-500">{suggestion.jobTitle}</p>
-                          )}
-                        </div>
-                      </div>
-                      {isAlreadySelected ? (
-                        <div className="bg-blue-500 text-white p-1 rounded-full">
-                          <Check className="h-4 w-4" />
-                        </div>
-                      ) : (
-                        <div className="p-1 rounded-full border border-gray-200">
-                          <UserPlus className="h-4 w-4 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    {suggestion.reason && (
-                      <div className="mt-2 text-xs bg-blue-50 text-blue-700 py-1 px-2 rounded inline-block">
-                        {suggestion.reason}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+      {/* Participant List */}
+      {renderParticipantList()}
+
+      {/* AI Suggested Assessors */}
+      <div className="mt-8">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">AI-Suggested Assessors</h3>
+          <button
+            onClick={getSuggestedAssessors}
+            className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800"
+            disabled={loadingSuggestions}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${loadingSuggestions ? 'animate-spin' : ''}`} />
+            Refresh Suggestions
+          </button>
+        </div>
+        
+        {loadingSuggestions ? (
+          <div className="flex justify-center py-8">
+            <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+        ) : suggestedAssessors ? (
+          <div>
+            {/* Self */}
+            {suggestedAssessors.suggestions.self.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">
+                  Self-Assessment
+                </h4>
+                <div className="grid grid-cols-1 gap-4">
+                  {suggestedAssessors.suggestions.self.map((suggestion, index) => {
+                    const isSelected = selectedParticipants.some(
+                      p => p.employeeId === suggestion.id && p.relationshipType === 'self'
+                    );
+                    
+                    // Convert suggestion to employee format
+                    const employee = {
+                      id: suggestion.id,
+                      firstName: suggestion.name.split(' ')[0],
+                      lastName: suggestion.name.split(' ').slice(1).join(' '),
+                      email: suggestion.email,
+                      jobTitle: suggestion.jobTitle
+                    };
+                    
+                    return renderAssessorCard(employee, 'self', isSelected, suggestion.confidence);
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Managers */}
+            {suggestedAssessors.suggestions.manager.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">
+                  Suggested Managers
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {suggestedAssessors.suggestions.manager.map((suggestion, index) => {
+                    const isSelected = selectedParticipants.some(
+                      p => p.employeeId === suggestion.id && p.relationshipType === 'manager'
+                    );
+                    
+                    // Convert suggestion to employee format
+                    const employee = {
+                      id: suggestion.id,
+                      firstName: suggestion.name.split(' ')[0],
+                      lastName: suggestion.name.split(' ').slice(1).join(' '),
+                      email: suggestion.email,
+                      jobTitle: suggestion.jobTitle
+                    };
+                    
+                    return renderAssessorCard(employee, 'manager', isSelected, suggestion.confidence);
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Peers */}
+            {suggestedAssessors.suggestions.peer.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">
+                  Suggested Peers
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {suggestedAssessors.suggestions.peer.map((suggestion, index) => {
+                    const isSelected = selectedParticipants.some(
+                      p => p.employeeId === suggestion.id && p.relationshipType === 'peer'
+                    );
+                    
+                    // Convert suggestion to employee format
+                    const employee = {
+                      id: suggestion.id,
+                      firstName: suggestion.name.split(' ')[0],
+                      lastName: suggestion.name.split(' ').slice(1).join(' '),
+                      email: suggestion.email,
+                      jobTitle: suggestion.jobTitle
+                    };
+                    
+                    return renderAssessorCard(employee, 'peer', isSelected, suggestion.confidence);
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Direct Reports */}
+            {suggestedAssessors.suggestions.direct_report.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">
+                  Suggested Direct Reports
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {suggestedAssessors.suggestions.direct_report.map((suggestion, index) => {
+                    const isSelected = selectedParticipants.some(
+                      p => p.employeeId === suggestion.id && p.relationshipType === 'direct_report'
+                    );
+                    
+                    // Convert suggestion to employee format
+                    const employee = {
+                      id: suggestion.id,
+                      firstName: suggestion.name.split(' ')[0],
+                      lastName: suggestion.name.split(' ').slice(1).join(' '),
+                      email: suggestion.email,
+                      jobTitle: suggestion.jobTitle
+                    };
+                    
+                    return renderAssessorCard(employee, 'direct_report', isSelected, suggestion.confidence);
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
-          !suggestionLoading && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center mb-4">
-              <Shield className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-sm text-gray-600">
-                No AI suggestions available for this relationship type.
-              </p>
-            </div>
-          )
-        )}
-
-        {getSuggestionsForCurrentTab().length > 4 && !showAll && (
-          <button
-            onClick={() => setShowAll(true)}
-            className="text-sm text-blue-600 hover:text-blue-800 flex items-center mx-auto mb-4"
-          >
-            Show all {getSuggestionsForCurrentTab().length} suggestions
-          </button>
-        )}
-
-        {/* Manual Employee Selection */}
-        <div>
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-medium text-gray-700">Manual Selection</h3>
+          <div className="bg-gray-50 rounded-lg p-8 text-center">
+            <Users className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Suggestions Available</h3>
+            <p className="text-gray-500 mb-4">
+              Select a target employee and template to get AI-suggested assessors based on organizational data.
+            </p>
           </div>
-
-          <div className="relative mb-4">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              type="text"
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder={`Search ${selectedTab === 'self' ? 'target employee' : 'employees'}...`}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {employees.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-lg">
-              <Users size={32} className="mx-auto text-gray-400 mb-2" />
-              <p className="text-gray-600">No employees available. Add employees first.</p>
-              <a
-                href="/integration?section=employee-management"
-                className="mt-2 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-              >
-                Add Employees
-              </a>
-            </div>
-          ) : filteredEmployees.length === 0 ? (
-            <div className="text-center py-6 bg-gray-50 rounded-lg">
-              <AlertTriangle size={24} className="mx-auto text-gray-400 mb-2" />
-              <p className="text-gray-600">No matching employees found. Try different search terms.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
-              {filteredEmployees.map(employee => {
-                const isAlreadySelected = participants.some(
-                  p => p.employeeId === employee.id && p.relationshipType === selectedTab
-                );
-                
-                return (
-                  <div
-                    key={employee.id}
-                    className={`border rounded-lg p-3 ${
-                      isAlreadySelected 
-                        ? 'bg-blue-50 border-blue-200' 
-                        : 'bg-white border-gray-200 hover:border-blue-300 cursor-pointer'
-                    }`}
-                    onClick={() => {
-                      if (isAlreadySelected) {
-                        // Find the participant ID to remove
-                        const participantToRemove = participants.find(
-                          p => p.employeeId === employee.id && p.relationshipType === selectedTab
-                        );
-                        if (participantToRemove) {
-                          removeParticipant(participantToRemove.id);
-                        }
-                      } else {
-                        addParticipant(employee, selectedTab);
-                      }
-                    }}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center">
-                        <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 mr-3">
-                          <User className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {employee.firstName} {employee.lastName}
-                          </p>
-                          <p className="text-xs text-gray-500">{employee.email}</p>
-                          {employee.jobTitle && (
-                            <p className="text-xs text-gray-500">{employee.jobTitle}</p>
-                          )}
-                        </div>
-                      </div>
-                      {isAlreadySelected ? (
-                        <div className="bg-blue-500 text-white p-1 rounded-full">
-                          <Check className="h-4 w-4" />
-                        </div>
-                      ) : (
-                        <div className="p-1 rounded-full border border-gray-200">
-                          <UserPlus className="h-4 w-4 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Humor warning about confidentiality with small groups */}
-      {selectedTab === 'peer' && relationshipCounts.peer > 0 && relationshipCounts.peer < 3 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-start">
-          <AlertTriangle className="h-5 w-5 text-amber-500 mr-2 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm text-amber-700 font-medium">
-              Confidentiality Alert: "The Three Amigos" Rule
-            </p>
-            <p className="text-sm text-amber-600 mt-1">
-              We recommend at least 3 peers for feedback. With fewer people, it's easier to guess who said what, 
-              and feedback might be less honest. Besides, who wants to play "Guess Who Said That About Me?" at 
-              the next team lunch? 🕵️‍♂️
-            </p>
+      {/* Manual Selection */}
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold mb-4">Manual Selection</h3>
+        
+        <div className="relative mb-6">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
           </div>
+          <input
+            type="text"
+            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            placeholder="Search employees..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-      )}
+        
+        <div className="flex space-x-2 mb-6 overflow-x-auto py-2">
+          <button
+            className={`px-3 py-1 rounded-full text-sm ${
+              relationshipColors.self
+            } whitespace-nowrap`}
+            onClick={() => setSearchTerm('self')}
+          >
+            Self Assessment
+          </button>
+          <button
+            className={`px-3 py-1 rounded-full text-sm ${
+              relationshipColors.manager
+            } whitespace-nowrap`}
+            onClick={() => setSearchTerm('manager')}
+          >
+            Managers
+          </button>
+          <button
+            className={`px-3 py-1 rounded-full text-sm ${
+              relationshipColors.peer
+            } whitespace-nowrap`}
+            onClick={() => setSearchTerm('peers')}
+          >
+            Peers
+          </button>
+          <button
+            className={`px-3 py-1 rounded-full text-sm ${
+              relationshipColors.direct_report
+            } whitespace-nowrap`}
+            onClick={() => setSearchTerm('direct report')}
+          >
+            Direct Reports
+          </button>
+          <button
+            className={`px-3 py-1 rounded-full text-sm ${
+              relationshipColors.external
+            } whitespace-nowrap`}
+            onClick={() => setSearchTerm('external')}
+          >
+            External
+          </button>
+        </div>
+        
+        {filteredEmployees.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {filteredEmployees.map((employee) => (
+              <div key={employee.id} className="border rounded-lg p-4">
+                <div className="flex justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-900">
+                      {employee.firstName} {employee.lastName}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {employee.email}
+                    </p>
+                    {employee.jobTitle && (
+                      <p className="text-xs text-gray-600 mt-1">
+                        {employee.jobTitle}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => addParticipant(employee, 'self')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      selectedParticipants.some(p => p.employeeId === employee.id && p.relationshipType === 'self')
+                        ? 'bg-purple-600 text-white'
+                        : relationshipColors.self
+                    }`}
+                  >
+                    + Self
+                  </button>
+                  <button
+                    onClick={() => addParticipant(employee, 'manager')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      selectedParticipants.some(p => p.employeeId === employee.id && p.relationshipType === 'manager')
+                        ? 'bg-blue-600 text-white'
+                        : relationshipColors.manager
+                    }`}
+                  >
+                    + Manager
+                  </button>
+                  <button
+                    onClick={() => addParticipant(employee, 'peer')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      selectedParticipants.some(p => p.employeeId === employee.id && p.relationshipType === 'peer')
+                        ? 'bg-green-600 text-white'
+                        : relationshipColors.peer
+                    }`}
+                  >
+                    + Peer
+                  </button>
+                  <button
+                    onClick={() => addParticipant(employee, 'direct_report')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      selectedParticipants.some(p => p.employeeId === employee.id && p.relationshipType === 'direct_report')
+                        ? 'bg-amber-600 text-white'
+                        : relationshipColors.direct_report
+                    }`}
+                  >
+                    + Direct Report
+                  </button>
+                  <button
+                    onClick={() => addParticipant(employee, 'external')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      selectedParticipants.some(p => p.employeeId === employee.id && p.relationshipType === 'external')
+                        ? 'bg-gray-600 text-white'
+                        : relationshipColors.external
+                    }`}
+                  >
+                    + External
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-gray-50 rounded-lg p-6 text-center">
+            <p className="text-gray-500">No employees match your search criteria.</p>
+          </div>
+        )}
+      </div>
 
       <div className="flex justify-end mt-6">
         <button
           onClick={handleNextClick}
-          disabled={!meetsRequirements()}
+          disabled={!isSelectionComplete()}
           className={`px-4 py-2 text-white rounded-md ${
-            meetsRequirements()
+            isSelectionComplete()
               ? 'bg-blue-600 hover:bg-blue-700'
               : 'bg-gray-300 cursor-not-allowed'
           }`}

@@ -4,6 +4,7 @@ const { CommunicationTemplate } = require('../models');
 const fluxAiConfig = require('../config/flux-ai');
 const axios = require('axios');
 const { sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 
 // Get all communication templates
 exports.getAllTemplates = async (req, res) => {
@@ -131,7 +132,7 @@ exports.updateTemplate = async (req, res) => {
             recipientType,
             createdBy: req.user.id,
             isDefault: true,
-            id: { [sequelize.Op.ne]: template.id }
+            id: { [Op.ne]: template.id }
           }
         }
       );

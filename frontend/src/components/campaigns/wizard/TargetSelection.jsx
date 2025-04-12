@@ -40,16 +40,17 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
   const handleEmployeeSelect = (employeeId) => {
     setSelectedEmployee(employeeId);
     
+    // Find the employee details
+    const employee = employees.find(e => e.id === employeeId);
+    
     // If no campaign name set yet, suggest one based on employee name
-    if (!campaignName) {
-      const employee = employees.find(e => e.id === employeeId);
-      if (employee) {
-        setCampaignName(`${employee.firstName} ${employee.lastName} - 360 Feedback`);
-      }
+    if (!campaignName && employee) {
+      setCampaignName(`${employee.firstName} ${employee.lastName} - 360 Feedback`);
     }
     
     onDataChange({ 
       targetEmployeeId: employeeId,
+      targetEmployeeDetails: employee, // Store the full employee details
       name: campaignName,
       description: campaignDescription
     });
@@ -57,8 +58,11 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
 
   const handleNextClick = () => {
     if (selectedEmployee && campaignName) {
+      const employee = employees.find(e => e.id === selectedEmployee);
+      
       onNext({ 
         targetEmployeeId: selectedEmployee,
+        targetEmployeeDetails: employee, // Include full employee details
         name: campaignName,
         description: campaignDescription
       });

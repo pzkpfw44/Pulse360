@@ -15,6 +15,7 @@ import {
   Brain
 } from 'lucide-react';
 import api from '../../../services/api';
+import { validateCampaignTemplates, prepareCampaignForSubmission } from '../../utils/CampaignUtils';
 
 const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
   const [loading, setLoading] = useState(false);
@@ -154,21 +155,20 @@ const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
 
   // Handle launch button click
   const handleLaunch = () => {
-    if (validationErrors.length > 0) {
+    // Prepare the campaign data
+    const preparedCampaign = prepareCampaignForSubmission(data);
+    
+    // Validate templates before launching
+    const validation = validateCampaignTemplates(preparedCampaign);
+    if (!validation.success) {
+      // Show error to user
+      setError(validation.message);
       return;
     }
-
-    onLaunch(data);
+    
+    // If validation passes, launch the campaign
+    onLaunch(preparedCampaign);
   };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-        <p className="mt-4 text-gray-600">Loading campaign details...</p>
-      </div>
-    );
-  }
 
   return (
     <div>

@@ -1,316 +1,240 @@
-// frontend/src/components/campaigns/wizard/EmailSetup.jsx
+// In frontend/src/components/campaigns/wizard/EmailSetup.jsx
 
 import React, { useState, useEffect } from 'react';
-import { Mail, Sparkles, Check, Clipboard, AlertTriangle, RefreshCw, Settings, FileText, ThumbsUp, Clock, Eye, Code } from 'lucide-react';
+import { Mail, FileText, Check, Edit, ArrowRight } from 'lucide-react';
 import api from '../../../services/api';
-import { communicationTemplatesApi } from '../../../services/api';
 
 const EmailSetup = ({ data, onDataChange, onNext }) => {
+  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [error, setError] = useState(null);
-  const [emailTemplates, setEmailTemplates] = useState(data.emailTemplates || {
-    invitation: {
-      general: '',
-      self: ''
-    },
-    instruction: {
-      general: '',
-      self: ''
-    },
-    reminder: {
-      general: ''
-    },
-    thank_you: {
-      general: ''
-    }
-  });
-  const [activeTab, setActiveTab] = useState('invitation');
-  const [activeSubTab, setActiveSubTab] = useState('general');
-  const [targetEmployee, setTargetEmployee] = useState(null);
-  const [copySuccess, setCopySuccess] = useState('');
-  const [availableTemplates, setAvailableTemplates] = useState([]);
-  const [showFormattedPreview, setShowFormattedPreview] = useState(true);
-
-  // Email template types
-  const templateTypes = [
-    { id: 'invitation', label: 'Invitation', description: 'Initial email sent to assessors', icon: Mail },
-    { id: 'instruction', label: 'Instructions', description: 'Guidelines for completing feedback', icon: FileText },
-    { id: 'reminder', label: 'Reminder', description: 'Follow-up for assessors who haven\'t completed', icon: Clock },
-    { id: 'thank_you', label: 'Thank You', description: 'Sent after feedback completion', icon: ThumbsUp }
-  ];
-
-  // Sub-types only for invitation and instruction emails
-  const subTypes = [
-    { id: 'general', label: 'General', description: 'For managers, peers, and direct reports' },
-    { id: 'self', label: 'Self-Assessment', description: "For the target employee's self-assessment" }
-  ];
+  const [selectedTemplateType, setSelectedTemplateType] = useState('invitation');
+  const [selectedRecipientType, setSelectedRecipientType] = useState('self');
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [emailTemplates, setEmailTemplates] = useState(data.emailTemplates || {});
+  const [showFormatted, setShowFormatted] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [currentSubject, setCurrentSubject] = useState('');
+  const [currentContent, setCurrentContent] = useState('');
 
   useEffect(() => {
-    if (data.targetEmployeeId) {
-      fetchTargetEmployee(data.targetEmployeeId);
-    }
-    
-    // If we don't have templates yet, generate them
-    if (!data.emailTemplates || Object.keys(data.emailTemplates).length === 0) {
-      generateTemplates();
-    } else {
-      setLoading(false);
-    }
+    fetchTemplates();
+  }, []);
 
-    // Load available templates
-    fetchAvailableTemplates();
-  }, [data.targetEmployeeId]);
+  // Save selected templates to parent component
+  useEffect(() => {
+    onDataChange({ emailTemplates });
+  }, [emailTemplates]);
 
-  const fetchTargetEmployee = async (employeeId) => {
+  const fetchTemplates = async () => {
     try {
-      const response = await api.get(`/employees/${employeeId}`);
-      setTargetEmployee(response.data);
-    } catch (err) {
-      console.error('Error fetching target employee:', err);
-      setError('Failed to load target employee details');
-    }
-  };
-
-  const fetchAvailableTemplates = async () => {
-    try {
-      setLoadingTemplates(true);
-      const response = await communicationTemplatesApi.getDefaults();
-      setAvailableTemplates(response.data.templates || []);
-    } catch (err) {
-      console.error('Error fetching templates:', err);
-    } finally {
-      setLoadingTemplates(false);
-    }
-  };
-
-  const generateTemplates = async () => {
-    try {
-      setGenerating(true);
-      setError(null);
-      
-      const response = await api.post('/campaigns/generate-email-templates', {
-        targetEmployeeId: data.targetEmployeeId,
-        templateId: data.templateId,
-        campaignName: data.name
-      });
+      setLoading(true);
+      // Load default templates
+      const response = await api.get('/communication-templates/defaults');
       
       if (response.data && response.data.templates) {
-        setEmailTemplates(response.data.templates);
-        onDataChange({ emailTemplates: response.data.templates });
-      }
-    } catch (err) {
-      console.error('Error generating email templates:', err);
-      setError('Failed to generate email templates');
-      
-      // Set default templates as fallback
-      const defaultTemplates = {
-        invitation: {
-          general: `
-            <p>Hello {assessorName},</p>
-            <p>You've been invited to provide feedback for {targetName} as part of the "${data.name}" feedback campaign.</p>
-            <p>Your thoughtful insights are valuable for their professional development.</p>
-            <p>Please complete your feedback by {deadline}.</p>
-            <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Provide Feedback</a></p>
-            <p>Thank you for your participation!</p>
-          `,
-          self: `
-            <p>Hello {assessorName},</p>
-            <p>As part of the "${data.name}" feedback campaign, you're invited to complete a self-assessment.</p>
-            <p>Your self-reflection is an important part of the 360-degree feedback process.</p>
-            <p>Please complete your assessment by {deadline}.</p>
-            <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Complete Self-Assessment</a></p>
-            <p>Thank you!</p>
-          `
-        },
-        instruction: {
-          general: `
-            <p>Hello {assessorName},</p>
-            <p>Here are some guidelines for providing effective feedback for {targetName}:</p>
-            <ul>
-              <li>Be specific and provide examples</li>
-              <li>Focus on behaviors, not personality</li>
-              <li>Balance positive feedback with areas for development</li>
-              <li>Be constructive and actionable</li>
-            </ul>
-            <p>If you haven't completed your feedback yet, please do so by {deadline}:</p>
-            <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Provide Feedback</a></p>
-          `,
-          self: `
-            <p>Hello {assessorName},</p>
-            <p>Here are some guidelines for completing your self-assessment:</p>
-            <ul>
-              <li>Be honest and reflective about your own performance</li>
-              <li>Provide specific examples to support your assessment</li>
-              <li>Consider both your strengths and areas for development</li>
-              <li>Take your time to provide thoughtful responses</li>
-            </ul>
-            <p>Your self-assessment provides valuable context and will be considered alongside feedback from others.</p>
-            <p>Please complete your assessment by {deadline}:</p>
-            <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Complete Self-Assessment</a></p>
-          `
-        },
-        reminder: {
-          general: `
-            <p>Hello {assessorName},</p>
-            <p>This is a friendly reminder that your feedback for {targetName} is due by {deadline}.</p>
-            <p>Your input is valuable, and we encourage you to share your perspective.</p>
-            <p><a href="{feedbackUrl}" style="display: inline-block; background-color: #4F46E5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">Provide Feedback</a></p>
-            <p>Thank you for your participation!</p>
-          `
-        },
-        thank_you: {
-          general: `
-            <p>Hello {assessorName},</p>
-            <p>Thank you for completing your feedback for {targetName}.</p>
-            <p>Your insights will help support their professional development.</p>
-            <p>We appreciate your time and contribution!</p>
-          `
+        setTemplates(response.data.templates);
+        
+        // If we don't already have templates in our data, set defaults
+        if (!data.emailTemplates || Object.keys(data.emailTemplates).length === 0) {
+          const newEmailTemplates = {};
+          
+          // Find default templates for each type & recipient
+          response.data.templates.forEach(template => {
+            if (template.isDefault) {
+              if (!newEmailTemplates[template.templateType]) {
+                newEmailTemplates[template.templateType] = {};
+              }
+              newEmailTemplates[template.templateType][template.recipientType] = template;
+            }
+          });
+          
+          setEmailTemplates(newEmailTemplates);
         }
-      };
+      }
       
-      setEmailTemplates(defaultTemplates);
-      onDataChange({ emailTemplates: defaultTemplates });
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching templates:', err);
+      setError('Failed to load email templates. Please try again later.');
     } finally {
-      setGenerating(false);
       setLoading(false);
     }
   };
 
-  const handleTemplateChange = (e) => {
-    const newTemplates = { ...emailTemplates };
-    
-    if (activeTab === 'invitation' || activeTab === 'instruction') {
-      if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
-      newTemplates[activeTab][activeSubTab] = e.target.value;
-    } else {
-      if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
-      newTemplates[activeTab].general = e.target.value;
+  const handleTemplateTypeChange = (type) => {
+    // If in edit mode, save changes before switching
+    if (editMode && selectedTemplate) {
+      saveTemplateChanges();
     }
     
-    setEmailTemplates(newTemplates);
-    onDataChange({ emailTemplates: newTemplates });
+    setSelectedTemplateType(type);
+    setEditMode(false); // Exit edit mode when changing template type
   };
 
-  const handleCopyTemplate = () => {
-    const textToCopy = (activeTab === 'invitation' || activeTab === 'instruction') 
-      ? emailTemplates[activeTab]?.[activeSubTab] || ''
-      : emailTemplates[activeTab]?.general || '';
+  const handleRecipientTypeChange = (type) => {
+    // If in edit mode, save changes before switching
+    if (editMode && selectedTemplate) {
+      saveTemplateChanges();
+    }
     
-    navigator.clipboard.writeText(textToCopy).then(
-      () => {
-        setCopySuccess('Copied!');
-        setTimeout(() => setCopySuccess(''), 2000);
-      },
-      () => {
-        setCopySuccess('Failed to copy');
-      }
+    setSelectedRecipientType(type);
+    setEditMode(false); // Exit edit mode when changing recipient type
+  };
+
+  const getSelectedTemplate = () => {
+    if (emailTemplates[selectedTemplateType] && 
+        emailTemplates[selectedTemplateType][selectedRecipientType]) {
+      return emailTemplates[selectedTemplateType][selectedRecipientType];
+    }
+    
+    // Find template in all templates
+    return templates.find(t => 
+      t.templateType === selectedTemplateType && 
+      t.recipientType === selectedRecipientType
     );
   };
 
-  const handleNextClick = () => {
-    onNext({ emailTemplates });
-  };
-
-  // Use a saved template
-  const handleUseTemplate = (templateId) => {
-    try {
-      const template = availableTemplates.find(t => t.id === templateId);
-      if (!template) return;
-      
-      const newTemplates = { ...emailTemplates };
-      
-      if (activeTab === 'invitation' || activeTab === 'instruction') {
-        if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
-        // For invitation/instruction, check recipient type to determine which sub-template to update
-        if (activeSubTab === 'self' && template.recipientType === 'self') {
-          newTemplates[activeTab][activeSubTab] = template.content;
-        } else if (activeSubTab === 'general' && template.recipientType !== 'self') {
-          newTemplates[activeTab][activeSubTab] = template.content;
-        } else {
-          // Skip if template doesn't match subTab
-          return;
-        }
-      } else {
-        if (!newTemplates[activeTab]) newTemplates[activeTab] = {};
-        // For other types, just update the general content
-        newTemplates[activeTab].general = template.content;
-      }
-      
-      setEmailTemplates(newTemplates);
-      onDataChange({ emailTemplates: newTemplates });
-    } catch (err) {
-      console.error('Error applying template:', err);
-    }
-  };
-
-  // Get current template content based on active tabs
-  const getCurrentTemplate = () => {
-    if (activeTab === 'invitation' || activeTab === 'instruction') {
-      return emailTemplates[activeTab]?.[activeSubTab] || '';
-    }
-    return emailTemplates[activeTab]?.general || '';
-  };
-
-  // Preview the email with placeholders replaced
-  const getPreviewContent = () => {
-    let content = getCurrentTemplate();
+  const loadTemplateForEditing = (template) => {
+    if (!template) return;
     
-    if (!content) return '<p>No template content available</p>';
+    setSelectedTemplate(template);
+    setCurrentSubject(template.subject || '');
+    setCurrentContent(template.content || '');
     
-    // Replace all placeholders with example values
-    const replacements = {
-      '[Assessor Name]': 'John Doe',
-      '[Target Name]': targetEmployee ? `${targetEmployee.firstName} ${targetEmployee.lastName}` : 'Jane Smith',
-      '[Deadline]': new Date(data.endDate).toLocaleDateString(),
-      '[Feedback URL]': 'https://example.com/feedback',
-      '[Your Name]': targetEmployee ? `${targetEmployee.firstName} ${targetEmployee.lastName}` : 'Jane Smith',
-      // Support both bracket and curly brace formats
-      '{assessorName}': 'John Doe',
-      '{targetName}': targetEmployee ? `${targetEmployee.firstName} ${targetEmployee.lastName}` : 'Jane Smith',
-      '{deadline}': new Date(data.endDate).toLocaleDateString(),
-      '{feedbackUrl}': 'https://example.com/feedback',
-      '{yourName}': targetEmployee ? `${targetEmployee.firstName} ${targetEmployee.lastName}` : 'Jane Smith',
-      '{companyName}': 'Your Company'
+    // Save the template selection immediately to emailTemplates state
+    const updatedTemplates = {...emailTemplates};
+    
+    if (!updatedTemplates[selectedTemplateType]) {
+      updatedTemplates[selectedTemplateType] = {};
+    }
+    
+    updatedTemplates[selectedTemplateType][selectedRecipientType] = template;
+    setEmailTemplates(updatedTemplates);
+  };
+
+  const saveTemplateChanges = () => {
+    if (!selectedTemplate) return;
+    
+    // Update the template in our state
+    const updatedTemplates = {...emailTemplates};
+    
+    if (!updatedTemplates[selectedTemplateType]) {
+      updatedTemplates[selectedTemplateType] = {};
+    }
+    
+    updatedTemplates[selectedTemplateType][selectedRecipientType] = {
+      ...selectedTemplate,
+      subject: currentSubject,
+      content: currentContent
     };
     
-    Object.entries(replacements).forEach(([placeholder, value]) => {
-      content = content.replace(new RegExp(placeholder, 'g'), value);
-    });
-    
-    return content;
+    setEmailTemplates(updatedTemplates);
+    setEditMode(false);
   };
 
-  // Filter templates for current active tab/subtab
-  const getFilteredTemplates = () => {
-    if (!Array.isArray(availableTemplates) || availableTemplates.length === 0) return [];
+  const formatPreview = (content) => {
+    if (!content) return '';
     
-    return availableTemplates.filter(template => {
-      if (!template) return false;
-      // First filter by template type (invitation, reminder, etc)
-      if (template.templateType !== activeTab) return false;
-      
-      // For invitation/instruction templates, also filter by recipient type based on subtab
-      if (activeTab === 'invitation' || activeTab === 'instruction') {
-        if (activeSubTab === 'self' && template.recipientType !== 'self') return false;
-        if (activeSubTab === 'general' && template.recipientType === 'self') return false;
+    // Replace template variables with example values
+    let formatted = content;
+    
+    formatted = formatted.replace(/\{targetName\}/g, 'Alex Smith');
+    formatted = formatted.replace(/\{assessorName\}/g, 'Jamie Taylor');
+    formatted = formatted.replace(/\{campaignName\}/g, 'Q2 Leadership Assessment');
+    formatted = formatted.replace(/\{deadline\}/g, 'June 15, 2025');
+    formatted = formatted.replace(/\{feedbackUrl\}/g, 'https://feedback.pulse360.com/f/abc123');
+    formatted = formatted.replace(/\{companyName\}/g, 'Acme Corporation');
+    
+    return formatted;
+  };
+
+  const toggleShowFormatted = () => {
+    setShowFormatted(!showFormatted);
+  };
+
+  // Check if all required templates are selected
+  const validateTemplates = () => {
+    // Check if we have at least one invitation template for any recipient type
+    if (!emailTemplates['invitation'] || 
+        Object.keys(emailTemplates['invitation']).length === 0) {
+      return false;
+    }
+    
+    // Ensure the templates data is properly structured
+    for (const type in emailTemplates) {
+      for (const recipient in emailTemplates[type]) {
+        // Ensure each template has an id and content
+        if (!emailTemplates[type][recipient].id || 
+            !emailTemplates[type][recipient].content) {
+          return false;
+        }
       }
-      
-      return true;
-    }).sort((a, b) => {
-      // Sort by default (default templates first)
-      if (a.isDefault && !b.isDefault) return -1;
-      if (!a.isDefault && b.isDefault) return 1;
-      // Then sort by name
-      return a.name.localeCompare(b.name);
-    });
+    }
+    
+    return true;
   };
 
-  // Determine if subtabs should be shown based on active tab
-  const shouldShowSubTabs = () => {
-    return activeTab === 'invitation' || activeTab === 'instruction';
+  const prepareTemplatesForSubmission = () => {
+    // Create a clean copy with the structure the backend expects
+    const cleanTemplates = {};
+    
+    // Ensure all required email types exist
+    const requiredTypes = ['invitation', 'reminder', 'thank_you', 'instruction'];
+    
+    requiredTypes.forEach(type => {
+      if (emailTemplates[type]) {
+        cleanTemplates[type] = {};
+        
+        // For each recipient type in this email type
+        Object.keys(emailTemplates[type]).forEach(recipient => {
+          // Make sure we have a complete template object
+          if (emailTemplates[type][recipient] && 
+              emailTemplates[type][recipient].id) {
+            cleanTemplates[type][recipient] = emailTemplates[type][recipient];
+          }
+        });
+      }
+    });
+    
+    return cleanTemplates;
   };
+
+  const handleNextClick = () => {
+    // If in edit mode, save changes first
+    if (editMode) {
+      saveTemplateChanges();
+    }
+    
+    // Ensure we have all required templates
+    if (!validateTemplates()) {
+      alert('Please select at least one invitation template before proceeding.');
+      return;
+    }
+    
+    // Prepare templates in the expected format
+    const preparedTemplates = prepareTemplatesForSubmission();
+    
+    // Log what we're sending to the parent
+    console.log('Sending to parent component:', { emailTemplates: preparedTemplates });
+    
+    // Pass the prepared templates to the parent
+    onNext({ emailTemplates: preparedTemplates });
+  };
+
+  // Update the currently selected template
+  useEffect(() => {
+    const template = getSelectedTemplate();
+    if (template) {
+      setSelectedTemplate(template);
+      setCurrentSubject(template.subject || '');
+      setCurrentContent(template.content || '');
+    } else {
+      setSelectedTemplate(null);
+      setCurrentSubject('');
+      setCurrentContent('');
+    }
+  }, [selectedTemplateType, selectedRecipientType]);
 
   if (loading) {
     return (
@@ -331,249 +255,337 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
       </div>
 
       {error && (
-        <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md flex items-center">
-          <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0" />
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
           <p>{error}</p>
+          <button 
+            className="text-red-700 underline mt-1"
+            onClick={fetchTemplates}
+          >
+            Try Again
+          </button>
         </div>
       )}
 
-      <div className="flex justify-end mb-4 space-x-3">
-        <button
-          onClick={generateTemplates}
-          disabled={generating}
-          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          {generating ? (
-            <>
-              <RefreshCw className="animate-spin h-4 w-4 mr-2" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4 mr-2" />
-              Regenerate Templates
-            </>
-          )}
-        </button>
-
-        <a
-          href="/communication-templates"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Settings className="h-4 w-4 mr-2" />
-          Manage Templates
-        </a>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left sidebar - Template types */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-sm font-medium text-gray-700">Email Types</h3>
-            </div>
-            <nav className="flex flex-col">
-              {templateTypes.map(type => (
-                <button
-                  key={type.id}
-                  className={`flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                    activeTab === type.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                  }`}
-                  onClick={() => {
-                    setActiveTab(type.id);
-                    setActiveSubTab('general');
-                  }}
-                >
-                  <type.icon className={`h-5 w-5 mr-3 ${
-                    activeTab === type.id ? 'text-blue-500' : 'text-gray-400'
-                  }`} />
+        {/* Left Column - Template Types */}
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <h3 className="text-sm font-medium text-gray-700">Email Types</h3>
+          </div>
+          
+          <div className="p-4">
+            <div className="space-y-2">
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedTemplateType === 'invitation' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleTemplateTypeChange('invitation')}
+              >
+                <div className="flex items-start">
+                  <Mail className="h-5 w-5 mr-2 mt-0.5" />
                   <div>
-                    <p className={`font-medium ${
-                      activeTab === type.id ? 'text-blue-700' : 'text-gray-700'
-                    }`}>
-                      {type.label}
-                    </p>
-                    <p className="text-xs text-gray-500">{type.description}</p>
+                    <div className="font-medium">Invitation</div>
+                    <div className="text-xs text-gray-500">Initial email sent to assessors</div>
                   </div>
-                </button>
-              ))}
-            </nav>
-          </div>
-
-          {/* Sub-tabs for Invitation/Instruction types */}
-          {shouldShowSubTabs() && (
-            <div className="mt-4 bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <div className="p-4 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-sm font-medium text-gray-700">Recipient Type</h3>
-              </div>
-              <nav className="flex flex-col">
-                {subTypes.map(subType => (
-                  <button
-                    key={subType.id}
-                    className={`flex items-center px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                      activeSubTab === subType.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                    }`}
-                    onClick={() => setActiveSubTab(subType.id)}
-                  >
-                    <div>
-                      <p className={`font-medium ${
-                        activeSubTab === subType.id ? 'text-blue-700' : 'text-gray-700'
-                      }`}>
-                        {subType.label}
-                      </p>
-                      <p className="text-xs text-gray-500">{subType.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </nav>
-            </div>
-          )}
-          
-          {/* Available Templates Section */}
-          <div className="mt-4 bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-sm font-medium text-gray-700">Available Templates</h3>
-            </div>
-            <div className="p-4">
-              {loadingTemplates ? (
-                <div className="text-center py-4">
-                  <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-2"></div>
-                  <p className="text-xs text-gray-500">Loading templates...</p>
                 </div>
-              ) : getFilteredTemplates().length > 0 ? (
-                <div className="space-y-2">
-                  {getFilteredTemplates().map(template => (
-                    <div 
-                      key={template.id}
-                      className="p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
-                      onClick={() => handleUseTemplate(template.id)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{template.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{template.subject}</p>
-                          <p className="text-xs mt-1">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              template.recipientType === 'self' ? 'bg-purple-100 text-purple-800' :
-                              template.recipientType === 'manager' ? 'bg-blue-100 text-blue-800' :
-                              template.recipientType === 'peer' ? 'bg-green-100 text-green-800' :
-                              template.recipientType === 'direct_report' ? 'bg-amber-100 text-amber-800' :
-                              template.recipientType === 'external' ? 'bg-gray-100 text-gray-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {template.recipientType === 'all' ? 'All Recipients' : 
-                               template.recipientType.charAt(0).toUpperCase() + template.recipientType.slice(1).replace('_', ' ')}
-                            </span>
-                          </p>
-                        </div>
-                        {template.isDefault && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                            Default
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500 text-center py-2">
-                  No templates available for this type
-                </p>
-              )}
+              </button>
               
-              <div className="mt-4 text-xs text-gray-500">
-                <p>You can customize email templates in the Communication Templates section.</p>
-                <a 
-                  href="/communication-templates" 
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 inline-flex items-center mt-1"
-                >
-                  <Settings className="h-3 w-3 mr-1" />
-                  Manage Templates
-                </a>
-              </div>
-            </div>
-          </div>
-          
-          {/* Placeholders Help */}
-          <div className="mt-4 bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-sm font-medium text-gray-700">Available Placeholders</h3>
-            </div>
-            <div className="p-4">
-              <ul className="text-sm text-gray-600 space-y-2">
-                <li><code className="bg-gray-100 px-1 py-0.5 rounded">{'{assessorName}'}</code> - Name of the person providing feedback</li>
-                <li><code className="bg-gray-100 px-1 py-0.5 rounded">{'{targetName}'}</code> - Name of the person receiving feedback</li>
-                <li><code className="bg-gray-100 px-1 py-0.5 rounded">{'{deadline}'}</code> - Due date for feedback</li>
-                <li><code className="bg-gray-100 px-1 py-0.5 rounded">{'{feedbackUrl}'}</code> - Link to feedback form</li>
-                <li><code className="bg-gray-100 px-1 py-0.5 rounded">{'{companyName}'}</code> - Your company name</li>
-              </ul>
-              <p className="mt-2 text-xs text-gray-500">Both {'{placeholder}'} and [Placeholder] formats are supported.</p>
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedTemplateType === 'reminder' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleTemplateTypeChange('reminder')}
+              >
+                <div className="flex items-start">
+                  <Mail className="h-5 w-5 mr-2 mt-0.5" />
+                  <div>
+                    <div className="font-medium">Reminder</div>
+                    <div className="text-xs text-gray-500">Follow-up for assessors who haven't completed</div>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedTemplateType === 'thank_you' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleTemplateTypeChange('thank_you')}
+              >
+                <div className="flex items-start">
+                  <Mail className="h-5 w-5 mr-2 mt-0.5" />
+                  <div>
+                    <div className="font-medium">Thank You</div>
+                    <div className="text-xs text-gray-500">Sent after feedback completion</div>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedTemplateType === 'instruction' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleTemplateTypeChange('instruction')}
+              >
+                <div className="flex items-start">
+                  <FileText className="h-5 w-5 mr-2 mt-0.5" />
+                  <div>
+                    <div className="font-medium">Instructions</div>
+                    <div className="text-xs text-gray-500">Guidelines for completing feedback</div>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
-
-        {/* Right area - Template editor and preview */}
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
-            <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-              <h3 className="text-sm font-medium text-gray-700">Template Editor</h3>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={handleCopyTemplate}
-                  className="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-gray-700 bg-gray-100 hover:bg-gray-200"
-                >
-                  <Clipboard className="h-3 w-3 mr-1" />
-                  {copySuccess || 'Copy'}
-                </button>
-              </div>
-            </div>
-            <div className="p-4">
-              <textarea
-                className="w-full h-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                value={getCurrentTemplate()}
-                onChange={handleTemplateChange}
-                placeholder="Enter email template here..."
-              />
+        
+        {/* Middle Column - Recipient Types */}
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <h3 className="text-sm font-medium text-gray-700">Recipient Type</h3>
+          </div>
+          
+          <div className="p-4">
+            <div className="space-y-2">
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedRecipientType === 'self' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleRecipientTypeChange('self')}
+              >
+                <div className="flex items-start">
+                  <div>
+                    <div className="font-medium">Self</div>
+                    <div className="text-xs text-gray-500">For the target employee's self-assessment</div>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedRecipientType === 'manager' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleRecipientTypeChange('manager')}
+              >
+                <div className="flex items-start">
+                  <div>
+                    <div className="font-medium">Manager</div>
+                    <div className="text-xs text-gray-500">For the target employee's managers</div>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedRecipientType === 'peer' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleRecipientTypeChange('peer')}
+              >
+                <div className="flex items-start">
+                  <div>
+                    <div className="font-medium">Peer</div>
+                    <div className="text-xs text-gray-500">For the target employee's colleagues</div>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedRecipientType === 'direct_report' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleRecipientTypeChange('direct_report')}
+              >
+                <div className="flex items-start">
+                  <div>
+                    <div className="font-medium">Direct Report</div>
+                    <div className="text-xs text-gray-500">For people reporting to the target employee</div>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                className={`w-full text-left px-3 py-2 rounded-md ${
+                  selectedRecipientType === 'external' 
+                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+                onClick={() => handleRecipientTypeChange('external')}
+              >
+                <div className="flex items-start">
+                  <div>
+                    <div className="font-medium">External</div>
+                    <div className="text-xs text-gray-500">For stakeholders outside the organization</div>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-              <h3 className="text-sm font-medium text-gray-700">Preview</h3>
-              <button
-                onClick={() => setShowFormattedPreview(!showFormattedPreview)}
-                className="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200"
+          {/* Template Selection Section */}
+          <div className="border-t border-gray-200 p-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Available Templates</h4>
+            <div className="space-y-2">
+              {templates
+                .filter(t => t.templateType === selectedTemplateType && t.recipientType === selectedRecipientType)
+                .map(template => (
+                  <div 
+                    key={template.id}
+                    className={`p-3 border rounded-md cursor-pointer ${
+                      selectedTemplate?.id === template.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                    onClick={() => loadTemplateForEditing(template)}
+                  >
+                    <div className="flex justify-between">
+                      <div>
+                        <p className="font-medium">{template.name}</p>
+                        <p className="text-xs text-gray-500">{template.isDefault ? 'Default Template' : 'Custom Template'}</p>
+                      </div>
+                      {selectedTemplate?.id === template.id && (
+                        <Check className="h-5 w-5 text-blue-500" />
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+          
+          {/* Template Selection Status */}
+          <div className="border-t border-gray-200 p-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Template Selection Status</h4>
+            <div className="text-xs space-y-2">
+              <div className="flex items-center">
+                <div className={`h-3 w-3 rounded-full mr-2 ${emailTemplates['invitation'] && Object.keys(emailTemplates['invitation']).length > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span>Invitation Templates {emailTemplates['invitation'] && Object.keys(emailTemplates['invitation']).length > 0 ? '✓' : '(Required)'}</span>
+              </div>
+              <div className="flex items-center">
+                <div className={`h-3 w-3 rounded-full mr-2 ${emailTemplates['reminder'] && Object.keys(emailTemplates['reminder']).length > 0 ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span>Reminder Templates {emailTemplates['reminder'] && Object.keys(emailTemplates['reminder']).length > 0 ? '✓' : '(Optional)'}</span>
+              </div>
+              <div className="flex items-center">
+                <div className={`h-3 w-3 rounded-full mr-2 ${emailTemplates['thank_you'] && Object.keys(emailTemplates['thank_you']).length > 0 ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span>Thank You Templates {emailTemplates['thank_you'] && Object.keys(emailTemplates['thank_you']).length > 0 ? '✓' : '(Optional)'}</span>
+              </div>
+              <div className="flex items-center">
+                <div className={`h-3 w-3 rounded-full mr-2 ${emailTemplates['instruction'] && Object.keys(emailTemplates['instruction']).length > 0 ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span>Instruction Templates {emailTemplates['instruction'] && Object.keys(emailTemplates['instruction']).length > 0 ? '✓' : '(Optional)'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Right Column - Template Editor */}
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+            <h3 className="text-sm font-medium text-gray-700">Template Editor</h3>
+            <div className="flex items-center space-x-3">
+              {editMode ? (
+                <button 
+                  className="text-sm text-green-600 hover:text-green-800 flex items-center"
+                  onClick={saveTemplateChanges}
+                >
+                  <Check className="h-4 w-4 mr-1" />
+                  Save Changes
+                </button>
+              ) : (
+                <button 
+                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                  onClick={() => setEditMode(true)}
+                  disabled={!selectedTemplate}
+                >
+                  <Edit className="h-4 w-4 mr-1" />
+                  Edit Template
+                </button>
+              )}
+              <button 
+                className="text-sm text-gray-600 hover:text-gray-800"
+                onClick={toggleShowFormatted}
               >
-                {showFormattedPreview ? (
-                  <>
-                    <Code className="h-3 w-3 mr-1" />
-                    Show HTML
-                  </>
-                ) : (
-                  <>
-                    <Eye className="h-3 w-3 mr-1" />
-                    Show Formatted
-                  </>
-                )}
+                {showFormatted ? 'Show Raw' : 'Show Formatted'}
               </button>
             </div>
-            <div className="p-4">
-              {showFormattedPreview ? (
-                <div className="border border-gray-200 rounded-md p-4 bg-white min-h-[300px] max-h-[400px] overflow-auto">
-                  <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: getPreviewContent() }} />
+          </div>
+          
+          <div className="p-4 max-h-96 overflow-y-auto border-b border-gray-200">
+            {selectedTemplate ? (
+              <div>
+                <div className="mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Subject</label>
+                  {editMode ? (
+                    <input
+                      type="text"
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                      value={currentSubject}
+                      onChange={(e) => setCurrentSubject(e.target.value)}
+                    />
+                  ) : (
+                    <div className="mt-1 border border-gray-300 rounded-md px-3 py-2 text-sm bg-gray-50">
+                      {selectedTemplate.subject || 'No subject provided'}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <pre className="bg-gray-50 p-4 border border-gray-200 rounded-md overflow-auto text-xs text-gray-800 max-h-[400px]">
-                  {getPreviewContent()}
-                </pre>
-              )}
-              <div className="mt-2 text-xs text-gray-500">
-                <p>This preview shows how the email will appear with example values.</p>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Content</label>
+                  {editMode ? (
+                    <textarea
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono"
+                      rows="10"
+                      value={currentContent}
+                      onChange={(e) => setCurrentContent(e.target.value)}
+                    />
+                  ) : (
+                    <div className="mt-1 border border-gray-300 rounded-md p-3 bg-gray-50 max-h-64 overflow-y-auto">
+                      {showFormatted ? (
+                        <div 
+                          className="prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ 
+                            __html: formatPreview(selectedTemplate.content || '')
+                          }}
+                        />
+                      ) : (
+                        <pre className="text-xs font-mono whitespace-pre-wrap">
+                          {selectedTemplate.content || 'No content provided'}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
+            ) : (
+              <div className="text-center py-8">
+                <Mail className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">No template selected</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  Select a template from the list to view and edit
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <div className="p-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Available Variables:</h4>
+            <div className="text-xs text-gray-600 space-y-1">
+              <p>{'{targetName}'} - Name of the person receiving feedback</p>
+              <p>{'{assessorName}'} - Name of the person providing feedback</p>
+              <p>{'{campaignName}'} - Name of the feedback campaign</p>
+              <p>{'{deadline}'} - Due date for feedback</p>
+              <p>{'{feedbackUrl}'} - Link to feedback form</p>
+              <p>{'{companyName}'} - Your company name</p>
             </div>
           </div>
         </div>
@@ -582,9 +594,10 @@ const EmailSetup = ({ data, onDataChange, onNext }) => {
       <div className="flex justify-end mt-6">
         <button
           onClick={handleNextClick}
-          className="px-4 py-2 text-white rounded-md bg-blue-600 hover:bg-blue-700"
+          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md flex items-center"
         >
           Next: Review & Launch
+          <ArrowRight className="ml-2 h-4 w-4" />
         </button>
       </div>
     </div>
