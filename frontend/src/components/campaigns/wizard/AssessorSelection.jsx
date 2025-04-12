@@ -203,18 +203,23 @@ const AssessorSelection = ({ data, onDataChange, onNext }) => {
   };
 
   const handleNextClick = () => {
-    onNext({ participants });
+    console.log("Next button clicked, participants:", participants);
+    // Make sure we're passing the full participants array
+    onNext({ participants: [...participants] });
   };
 
   // Filter employees based on search term
   const filteredEmployees = employees.filter(employee => {
-    // Exclude target employee from other tabs
-    if (selectedTab !== 'self' && employee.id === data.targetEmployeeId) {
-      return false;
+    // Special handling for self tab - show all employees for manual selection
+    if (selectedTab === 'self') {
+      // Don't restrict to just target employee for manual selection
+      return `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (employee.jobTitle && employee.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()));
     }
     
-    // Include only target employee in self tab
-    if (selectedTab === 'self' && employee.id !== data.targetEmployeeId) {
+    // For other tabs, exclude the target employee
+    if (employee.id === data.targetEmployeeId) {
       return false;
     }
     
@@ -236,10 +241,16 @@ const AssessorSelection = ({ data, onDataChange, onNext }) => {
 
   // Check if we meet minimum requirements
   const meetsRequirements = () => {
-    return relationshipTypes.every(type => {
-      const count = relationshipCounts[type.id] || 0;
-      return count >= type.min;
-    });
+    // Self-assessment is not strictly required to proceed
+    // Check if at least some assessors are selected
+    const totalAssessors = Object.values(relationshipCounts).reduce((sum, count) => sum + count, 0);
+    
+    if (totalAssessors > 0) {
+      // As long as some assessors are selected, allow proceeding
+      return true;
+    }
+    
+    return false;
   };
 
   const renderWarningForType = (typeId) => {
@@ -539,7 +550,15 @@ const AssessorSelection = ({ data, onDataChange, onNext }) => {
                         : 'bg-white border-gray-200 hover:border-blue-300 cursor-pointer'
                     }`}
                     onClick={() => {
-                      if (!isAlreadySelected) {
+                      if (isAlreadySelected) {
+                        // Find the participant ID to remove
+                        const participantToRemove = participants.find(
+                          p => p.employeeId === employee.id && p.relationshipType === selectedTab
+                        );
+                        if (participantToRemove) {
+                          removeParticipant(participantToRemove.id);
+                        }
+                      } else {
                         addParticipant(employee, selectedTab);
                       }
                     }}
