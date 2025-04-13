@@ -8,6 +8,12 @@ import { AlertTriangle, Clock, CheckCircle, ArrowLeft } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Function to detect if user is accessing from an external link
+const isExternalUser = () => {
+  const path = window.location.pathname;
+  return path.startsWith('/feedback/') && path !== '/feedback/assessment';
+};
+
 const FeedbackAssessmentPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -113,14 +119,29 @@ const FeedbackAssessmentPage = () => {
     );
   }
 
+  // Apply different styles for external users vs. internal users
+  const containerClass = isExternalUser() 
+    ? "min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8"
+    : "bg-gray-50 py-6 px-4";
+
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className={containerClass}>
+      {isExternalUser() && (
+        <div className="max-w-3xl mx-auto mb-6">
+          <div className="bg-white rounded-lg shadow-sm p-4 text-center mb-6">
+            <h1 className="text-xl font-bold text-blue-600">Pulse360 Feedback</h1>
+            <p className="text-sm text-gray-500">Thank you for participating in this feedback process</p>
+          </div>
+        </div>
+      )}
+      
       <FeedbackAssessment
         campaignId={assessmentData.campaign.id}
         assessorToken={assessmentData.token}
         questions={assessmentData.questions}
         targetEmployee={assessmentData.targetEmployee}
         assessorType={assessmentData.assessorType}
+        introMessage={assessmentData.introMessage} // Pass the custom intro message
         initialResponses={assessmentData.questions.reduce((acc, question) => {
           if (question.response) {
             if (question.response.text) {
@@ -133,6 +154,16 @@ const FeedbackAssessmentPage = () => {
           return acc;
         }, { textResponses: {}, ratings: {} })}
       />
+      
+      {isExternalUser() && (
+        <div className="max-w-3xl mx-auto mt-8">
+          <div className="bg-white rounded-lg shadow-sm p-4 text-center">
+            <p className="text-sm text-gray-500">
+              &copy; {new Date().getFullYear()} Pulse360. All rights reserved.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

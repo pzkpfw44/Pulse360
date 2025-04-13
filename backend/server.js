@@ -39,6 +39,96 @@ const addColumnIfMissing = async () => {
   }
 };
 
+// Add the missing columns to the responses table
+const addResponseTableColumns = async () => {
+  try {
+    console.log('Checking for missing columns in responses table...');
+    
+    // Check if responses table exists
+    const tablesResult = await sequelize.query(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='responses';",
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    
+    if (tablesResult.length === 0) {
+      console.log('Responses table does not exist yet, will be created during sync');
+      return;
+    }
+    
+    // Check existing columns
+    const columnsResult = await sequelize.query(
+      "PRAGMA table_info(responses);",
+      { type: sequelize.QueryTypes.SELECT }
+    );
+    
+    const columnNames = columnsResult.map(col => col.name);
+    
+    // Add targetEmployeeId if missing
+    if (!columnNames.includes('targetEmployeeId')) {
+      console.log('Adding targetEmployeeId column to responses table...');
+      await sequelize.query(
+        "ALTER TABLE responses ADD COLUMN targetEmployeeId TEXT REFERENCES employees(id);",
+        { type: sequelize.QueryTypes.RAW }
+      );
+      console.log('targetEmployeeId column added successfully!');
+    }
+    
+    // Add campaignId if missing
+    if (!columnNames.includes('campaignId')) {
+      console.log('Adding campaignId column to responses table...');
+      await sequelize.query(
+        "ALTER TABLE responses ADD COLUMN campaignId TEXT REFERENCES campaigns(id);",
+        { type: sequelize.QueryTypes.RAW }
+      );
+      console.log('campaignId column added successfully!');
+    }
+    
+    // Add aiAnalysis if missing
+    if (!columnNames.includes('aiAnalysis')) {
+      console.log('Adding aiAnalysis column to responses table...');
+      await sequelize.query(
+        "ALTER TABLE responses ADD COLUMN aiAnalysis JSON;",
+        { type: sequelize.QueryTypes.RAW }
+      );
+      console.log('aiAnalysis column added successfully!');
+    }
+    
+    // Add aiSuggestions if missing
+    if (!columnNames.includes('aiSuggestions')) {
+      console.log('Adding aiSuggestions column to responses table...');
+      await sequelize.query(
+        "ALTER TABLE responses ADD COLUMN aiSuggestions TEXT;",
+        { type: sequelize.QueryTypes.RAW }
+      );
+      console.log('aiSuggestions column added successfully!');
+    }
+    
+    // Add aiInteractions if missing
+    if (!columnNames.includes('aiInteractions')) {
+      console.log('Adding aiInteractions column to responses table...');
+      await sequelize.query(
+        "ALTER TABLE responses ADD COLUMN aiInteractions JSON;",
+        { type: sequelize.QueryTypes.RAW }
+      );
+      console.log('aiInteractions column added successfully!');
+    }
+    
+    // Add draftHistory if missing
+    if (!columnNames.includes('draftHistory')) {
+      console.log('Adding draftHistory column to responses table...');
+      await sequelize.query(
+        "ALTER TABLE responses ADD COLUMN draftHistory JSON;",
+        { type: sequelize.QueryTypes.RAW }
+      );
+      console.log('draftHistory column added successfully!');
+    }
+    
+  } catch (error) {
+    console.error('Error checking/adding columns to responses table:', error);
+    // Continue even if this fails - it's not critical
+  }
+};
+
 // Initialize the database and start the server
 const startServer = async () => {
   try {
@@ -48,6 +138,9 @@ const startServer = async () => {
     if (isConnected) {
       // Add our column safely without altering tables
       await addColumnIfMissing();
+      
+      // Add the missing columns to responses table
+      await addResponseTableColumns();
       
       // Create communication_logs table if it doesn't exist
       await createCommunicationLogsTable();

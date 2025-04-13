@@ -19,6 +19,20 @@ import { MainLayout } from './components/layout/MainLayout';
 import WorkInProgress from './components/WorkInProgress';
 import FeedbackAssessmentPage from './pages/FeedbackAssessmentPage';
 
+// External routes that don't use MainLayout
+const ExternalFeedbackRoute = ({ children }) => {
+  // Check if the path includes feedback token routes
+  const path = window.location.pathname;
+  const isExternalFeedback = path.startsWith('/feedback/') && path !== '/feedback/assessment';
+  
+  if (isExternalFeedback) {
+    return children;
+  }
+  
+  // Use MainLayout for internal routes
+  return <MainLayout>{children}</MainLayout>;
+};
+
 function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -66,7 +80,7 @@ function App() {
   }
 
   return (
-    <MainLayout>
+    <ExternalFeedbackRoute>
       <Routes>
         {/* Dashboard */}
         <Route path="/" element={<Dashboard />} />
@@ -98,7 +112,7 @@ function App() {
         {/* Redirect any unknown routes to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </MainLayout>
+    </ExternalFeedbackRoute>
   );
 }
 

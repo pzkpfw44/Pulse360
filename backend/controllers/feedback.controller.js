@@ -295,9 +295,11 @@ class FeedbackController {
       const responses = await Response.findAll({
         where: { 
           participantId: participant.id
-        }
+        },
+        // Only select columns we're sure exist
+        attributes: ['id', 'participantId', 'questionId', 'ratingValue', 'textResponse']
       });
-      
+
       // Update participant status to 'in_progress' if it was 'pending' or 'invited'
       if (['pending', 'invited'].includes(participant.status)) {
         await participant.update({ 
@@ -307,24 +309,44 @@ class FeedbackController {
       }
       
       // Format question data with any existing responses
-      const questions = participant.campaign.template.questions.map(question => {
-        const existingResponse = responses.find(r => r.questionId === question.id);
-        
-        return {
-          id: question.id,
-          text: question.text,
-          type: question.type,
-          category: question.category,
-          required: question.required,
-          order: question.order,
-          // Include existing response data if available
-          response: existingResponse ? {
-            rating: existingResponse.ratingValue, // Use correct field name
-            text: existingResponse.textResponse   // Use correct field name
-          } : null
-        };
-      }).sort((a, b) => a.order - b.order); // Sort by question order
-      
+      const assessorType = participant.relationshipType;
+      const questions = participant.campaign.template.questions
+        .filter(question => {
+          // Match questions with matching perspective, or those marked for 'all' perspectives
+          return question.perspective === assessorType || question.perspective === 'all';
+        })
+        .map(question => {
+          const existingResponse = responses.find(r => r.questionId === question.id);
+          
+          return {
+            id: question.id,
+            text: question.text,
+            type: question.type,
+            category: question.category,
+            required: question.required,
+            order: question.order,
+            // Include existing response data if available
+            response: existingResponse ? {
+              rating: existingResponse.ratingValue,
+              text: existingResponse.textResponse
+            } : null
+          };
+        })
+        .sort((a, b) => a.order - b.order); // Sort by question order
+      // Generate a custom introduction based on the assessor type
+      let introMessage = 'Your feedback will help understand strengths and areas for growth.';
+      const targetName = `${participant.campaign.targetEmployee.firstName} ${participant.campaign.targetEmployee.lastName}`;
+
+      if (assessorType === 'self') {
+        introMessage = `This self-assessment will help you reflect on your performance and development areas.`;
+      } else if (assessorType === 'manager') {
+        introMessage = `As ${targetName}'s manager, your feedback will provide valuable insights for their development.`;
+      } else if (assessorType === 'peer') {
+        introMessage = `Your peer feedback will help ${targetName} understand their collaboration strengths and growth areas.`;
+      } else if (assessorType === 'direct_report') {
+        introMessage = `Your feedback as a direct report will help ${targetName} improve their leadership skills.`;
+      }
+
       // Format and return the assessment data
       return res.status(200).json({
         campaign: {
@@ -338,6 +360,7 @@ class FeedbackController {
           position: participant.campaign.targetEmployee.jobTitle || ''
         },
         assessorType: participant.relationshipType,
+        introMessage: introMessage,
         questions,
         token
       });

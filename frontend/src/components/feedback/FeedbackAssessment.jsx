@@ -13,6 +13,7 @@ const FeedbackAssessment = ({
   questions, 
   targetEmployee,
   assessorType,
+  introMessage,
   initialResponses = { textResponses: {}, ratings: {} }
 }) => {
   const [responses, setResponses] = useState(initialResponses.textResponses || {});
@@ -342,7 +343,7 @@ const FeedbackAssessment = ({
           {targetEmployee.position && <span> - {targetEmployee.position}</span>}
         </p>
         <div className="bg-blue-50 text-blue-700 p-3 rounded-lg mt-4">
-          <p>Your feedback will help {targetEmployee.name} understand their strengths and areas for growth. Please be specific, constructive, and balanced.</p>
+          <p>{introMessage || `Your feedback will help ${targetEmployee.name} understand their strengths and areas for growth. Please be specific, constructive, and balanced.`}</p>
         </div>
       </div>
 
