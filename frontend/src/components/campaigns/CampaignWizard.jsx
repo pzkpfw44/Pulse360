@@ -8,7 +8,7 @@ import AssessorSelection from './wizard/AssessorSelection';
 import ScheduleSetup from './wizard/ScheduleSetup';
 import EmailSetup from './wizard/EmailSetup';
 import ReviewLaunch from './wizard/ReviewLaunch';
-import { validateCampaignTemplates, prepareCampaignForSubmission } from '../utils/CampaignUtils';
+import { validateCampaignTemplates, prepareCampaignForSubmission } from '../../utils/CampaignUtils';
 
 const CampaignWizard = ({ initialData, onSaveDraft, onLaunch }) => {
   const [currentStep, setCurrentStep] = useState(1);

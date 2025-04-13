@@ -15,7 +15,7 @@ import {
   Brain
 } from 'lucide-react';
 import api from '../../../services/api';
-import { validateCampaignTemplates, prepareCampaignForSubmission } from '../../utils/CampaignUtils';
+import { validateCampaignTemplates, prepareCampaignForSubmission } from '../../../utils/CampaignUtils';
 
 const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
   const [loading, setLoading] = useState(false);
