@@ -159,6 +159,18 @@ class FeedbackController {
           message: 'Responses must be provided as an array'
         });
       }
+
+      // First find the participant by token
+      const participant = await CampaignParticipant.findOne({
+        where: { invitationToken: assessorToken, campaignId: campaignId }
+      });
+
+      if (!participant) {
+        return res.status(404).json({ 
+          message: 'Participant not found with the provided token',
+          error: 'invalid_token'
+        });
+      }
       
       // Store responses
       const savedResponses = [];
@@ -170,10 +182,10 @@ class FeedbackController {
         const savedResponse = await Response.create({
           campaignId,
           questionId: response.questionId,
-          participantToken: assessorToken,
+          participantId: participant.id, // Use participant ID instead of token
           targetEmployeeId,
-          rating: response.rating,
-          text: response.text,
+          ratingValue: response.rating, // Field name should match the model
+          textResponse: response.text, // Field name should match the model
           bypassedAiRecommendations: bypassedAiRecommendations || false,
           aiEvaluationData: aiEvaluationResults ? JSON.stringify(aiEvaluationResults) : null
         });
@@ -185,7 +197,7 @@ class FeedbackController {
       try {
         await CampaignParticipant.update(
           { status: 'completed', completedAt: new Date() },
-          { where: { invitationToken: assessorToken, campaignId: campaignId } }
+          { where: { id: participant.id } } // Use ID instead of token
         );
       } catch (err) {
         // Just log the error, don't fail the request if this part fails
@@ -279,10 +291,10 @@ class FeedbackController {
         });
       }
       
-      // Find any existing draft responses
+      // Find any existing draft responses - use participantId instead of participantToken
       const responses = await Response.findAll({
         where: { 
-          participantToken: token
+          participantId: participant.id
         }
       });
       
@@ -307,8 +319,8 @@ class FeedbackController {
           order: question.order,
           // Include existing response data if available
           response: existingResponse ? {
-            rating: existingResponse.rating,
-            text: existingResponse.textResponse
+            rating: existingResponse.ratingValue, // Use correct field name
+            text: existingResponse.textResponse   // Use correct field name
           } : null
         };
       }).sort((a, b) => a.order - b.order); // Sort by question order
@@ -389,29 +401,29 @@ class FeedbackController {
       for (const response of responses) {
         if (!response.questionId) continue;
         
-        // Check if response already exists
+        // Check if response already exists - use participantId instead of participantToken
         let existingResponse = await Response.findOne({
           where: {
-            participantToken: assessorToken,
+            participantId: participant.id,
             questionId: response.questionId
           }
         });
         
         if (existingResponse) {
-          // Update existing response
+          // Update existing response - use correct field names
           await existingResponse.update({
-            rating: response.rating,
+            ratingValue: response.rating,
             textResponse: response.text,
             updatedAt: new Date()
           });
           savedResponses.push(existingResponse);
         } else {
-          // Create new response
+          // Create new response - use correct field names
           const newResponse = await Response.create({
             campaignId: participant.campaign.id,
-            participantToken: assessorToken,
+            participantId: participant.id,
             questionId: response.questionId,
-            rating: response.rating,
+            ratingValue: response.rating,
             textResponse: response.text,
             targetEmployeeId: participant.campaign.targetEmployeeId
           });

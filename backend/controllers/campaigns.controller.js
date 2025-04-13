@@ -495,7 +495,7 @@ exports.launchCampaign = async (req, res) => {
         console.log('Updated participant status to invited');
         
         // Create feedback URL with token
-        const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
+        const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/feedback/${participant.invitationToken}`;
         
         // Common email variables
         const emailVars = {
@@ -1197,7 +1197,7 @@ exports.sendReminders = async (req, res) => {
       
       try {
         // Create feedback URL with token
-        const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
+        const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/feedback/${participant.invitationToken}`;
         
         // Common email variables
         const emailVars = {

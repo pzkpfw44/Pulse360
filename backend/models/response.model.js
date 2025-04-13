@@ -13,7 +13,7 @@ const Response = sequelize.define('Response', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: 'CampaignParticipants',
+      model: 'campaign_participants', // Changed from 'CampaignParticipants' to lowercase
       key: 'id'
     }
   },
@@ -21,7 +21,7 @@ const Response = sequelize.define('Response', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: 'Questions',
+      model: 'questions',
       key: 'id'
     }
   },
@@ -55,6 +55,22 @@ const Response = sequelize.define('Response', {
     allowNull: true,
     comment: 'History of response drafts'
   },
+  targetEmployeeId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'employees',
+      key: 'id'
+    }
+  },
+  campaignId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'campaigns',
+      key: 'id'
+    }
+  },
   createdAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
@@ -65,13 +81,7 @@ const Response = sequelize.define('Response', {
   }
 }, {
   tableName: 'responses',
-  timestamps: true,
-  indexes: [
-    {
-      unique: true,
-      fields: ['participantId', 'questionId']
-    }
-  ]
+  timestamps: true
 });
 
 module.exports = Response;
