@@ -10,6 +10,7 @@ const CampaignParticipant = require('./campaign-participant.model');
 const Response = require('./response.model');
 const EmailSettings = require('./email-settings.model');
 const CommunicationTemplate = require('./communication-template.model');
+const CommunicationLog = require('./communication-log.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 const BrandingSettings = require('./branding-settings.model');
 
@@ -46,7 +47,7 @@ Campaign.belongsTo(Employee, { foreignKey: 'targetEmployeeId', as: 'targetEmploy
 
 // Campaign Participant associations
 Campaign.hasMany(CampaignParticipant, { foreignKey: 'campaignId', as: 'participants', onDelete: 'CASCADE' });
-CampaignParticipant.belongsTo(Campaign, { foreignKey: 'campaignId' });
+CampaignParticipant.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
 
 Employee.hasMany(CampaignParticipant, { foreignKey: 'employeeId', as: 'participations' });
 CampaignParticipant.belongsTo(Employee, { foreignKey: 'employeeId', as: 'employee' });
@@ -61,6 +62,13 @@ Response.belongsTo(Question, { foreignKey: 'questionId' });
 // Email Settings associations
 User.hasMany(EmailSettings, { foreignKey: 'updatedBy' });
 EmailSettings.belongsTo(User, { foreignKey: 'updatedBy' });
+
+// Communication Log associations
+Campaign.hasMany(CommunicationLog, { foreignKey: 'campaignId', as: 'communicationLogs' });
+CommunicationLog.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
+
+CampaignParticipant.hasMany(CommunicationLog, { foreignKey: 'participantId', as: 'communicationLogs' });
+CommunicationLog.belongsTo(CampaignParticipant, { foreignKey: 'participantId', as: 'participant', constraints: false });
 
 // Function to sync all models with the database - improved with better logging
 const syncDatabase = async (force = false) => {

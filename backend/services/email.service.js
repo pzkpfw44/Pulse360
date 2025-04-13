@@ -305,8 +305,27 @@ class EmailService {
       // Import the controller dynamically to avoid circular dependencies
       const communicationLogController = require('../controllers/communication-log.controller');
       
+      // First try logging with just the essential fields in case there are reference issues
+      const essentialData = {
+        recipient: data.recipient,
+        subject: data.subject,
+        type: data.type || 'email',
+        status: data.status,
+        details: data.details,
+        communicationType: data.communicationType || 'other'
+      };
+      
+      // Only add IDs if they are provided to prevent foreign key errors
+      if (data.campaignId) {
+        essentialData.campaignId = data.campaignId;
+      }
+      
+      if (data.participantId) {
+        essentialData.participantId = data.participantId;
+      }
+      
       // Log via the controller
-      const result = await communicationLogController.logCommunication(data);
+      const result = await communicationLogController.logCommunication(essentialData);
       
       if (result) {
         console.log('Communication logged successfully:', {

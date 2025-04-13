@@ -13,7 +13,7 @@ const CommunicationLog = sequelize.define('CommunicationLog', {
     type: DataTypes.UUID,
     allowNull: true,
     references: {
-      model: 'Campaigns',
+      model: 'campaigns', // Use lowercase table name, not model name
       key: 'id'
     }
   },
@@ -21,7 +21,7 @@ const CommunicationLog = sequelize.define('CommunicationLog', {
     type: DataTypes.UUID,
     allowNull: true,
     references: {
-      model: 'CampaignParticipants',
+      model: 'campaign_participants', // Use lowercase table name, not model name
       key: 'id'
     }
   },
