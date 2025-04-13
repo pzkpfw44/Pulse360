@@ -246,45 +246,8 @@ class EmailService {
       
       // Check for dev mode
       if (devMode) {
-        console.log('DEV MODE: Email not sent. Creating simulated log entry.');
-        
-        // Log this communication in the database using direct SQL
-        try {
-          // Use raw query to directly insert
-          const { sequelize } = require('../config/database');
-          const { v4: uuidv4 } = require('uuid');
-          const id = uuidv4();
-          const now = new Date().toISOString();
-          
-          await sequelize.query(
-            `INSERT INTO communication_logs 
-            (id, campaignId, participantId, recipient, subject, type, communicationType, status, details, sentAt, createdAt, updatedAt) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            {
-              replacements: [
-                id,
-                options.campaignId || null,
-                options.participantId || null,
-                options.to,
-                options.subject || null,
-                'email',
-                options.communicationType || 'other',
-                'simulated',
-                'Email not sent due to dev mode',
-                now,
-                now,
-                now
-              ],
-              type: sequelize.QueryTypes.INSERT
-            }
-          );
-          
-          console.log('Created simulated log entry');
-        } catch (logError) {
-          console.error('Error logging simulated email:', logError);
-        }
-        
-        return { sent: false, devMode: true };
+        console.log('DEV MODE is enabled but we will still send the actual email');
+        // Continue execution and don't return early
       }
       
       // Prepare email options

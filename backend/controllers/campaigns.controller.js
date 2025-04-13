@@ -522,6 +522,7 @@ exports.createCampaign = async (req, res) => {
               to: participant.employee.email,
               subject: replaceEmailPlaceholders(invitationTemplate.subject, emailVars),
               html: replaceEmailPlaceholders(invitationTemplate.content, emailVars),
+              devMode: false, // Force sending even in dev mode
               campaignId: campaign.id,
               participantId: participant.id,
               communicationType: 'invitation'
@@ -547,6 +548,7 @@ exports.createCampaign = async (req, res) => {
               to: participant.employee.email,
               subject: replaceEmailPlaceholders(instructionTemplate.subject, emailVars),
               html: replaceEmailPlaceholders(instructionTemplate.content, emailVars),
+              devMode: false, // Force sending even in dev mode
               campaignId: campaign.id,
               participantId: participant.id,
               communicationType: 'instruction'
@@ -917,7 +919,8 @@ exports.createCampaign = async (req, res) => {
       let template = await CommunicationTemplate.findOne({
         where: {
           templateType: templateType,
-          recipientType: relationshipType
+          recipientType: relationshipType,
+          isDefault: true  // Add this line to find default templates
         }
       });
       
@@ -927,7 +930,18 @@ exports.createCampaign = async (req, res) => {
         template = await CommunicationTemplate.findOne({
           where: {
             templateType: templateType,
-            recipientType: 'all'
+            recipientType: 'all',
+            isDefault: true  // Add this line to find default templates
+          }
+        });
+      }
+      
+      // If still no template, check for any template without isDefault requirement
+      if (!template) {
+        console.log(`No default template found, looking for any ${templateType} template`);
+        template = await CommunicationTemplate.findOne({
+          where: {
+            templateType: templateType
           }
         });
       }
@@ -1008,6 +1022,16 @@ exports.createCampaign = async (req, res) => {
       
       console.log('Found template from database:', template.id);
       
+      if (!template || !template.subject || !template.content) {
+        console.log(`Template missing required properties, using emergency fallback for ${templateType}`);
+        return {
+          subject: `Feedback Request for ${templateType}`,
+          content: `<p>Please provide your feedback by clicking <a href="{feedbackUrl}">here</a>.</p>`
+        };
+      }
+      
+      console.log('Found template from database:', template.id);
+      
       // Return the template from the database
       return {
         subject: template.subject,
@@ -1017,8 +1041,8 @@ exports.createCampaign = async (req, res) => {
       console.error('Error fetching email template:', error);
       // Return a very basic fallback
       return {
-        subject: '360 Feedback for {campaignName}',
-        content: `<p>Hello {assessorName},</p><p>Please provide your feedback by clicking <a href="{feedbackUrl}">here</a>.</p>`
+        subject: '360 Feedback Request',
+        content: `<p>Please provide your feedback by clicking <a href="{feedbackUrl}">here</a>.</p>`
       };
     }
   }
@@ -1032,6 +1056,7 @@ exports.createCampaign = async (req, res) => {
     }
     
     return content;
+    
   }
 
   // Send reminders to specific participants
@@ -1247,6 +1272,12 @@ function getEmailTemplate(templateType) {
 
 // Helper function to replace placeholders in email templates
 function replaceEmailPlaceholders(template, data) {
+  // Add safety check
+  if (!template) {
+    console.error('Error: template is undefined in replaceEmailPlaceholders');
+    return 'Error: Missing template';
+  }
+  
   let content = template;
   
   for (const [key, value] of Object.entries(data)) {
