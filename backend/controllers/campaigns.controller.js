@@ -482,7 +482,11 @@ exports.createCampaign = async (req, res) => {
               await emailService.sendEmail({
                 to: participant.employee.email,
                 subject: replaceEmailPlaceholders(invitationTemplate.subject, emailVars),
-                html: replaceEmailPlaceholders(invitationTemplate.content, emailVars)
+                html: replaceEmailPlaceholders(invitationTemplate.content, emailVars),
+                // Add campaign and participant info for logging
+                campaignId: campaign.id,
+                participantId: participant.id,
+                communicationType: 'invitation'
               });
               
               // Step 2: Wait a short time before sending instructions
@@ -495,7 +499,11 @@ exports.createCampaign = async (req, res) => {
               await emailService.sendEmail({
                 to: participant.employee.email,
                 subject: replaceEmailPlaceholders(instructionTemplate.subject, emailVars),
-                html: replaceEmailPlaceholders(instructionTemplate.content, emailVars)
+                html: replaceEmailPlaceholders(instructionTemplate.content, emailVars),
+                // Add campaign and participant info for logging
+                campaignId: campaign.id,
+                participantId: participant.id,
+                communicationType: 'instruction'
               });
               
               console.log(`Sent invitation and instruction emails to ${participant.employee.email}`);

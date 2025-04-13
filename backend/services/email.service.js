@@ -26,6 +26,16 @@ class EmailService {
         return false;
       }
       
+      console.log('Initializing email service with settings:', {
+        host: settings.host,
+        port: settings.port,
+        secure: settings.secure,
+        requireAuth: settings.requireAuth,
+        fromEmail: settings.fromEmail,
+        fromName: settings.fromName,
+        devMode: settings.devMode
+      });
+      
       // Create transporter
       this.transporter = nodemailer.createTransport({
         host: settings.host,
@@ -39,7 +49,17 @@ class EmailService {
       
       this.settings = settings;
       this.initialized = true;
-      return true;
+      
+      // Test connection
+      try {
+        await this.transporter.verify();
+        console.log('Email service initialized successfully with working SMTP connection');
+        return true;
+      } catch (verifyError) {
+        console.error('Email service initialized but SMTP connection failed:', verifyError.message);
+        // Still return true because we did initialize with settings
+        return true;
+      }
     } catch (error) {
       console.error('Error initializing email service:', error);
       return false;
@@ -68,7 +88,7 @@ class EmailService {
           sendReminders: true,
           reminderFrequency: 3,
           maxReminders: 3,
-          devMode: false 
+          devMode: true // Default to dev mode for safety
         });
         
         console.log('Created default email settings');
@@ -88,6 +108,11 @@ class EmailService {
    */
   async updateSettings(newSettings, userId) {
     try {
+      console.log('Updating email settings with:', {
+        ...newSettings,
+        password: newSettings.password ? '******' : undefined
+      });
+      
       // Try to find existing settings
       let settings = await EmailSettings.findOne();
       
@@ -97,6 +122,7 @@ class EmailService {
           ...newSettings,
           updatedBy: userId
         });
+        console.log('Created new email settings');
       } else {
         // Update existing settings
         // For password, only update if provided (not undefined)
@@ -108,7 +134,11 @@ class EmailService {
           ...newSettings,
           updatedBy: userId
         });
+        console.log('Updated existing email settings');
       }
+      
+      // Explicitly log the dev mode setting
+      console.log(`Dev mode is set to: ${settings.devMode}`);
       
       // Reinitialize email service with new settings
       this.initialized = false;
@@ -138,7 +168,7 @@ class EmailService {
       }
       
       // Try to verify connection
-      const verifyResult = await this.transporter.verify();
+      await this.transporter.verify();
       
       // Update last test result
       const settings = await EmailSettings.findOne();
@@ -182,6 +212,7 @@ class EmailService {
    * @param {string} options.subject - Email subject
    * @param {string} options.text - Plain text content
    * @param {string} options.html - HTML content
+   * @returns {Promise<Object>} - Result of sending email
    */
   async sendEmail(options) {
     try {
@@ -189,16 +220,33 @@ class EmailService {
       if (!this.initialized) {
         const success = await this.initialize();
         if (!success) {
+          console.error('Failed to initialize email service before sending');
           throw new Error('Email service not initialized');
         }
       }
       
+      // Re-check settings from database to ensure we have the latest
+      const freshSettings = await EmailSettings.findOne();
+      const devMode = freshSettings ? freshSettings.devMode : this.settings.devMode;
+      
+      console.log(`Attempting to send email to ${options.to}, dev mode: ${devMode}`);
+      
       // Check for dev mode
-      if (this.settings.devMode) {
+      if (devMode) {
         console.log('DEV MODE: Email not sent. Details:');
         console.log(`To: ${options.to}`);
         console.log(`Subject: ${options.subject}`);
-        console.log(`Content: ${options.text || options.html}`);
+        console.log(`Content: ${options.text || options.html.substring(0, 100)}...`);
+        
+        // Log this communication in the database
+        await this.logCommunication({
+          recipient: options.to,
+          subject: options.subject,
+          type: 'email',
+          status: 'simulated',
+          details: 'Email not sent due to dev mode'
+        });
+        
         return { sent: false, devMode: true };
       }
       
@@ -217,12 +265,63 @@ class EmailService {
       }
       
       // Send the email
+      console.log(`Sending email to ${options.to}...`);
       const info = await this.transporter.sendMail(mailOptions);
+      console.log(`Email sent successfully to ${options.to}, message ID: ${info.messageId}`);
+      
+      // Log this communication in the database
+      await this.logCommunication({
+        recipient: options.to,
+        subject: options.subject,
+        type: 'email',
+        status: 'sent',
+        details: `Message ID: ${info.messageId}`
+      });
       
       return { sent: true, messageId: info.messageId };
     } catch (error) {
-      console.error('Error sending email:', error);
+      console.error(`Error sending email to ${options.to}:`, error);
+      
+      // Log the failed communication
+      await this.logCommunication({
+        recipient: options.to,
+        subject: options.subject,
+        type: 'email',
+        status: 'failed',
+        details: `Error: ${error.message}`
+      }).catch(logError => {
+        console.error('Failed to log communication error:', logError);
+      });
+      
       throw error;
+    }
+  }
+
+  /**
+   * Log communication to database
+   */
+  async logCommunication(data) {
+    try {
+      // Import the controller dynamically to avoid circular dependencies
+      const communicationLogController = require('../controllers/communication-log.controller');
+      
+      // Log via the controller
+      const result = await communicationLogController.logCommunication(data);
+      
+      if (result) {
+        console.log('Communication logged successfully:', {
+          recipient: data.recipient,
+          status: data.status,
+          type: data.type || 'email'
+        });
+      } else {
+        console.warn('Failed to log communication');
+      }
+      
+      return result !== null;
+    } catch (error) {
+      console.error('Error logging communication:', error);
+      return false;
     }
   }
 }

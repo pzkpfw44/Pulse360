@@ -8,6 +8,7 @@ import {
   PlayCircle, Send, Slash, XCircle, Eye, ChevronDown, ChevronUp
 } from 'lucide-react';
 import api from '../services/api';
+import CommunicationLogTable from '../components/campaigns/CommunicationLogTable';
 
 const CampaignDetailMonitoring = () => {
   const { id } = useParams();
@@ -789,14 +790,7 @@ const CampaignDetailMonitoring = () => {
         
         {expandedSection === 'communications' && (
           <div className="p-5">
-            {/* For a real implementation, fetch and display the communication log */}
-            <div className="text-center py-8">
-              <Mail className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Communication Log</h3>
-              <p className="text-gray-500 max-w-lg mx-auto">
-                The communication log would show all emails sent to participants, including invitations and reminders.
-              </p>
-            </div>
+            <CommunicationLogTable campaignId={campaign.id} />
           </div>
         )}
       </div>

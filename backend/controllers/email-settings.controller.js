@@ -47,6 +47,23 @@ exports.updateEmailSettings = async (req, res) => {
   try {
     const { smtp, sendReminders, reminderFrequency, maxReminders, devMode } = req.body;
     
+    console.log('Updating email settings with:', { 
+      smtp: smtp ? {
+        ...smtp,
+        password: smtp.password ? '******' : undefined
+      } : null,
+      sendReminders,
+      reminderFrequency,
+      maxReminders,
+      devMode
+    });
+    
+    // IMPORTANT: We need to explicitly handle devMode as a boolean, not as a truthy/falsy value
+    // This ensures that devMode: false is properly saved as false, not ignored
+    const devModeValue = devMode === undefined ? false : !!devMode;
+    
+    console.log(`Dev mode explicitly set to: ${devModeValue}`);
+    
     // Update email settings
     await emailService.updateSettings({
       host: smtp?.host,
@@ -61,10 +78,16 @@ exports.updateEmailSettings = async (req, res) => {
       sendReminders: sendReminders !== false, // default to true
       reminderFrequency: reminderFrequency || 3,
       maxReminders: maxReminders || 3,
-      devMode: devMode || false
+      devMode: devModeValue // Use the explicit boolean value
     }, req.user.id);
     
-    res.status(200).json({ message: 'Email settings updated successfully' });
+    // Force the email service to re-initialize with the new settings
+    await emailService.initialize();
+    
+    res.status(200).json({ 
+      message: 'Email settings updated successfully',
+      devMode: devModeValue
+    });
   } catch (error) {
     console.error('Error updating email settings:', error);
     res.status(500).json({ 

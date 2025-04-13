@@ -37,6 +37,7 @@ app.use('/api/settings/danger-zone', dangerZoneRoutes);
 app.use('/api/campaigns', require('./routes/campaigns.routes'));
 app.use('/api/feedback', require('./routes/feedback.routes'));
 app.use('/api/communication-templates', communicationTemplatesRoutes);
+app.use('/api/communication-logs', require('./routes/communication-log.routes'));
 const brandingSettingsRoutes = require('./routes/branding-settings.routes');
 
 const testRoutes = require('./routes/test.routes');

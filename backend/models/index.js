@@ -105,6 +105,7 @@ module.exports = {
   Response,
   EmailSettings,
   CommunicationTemplate,
+  CommunicationLog,
   BrandingSettings,
   Op 
 };
