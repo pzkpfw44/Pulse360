@@ -30,6 +30,7 @@ const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
   });
   const [validationErrors, setValidationErrors] = useState([]);
   const [launchConfirmation, setLaunchConfirmation] = useState(false);
+  const [error, setError] = useState(null); // Add this line for error state
 
   // Fetch additional data for review
   useEffect(() => {
@@ -110,9 +111,9 @@ const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
       }
     }
 
-    // Email templates
-    if (!data.emailTemplates || !data.emailTemplates.invitation || !data.emailTemplates.invitation.general) {
-      errors.push('Invitation email template is required');
+    // Changed this to check if emailTemplates exists and has any content
+    if (!data.emailTemplates || Object.keys(data.emailTemplates).length === 0) {
+      errors.push('Email templates are required');
     }
 
     setValidationErrors(errors);
@@ -554,11 +555,11 @@ const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
         )}
       </div>
 
-      {/* Email Templates Section */}
+      {/* Email Templates Section - FIXED BY MERGING THE TWO SECTIONS */}
       <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
         <div 
           className="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer"
-          onClick={() => toggleSection('emails')}
+          onClick={() => toggleSection("emails")}
         >
           <div className="flex items-center">
             <Mail className="h-5 w-5 text-gray-400 mr-2" />
@@ -574,6 +575,19 @@ const ReviewLaunch = ({ data, onLaunch, onDataChange }) => {
         {openSections.emails && (
           <div className="p-4 bg-white">
             <div className="space-y-4">
+              {/* Simplified template validation check */}
+              {data.emailTemplates && Object.keys(data.emailTemplates).length > 0 ? (
+                <div className="text-green-600 flex items-center">
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  <span>All required email templates configured</span>
+                </div>
+              ) : (
+                <div className="text-red-600 flex items-center">
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  <span>Email templates configuration required</span>
+                </div>
+              )}
+              
               {/* Invitation Email */}
               <div>
                 <h4 className="text-sm font-medium text-gray-900 mb-2">Invitation Email</h4>

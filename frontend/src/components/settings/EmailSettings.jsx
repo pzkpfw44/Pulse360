@@ -475,21 +475,7 @@ const EmailSettings = () => {
                 </div>
               </>
             )}
-            
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="devMode"
-                name="devMode"
-                checked={emailSettings.devMode}
-                onChange={handleEmailSettingsChange}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="devMode" className="ml-2 block text-sm text-gray-700">
-                Development Mode
-              </label>
-              <HelpCircle className="ml-1 h-4 w-4 text-gray-400 cursor-help" title="In development mode, emails are logged but not actually sent" />
-            </div>
+                        
           </div>
         </div>
         
