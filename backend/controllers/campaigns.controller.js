@@ -375,6 +375,10 @@ exports.createCampaign = async (req, res) => {
   // Launch campaign
   exports.launchCampaign = async (req, res) => {
     try {
+      console.log('\n=== LAUNCHING CAMPAIGN ===');
+      console.log(`Campaign ID: ${req.params.id}`);
+      console.log(`User: ${req.user.id}`);
+  
       const campaign = await Campaign.findOne({
         where: { 
           id: req.params.id,
@@ -400,11 +404,13 @@ exports.createCampaign = async (req, res) => {
       });
       
       if (!campaign) {
+        console.log('Campaign not found');
         return res.status(404).json({ message: 'Campaign not found' });
       }
       
       // Check if campaign can be launched
       if (campaign.status !== 'draft') {
+        console.log('Campaign is not in draft status:', campaign.status);
         return res.status(400).json({ 
           message: 'Only draft campaigns can be launched' 
         });
@@ -412,10 +418,13 @@ exports.createCampaign = async (req, res) => {
       
       // Validate campaign has required participants
       const participants = campaign.participants || [];
+      console.log(`Campaign has ${participants.length} participants`);
+      
       const relationshipTypes = participants.map(p => p.relationshipType);
       
       // Check for self-assessment
       if (!relationshipTypes.includes('self')) {
+        console.log('Campaign is missing self-assessment participant');
         return res.status(400).json({ 
           message: 'Campaign must include self-assessment' 
         });
@@ -423,6 +432,7 @@ exports.createCampaign = async (req, res) => {
       
       // Check for manager
       if (!relationshipTypes.includes('manager')) {
+        console.log('Campaign is missing manager participant');
         return res.status(400).json({ 
           message: 'Campaign must include at least one manager' 
         });
@@ -431,6 +441,7 @@ exports.createCampaign = async (req, res) => {
       // Check for minimum peers
       const peerCount = relationshipTypes.filter(type => type === 'peer').length;
       if (peerCount < 3) {
+        console.log('Campaign has insufficient peers:', peerCount);
         return res.status(400).json({ 
           message: 'Campaign must include at least three peers' 
         });
@@ -438,10 +449,13 @@ exports.createCampaign = async (req, res) => {
       
       // Check if dates are set
       if (!campaign.startDate || !campaign.endDate) {
+        console.log('Campaign is missing dates');
         return res.status(400).json({ 
           message: 'Campaign start and end dates must be set' 
         });
       }
+      
+      console.log('Campaign validation passed, updating status to active');
       
       // Update campaign status
       await campaign.update({
@@ -451,78 +465,101 @@ exports.createCampaign = async (req, res) => {
       
       // Send invitation emails to all participants
       try {
+        console.log('Getting email settings');
         const emailSettings = await EmailSettings.findOne();
         
-        if (emailSettings && !emailSettings.devMode) {
-          for (const participant of participants) {
-            // Set participant status to invited
-            await participant.update({ 
-              status: 'invited',
-              lastInvitedAt: new Date()
-            });
-            
-            // Create feedback URL with token
-            const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
-            
-            // Common email variables
-            const emailVars = {
-              assessorName: participant.employee.firstName,
-              targetName: campaign.targetEmployee.firstName + ' ' + campaign.targetEmployee.lastName,
-              campaignName: campaign.name,
-              deadline: new Date(campaign.endDate).toLocaleDateString(),
-              feedbackUrl,
-              companyName: 'Your Company' // Add default company name
-            };
-            
-            try {
-              // Step 1: Get and send invitation email
-              const invitationTemplate = await getEmailTemplate(participant.relationshipType, 'invitation');
-              
-              // Send invitation email
-              await emailService.sendEmail({
-                to: participant.employee.email,
-                subject: replaceEmailPlaceholders(invitationTemplate.subject, emailVars),
-                html: replaceEmailPlaceholders(invitationTemplate.content, emailVars),
-                // Add campaign and participant info for logging
-                campaignId: campaign.id,
-                participantId: participant.id,
-                communicationType: 'invitation'
-              });
-              
-              // Step 2: Wait a short time before sending instructions
-              await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
-              
-              // Step 3: Get and send instruction email
-              const instructionTemplate = await getEmailTemplate(participant.relationshipType, 'instruction');
-              
-              // Send instruction email
-              await emailService.sendEmail({
-                to: participant.employee.email,
-                subject: replaceEmailPlaceholders(instructionTemplate.subject, emailVars),
-                html: replaceEmailPlaceholders(instructionTemplate.content, emailVars),
-                // Add campaign and participant info for logging
-                campaignId: campaign.id,
-                participantId: participant.id,
-                communicationType: 'instruction'
-              });
-              
-              console.log(`Sent invitation and instruction emails to ${participant.employee.email}`);
-            } catch (individualEmailError) {
-              console.error(`Error sending emails to ${participant.employee.email}:`, individualEmailError);
-              // Continue with other participants even if this one fails
-            }
-          }
+        if (!emailSettings) {
+          console.log('No email settings found!');
         } else {
-          // In development mode, just update status without sending emails
-          for (const participant of participants) {
-            await participant.update({ 
-              status: 'invited',
-              lastInvitedAt: new Date()
-            });
+          console.log('Email settings found, devMode:', emailSettings.devMode);
+        }
+        
+        console.log('Starting to process participants');
+        for (const participant of participants) {
+          console.log(`\nProcessing participant: ${participant.id}`);
+          console.log(`Email: ${participant.employee?.email || 'Unknown'}`);
+          console.log(`Type: ${participant.relationshipType}`);
+          
+          if (!participant.employee || !participant.employee.email) {
+            console.log('Participant has no email, skipping');
+            continue;
           }
           
-          console.log('Development mode: Emails not sent, but participant status updated');
+          // Set participant status to invited
+          await participant.update({ 
+            status: 'invited',
+            lastInvitedAt: new Date()
+          });
+          
+          console.log('Updated participant status to invited');
+          
+          // Create feedback URL with token
+          const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
+          
+          // Common email variables
+          const emailVars = {
+            assessorName: participant.employee.firstName,
+            targetName: campaign.targetEmployee.firstName + ' ' + campaign.targetEmployee.lastName,
+            campaignName: campaign.name,
+            deadline: new Date(campaign.endDate).toLocaleDateString(),
+            feedbackUrl,
+            companyName: 'Your Company' // Add default company name
+          };
+          
+          try {
+            // Step 1: Get and send invitation email
+            console.log('Getting invitation template for:', participant.relationshipType);
+            const invitationTemplate = await getEmailTemplate(participant.relationshipType, 'invitation');
+            
+            if (!invitationTemplate) {
+              console.log('No invitation template found!');
+              continue;
+            }
+            
+            console.log('Sending invitation email');
+            // Send invitation email
+            await emailService.sendEmail({
+              to: participant.employee.email,
+              subject: replaceEmailPlaceholders(invitationTemplate.subject, emailVars),
+              html: replaceEmailPlaceholders(invitationTemplate.content, emailVars),
+              campaignId: campaign.id,
+              participantId: participant.id,
+              communicationType: 'invitation'
+            });
+            
+            console.log('Invitation email sent successfully');
+            
+            // Step 2: Wait a short time before sending instructions
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+            
+            // Step 3: Get and send instruction email
+            console.log('Getting instruction template');
+            const instructionTemplate = await getEmailTemplate(participant.relationshipType, 'instruction');
+            
+            if (!instructionTemplate) {
+              console.log('No instruction template found!');
+              continue;
+            }
+            
+            console.log('Sending instruction email');
+            // Send instruction email
+            await emailService.sendEmail({
+              to: participant.employee.email,
+              subject: replaceEmailPlaceholders(instructionTemplate.subject, emailVars),
+              html: replaceEmailPlaceholders(instructionTemplate.content, emailVars),
+              campaignId: campaign.id,
+              participantId: participant.id,
+              communicationType: 'instruction'
+            });
+            
+            console.log('Instruction email sent successfully');
+          } catch (individualEmailError) {
+            console.error(`Error sending emails to ${participant.employee.email}:`, individualEmailError);
+            // Continue with other participants even if this one fails
+          }
         }
+        
+        console.log('All participants processed');
       } catch (emailError) {
         console.error('Error sending invitation emails:', emailError);
         // Continue with launch even if emails fail
@@ -551,6 +588,8 @@ exports.createCampaign = async (req, res) => {
           }
         ]
       });
+      
+      console.log('Campaign launched successfully');
       
       res.status(200).json({
         message: 'Campaign launched successfully',
@@ -870,31 +909,32 @@ exports.createCampaign = async (req, res) => {
   // Helper function to get appropriate email template
   async function getEmailTemplate(relationshipType, templateType) {
     try {
+      console.log(`Looking for template: ${templateType} for ${relationshipType}`);
+      
       const { CommunicationTemplate } = require('../models');
       
       // First try to find a template specifically for this relationship type
       let template = await CommunicationTemplate.findOne({
         where: {
           templateType: templateType,
-          recipientType: relationshipType,
-          isDefault: true
+          recipientType: relationshipType
         }
       });
       
       // If no specific template exists, fall back to the "all" recipient type
       if (!template) {
+        console.log(`No specific template found, looking for 'all' type`);
         template = await CommunicationTemplate.findOne({
           where: {
             templateType: templateType,
-            recipientType: 'all',
-            isDefault: true
+            recipientType: 'all'
           }
         });
       }
       
-      // If still no template, use a hardcoded fallback
+      // If no template found in database, use a hardcoded fallback
       if (!template) {
-        console.warn(`No template found for ${templateType}-${relationshipType}, using fallback`);
+        console.log(`Using fallback template for ${templateType}-${relationshipType}`);
         
         // Fallback templates
         if (templateType === 'invitation' && relationshipType === 'self') {
@@ -966,6 +1006,8 @@ exports.createCampaign = async (req, res) => {
         }
       }
       
+      console.log('Found template from database:', template.id);
+      
       // Return the template from the database
       return {
         subject: template.subject,
@@ -995,32 +1037,53 @@ exports.createCampaign = async (req, res) => {
   // Send reminders to specific participants
 exports.sendReminders = async (req, res) => {
   try {
+    console.log('\n=== SENDING REMINDERS ===');
+    console.log('Request body:', req.body);
+    
     const { participantIds } = req.body;
     
     if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+      console.log('No participant IDs provided');
       return res.status(400).json({ 
         message: 'Participant IDs are required' 
       });
     }
     
+    console.log(`Sending reminders to ${participantIds.length} participants`);
+    
     // Get the campaign from the first participant
     const firstParticipant = await CampaignParticipant.findByPk(participantIds[0], {
       include: [
-        { model: Campaign, as: 'campaign' }
+        { 
+          model: Campaign, 
+          as: 'campaign',
+          include: [
+            { model: Employee, as: 'targetEmployee' }
+          ]
+        },
+        {
+          model: Employee,
+          as: 'employee'
+        }
       ]
     });
     
     if (!firstParticipant) {
+      console.log('First participant not found');
       return res.status(404).json({ message: 'Participant not found' });
     }
     
+    console.log('Found campaign:', firstParticipant.campaign.id);
+    
     // Check if the campaign belongs to the user
     if (firstParticipant.campaign.createdBy !== req.user.id) {
+      console.log('User not authorized for this campaign');
       return res.status(403).json({ message: 'Not authorized to send reminders for this campaign' });
     }
     
     // Check if campaign is active
     if (firstParticipant.campaign.status !== 'active') {
+      console.log('Campaign is not active:', firstParticipant.campaign.status);
       return res.status(400).json({ message: 'Reminders can only be sent for active campaigns' });
     }
     
@@ -1044,19 +1107,42 @@ exports.sendReminders = async (req, res) => {
     
     // Check if all participants belong to the same campaign
     if (participants.some(p => p.campaignId !== firstParticipant.campaignId)) {
+      console.log('Participants from different campaigns');
       return res.status(400).json({ message: 'All participants must belong to the same campaign' });
     }
     
     // Send reminder emails
     const campaign = firstParticipant.campaign;
-    const emailSettings = await EmailSettings.findOne();
     const sentReminders = [];
     
+    console.log('Getting email settings...');
+    const { EmailSettings } = require('../models');
+    const emailSettings = await EmailSettings.findOne();
+    
+    console.log('Found email settings, devMode:', emailSettings ? emailSettings.devMode : 'unknown');
+    
+    // Temporarily force devMode to false for this operation
+    if (emailSettings) {
+      console.log('Setting devMode to false FOR THIS OPERATION ONLY');
+      emailSettings.devMode = false;
+    }
+    
+    console.log('Starting to process participants for reminders');
     for (const participant of participants) {
+      console.log(`\nProcessing participant: ${participant.id}`);
+      
       // Skip completed or declined participants
       if (participant.status === 'completed' || participant.status === 'declined') {
+        console.log('Participant already completed or declined, skipping');
         continue;
       }
+      
+      if (!participant.employee || !participant.employee.email) {
+        console.log('Participant has no email address, skipping');
+        continue;
+      }
+      
+      console.log(`Sending reminder to ${participant.employee.email}`);
       
       // Update participant status to invited and increment reminder count
       await participant.update({
@@ -1071,34 +1157,57 @@ exports.sendReminders = async (req, res) => {
         timestamp: new Date()
       });
       
-      // Only send actual emails if email settings are configured and not in dev mode
-      if (emailSettings && !emailSettings.devMode) {
-        try {
-          // Create feedback URL with token
-          const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
-          
-          // Get appropriate email template
-          const emailTemplate = getEmailTemplate('reminder');
-          
-          // Replace placeholders in template
-          const emailContent = replaceEmailPlaceholders(emailTemplate, {
-            assessorName: participant.employee.firstName,
-            targetName: campaign.targetEmployee.firstName + ' ' + campaign.targetEmployee.lastName,
-            campaignName: campaign.name,
-            deadline: new Date(campaign.endDate).toLocaleDateString(),
-            feedbackUrl
-          });
-          
-          // Send email
-          await emailService.sendEmail({
-            to: participant.employee.email,
-            subject: `Reminder: 360 Feedback for ${campaign.name}`,
-            html: emailContent
-          });
-        } catch (emailError) {
-          console.error('Error sending reminder email:', emailError);
-          // Continue with other reminders even if this one fails
+      try {
+        // Create feedback URL with token
+        const feedbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/feedback/${participant.invitationToken}`;
+        
+        // Common email variables
+        const emailVars = {
+          assessorName: participant.employee.firstName,
+          targetName: campaign.targetEmployee.firstName + ' ' + campaign.targetEmployee.lastName,
+          campaignName: campaign.name,
+          deadline: new Date(campaign.endDate).toLocaleDateString(),
+          feedbackUrl,
+          companyName: 'Your Company'
+        };
+        
+        // Get reminder template
+        const reminderTemplate = await getEmailTemplate(participant.relationshipType, 'reminder');
+        
+        if (!reminderTemplate) {
+          console.log('No reminder template found, using generic template');
+          reminderTemplate = {
+            subject: `Reminder: Complete feedback for ${campaign.targetEmployee.firstName}`,
+            content: `
+              <p>Hello ${participant.employee.firstName},</p>
+              <p>This is a friendly reminder to complete your feedback for ${campaign.targetEmployee.firstName} ${campaign.targetEmployee.lastName}.</p>
+              <p>Please complete your feedback by ${new Date(campaign.endDate).toLocaleDateString()}.</p>
+              <p><a href="${feedbackUrl}">Click here to provide feedback</a></p>
+            `
+          };
         }
+        
+        console.log('Sending reminder email...');
+        
+        // Import and use email service directly
+        const emailService = require('../services/email.service');
+        
+        // Send email with FORCED devMode = false
+        await emailService.sendEmail({
+          to: participant.employee.email,
+          subject: replaceEmailPlaceholders(reminderTemplate.subject, emailVars),
+          html: replaceEmailPlaceholders(reminderTemplate.content, emailVars),
+          // Force production mode for this email
+          devMode: false,
+          campaignId: campaign.id,
+          participantId: participant.id,
+          communicationType: 'reminder'
+        });
+        
+        console.log('Reminder email sent successfully');
+      } catch (emailError) {
+        console.error('Error sending reminder email:', emailError);
+        // Continue with other reminders even if this one fails
       }
     }
     
@@ -1106,6 +1215,8 @@ exports.sendReminders = async (req, res) => {
     await campaign.update({
       lastReminderSent: new Date()
     });
+    
+    console.log('All reminders processed');
     
     res.status(200).json({
       message: `Reminders sent to ${sentReminders.length} participants`,

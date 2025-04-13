@@ -1,0 +1,111 @@
+<!-- Save this as a file called direct-test.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct Email Test</title>
+    <script>
+        async function sendDirectTest() {
+            const email = document.getElementById('email').value;
+            const campaignId = document.getElementById('campaignId').value;
+            const participantId = document.getElementById('participantId').value;
+            
+            document.getElementById('status').textContent = 'Sending...';
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/direct-reminder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email,
+                        campaignId,
+                        participantId
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Response:', data);
+                
+                document.getElementById('status').innerHTML = `
+                    <span style="color: green;">Success!</span><br>
+                    Message: ${data.message}<br>
+                    Message ID: ${data.messageId || 'N/A'}
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').innerHTML = `
+                    <span style="color: red;">Error!</span><br>
+                    ${error.message || 'Unknown error'}
+                `;
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="email"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Direct Email Test</h1>
+    <p>This form bypasses all Pulse360 code and sends an email directly via the API.</p>
+    
+    <div class="form-group">
+        <label for="email">Email Address:</label>
+        <input type="email" id="email" value="your@email.com" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="campaignId">Campaign ID (optional):</label>
+        <input type="text" id="campaignId">
+    </div>
+    
+    <div class="form-group">
+        <label for="participantId">Participant ID (optional):</label>
+        <input type="text" id="participantId">
+    </div>
+    
+    <button onclick="sendDirectTest()">Send Direct Test Email</button>
+    
+    <div id="status">
+        Ready to test...
+    </div>
+</body>
+</html>

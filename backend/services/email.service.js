@@ -216,36 +216,73 @@ class EmailService {
    */
   async sendEmail(options) {
     try {
+      console.log('\n=== SENDING EMAIL ===');
+      console.log(`To: ${options.to}`);
+      console.log(`Subject: ${options.subject}`);
+      console.log(`Campaign ID: ${options.campaignId || 'Not provided'}`);
+  
       // Make sure service is initialized
       if (!this.initialized) {
+        console.log('Email service not initialized, initializing now...');
         const success = await this.initialize();
         if (!success) {
           console.error('Failed to initialize email service before sending');
           throw new Error('Email service not initialized');
         }
+        console.log('Email service initialized successfully');
       }
       
       // Re-check settings from database to ensure we have the latest
       const freshSettings = await EmailSettings.findOne();
-      const devMode = freshSettings ? freshSettings.devMode : this.settings.devMode;
+      if (!freshSettings) {
+        console.error('No email settings found in database!');
+        throw new Error('Email settings not found');
+      }
       
-      console.log(`Attempting to send email to ${options.to}, dev mode: ${devMode}`);
+      // Allow for explicitly passing devMode to override settings
+      // This is a critical change - check if devMode is explicitly set in options
+      const devMode = options.devMode !== undefined ? options.devMode : freshSettings.devMode;
+      console.log(`Using devMode: ${devMode} (${options.devMode !== undefined ? 'from parameter' : 'from settings'})`);
       
       // Check for dev mode
       if (devMode) {
-        console.log('DEV MODE: Email not sent. Details:');
-        console.log(`To: ${options.to}`);
-        console.log(`Subject: ${options.subject}`);
-        console.log(`Content: ${options.text || options.html.substring(0, 100)}...`);
+        console.log('DEV MODE: Email not sent. Creating simulated log entry.');
         
-        // Log this communication in the database
-        await this.logCommunication({
-          recipient: options.to,
-          subject: options.subject,
-          type: 'email',
-          status: 'simulated',
-          details: 'Email not sent due to dev mode'
-        });
+        // Log this communication in the database using direct SQL
+        try {
+          // Use raw query to directly insert
+          const { sequelize } = require('../config/database');
+          const { v4: uuidv4 } = require('uuid');
+          const id = uuidv4();
+          const now = new Date().toISOString();
+          
+          await sequelize.query(
+            `INSERT INTO communication_logs 
+            (id, campaignId, participantId, recipient, subject, type, communicationType, status, details, sentAt, createdAt, updatedAt) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            {
+              replacements: [
+                id,
+                options.campaignId || null,
+                options.participantId || null,
+                options.to,
+                options.subject || null,
+                'email',
+                options.communicationType || 'other',
+                'simulated',
+                'Email not sent due to dev mode',
+                now,
+                now,
+                now
+              ],
+              type: sequelize.QueryTypes.INSERT
+            }
+          );
+          
+          console.log('Created simulated log entry');
+        } catch (logError) {
+          console.error('Error logging simulated email:', logError);
+        }
         
         return { sent: false, devMode: true };
       }
@@ -265,33 +302,85 @@ class EmailService {
       }
       
       // Send the email
-      console.log(`Sending email to ${options.to}...`);
+      console.log(`Sending actual email to ${options.to}...`);
       const info = await this.transporter.sendMail(mailOptions);
-      console.log(`Email sent successfully to ${options.to}, message ID: ${info.messageId}`);
+      console.log(`Email sent successfully! Message ID: ${info.messageId}`);
       
-      // Log this communication in the database
-      await this.logCommunication({
-        recipient: options.to,
-        subject: options.subject,
-        type: 'email',
-        status: 'sent',
-        details: `Message ID: ${info.messageId}`
-      });
+      // Log this communication in the database using direct SQL
+      try {
+        // Use raw query to directly insert
+        const { sequelize } = require('../config/database');
+        const { v4: uuidv4 } = require('uuid');
+        const id = uuidv4();
+        const now = new Date().toISOString();
+        
+        await sequelize.query(
+          `INSERT INTO communication_logs 
+          (id, campaignId, participantId, recipient, subject, type, communicationType, status, details, sentAt, createdAt, updatedAt) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          {
+            replacements: [
+              id,
+              options.campaignId || null,
+              options.participantId || null,
+              options.to,
+              options.subject || null,
+              'email',
+              options.communicationType || 'other',
+              'sent',
+              `Message ID: ${info.messageId}`,
+              now,
+              now,
+              now
+            ],
+            type: sequelize.QueryTypes.INSERT
+          }
+        );
+        
+        console.log('Created log entry for sent email');
+      } catch (logError) {
+        console.error('Error logging sent email:', logError);
+      }
       
       return { sent: true, messageId: info.messageId };
     } catch (error) {
       console.error(`Error sending email to ${options.to}:`, error);
       
       // Log the failed communication
-      await this.logCommunication({
-        recipient: options.to,
-        subject: options.subject,
-        type: 'email',
-        status: 'failed',
-        details: `Error: ${error.message}`
-      }).catch(logError => {
-        console.error('Failed to log communication error:', logError);
-      });
+      try {
+        // Use raw query to directly insert error
+        const { sequelize } = require('../config/database');
+        const { v4: uuidv4 } = require('uuid');
+        const id = uuidv4();
+        const now = new Date().toISOString();
+        
+        await sequelize.query(
+          `INSERT INTO communication_logs 
+          (id, campaignId, participantId, recipient, subject, type, communicationType, status, details, sentAt, createdAt, updatedAt) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          {
+            replacements: [
+              id,
+              options.campaignId || null,
+              options.participantId || null,
+              options.to,
+              options.subject || null,
+              'email',
+              options.communicationType || 'other',
+              'failed',
+              `Error: ${error.message}`,
+              now,
+              now,
+              now
+            ],
+            type: sequelize.QueryTypes.INSERT
+          }
+        );
+        
+        console.log('Created log entry for failed email');
+      } catch (logError) {
+        console.error('Failed to log error:', logError);
+      }
       
       throw error;
     }
