@@ -221,6 +221,36 @@ class FeedbackController {
           { status: 'completed', completedAt: new Date() },
           { where: { id: participant.id } } // Use ID instead of token
         );
+
+        // Update campaign completion rate
+        try {
+          // Get all participants for this campaign
+          const allParticipants = await CampaignParticipant.findAll({
+            where: { campaignId: campaignId }
+          });
+          
+          if (allParticipants && allParticipants.length > 0) {
+            // Count completed participants (including the one we just updated)
+            const completedParticipants = allParticipants.filter(p => 
+              p.status === 'completed' || p.id === participant.id
+            ).length;
+            
+            // Calculate new completion rate
+            const totalParticipants = allParticipants.length;
+            const newCompletionRate = Math.round((completedParticipants / totalParticipants) * 100);
+            
+            // Update the campaign's completion rate
+            await Campaign.update(
+              { completionRate: newCompletionRate },
+              { where: { id: campaignId } }
+            );
+            
+            console.log(`Updated campaign ${campaignId} completion rate to ${newCompletionRate}%`);
+          }
+        } catch (updateError) {
+          console.error('Error updating campaign completion rate:', updateError);
+          // Don't fail the request if updating completion rate fails
+        }
       } catch (err) {
         // Just log the error, don't fail the request if this part fails
         console.log('Could not update participant status:', err.message);

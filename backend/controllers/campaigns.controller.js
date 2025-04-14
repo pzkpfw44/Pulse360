@@ -51,6 +51,12 @@ exports.getAllCampaigns = async (req, res) => {
           model: Employee, 
           as: 'targetEmployee',
           attributes: ['id', 'firstName', 'lastName', 'email', 'jobTitle']
+        },
+        // Add this new include for participants
+        { 
+          model: CampaignParticipant, 
+          as: 'participants',
+          attributes: ['id', 'status', 'relationshipType']
         }
       ],
       order: [['createdAt', 'DESC']]
