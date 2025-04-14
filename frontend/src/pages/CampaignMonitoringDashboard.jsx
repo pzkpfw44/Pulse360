@@ -22,7 +22,30 @@ const CampaignMonitoringDashboard = () => {
     try {
       setRefreshing(true);
       const response = await api.get('/campaigns');
-      setCampaigns(response.data.campaigns || []);
+      
+      // Process campaigns to ensure completion rates are accurate
+      const processedCampaigns = (response.data.campaigns || []).map(campaign => {
+        // If campaign has participants, ensure completion rate is correctly calculated
+        if (campaign.participants && campaign.participants.length > 0) {
+          const totalParticipants = campaign.participants.length;
+          const completedParticipants = campaign.participants.filter(p => p.status === 'completed').length;
+          
+          // Calculate actual completion rate
+          const calculatedRate = totalParticipants > 0 
+            ? Math.round((completedParticipants / totalParticipants) * 100) 
+            : 0;
+          
+          // Update the completion rate if it's different
+          if (calculatedRate !== campaign.completionRate) {
+            console.log(`Fixing completion rate for ${campaign.name}: ${campaign.completionRate}% → ${calculatedRate}%`);
+            campaign.completionRate = calculatedRate;
+          }
+        }
+        
+        return campaign;
+      });
+      
+      setCampaigns(processedCampaigns);
       setError(null);
     } catch (err) {
       console.error('Error fetching campaigns:', err);
@@ -385,7 +408,7 @@ const CampaignMonitoringDashboard = () => {
                           <div>
                             <div className="flex items-center">
                               <span className="text-sm font-medium text-gray-900 mr-2">
-                                {Math.round(campaign.completionRate)}%
+                                {campaign.completionRate}%
                               </span>
                               <div className="w-24 bg-gray-200 rounded-full h-2.5">
                                 <div

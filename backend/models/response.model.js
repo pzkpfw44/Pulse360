@@ -13,7 +13,7 @@ const Response = sequelize.define('Response', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: 'campaign_participants', // Changed from 'CampaignParticipants' to lowercase
+      model: 'campaign_participants', // This must match the actual table name in the database
       key: 'id'
     }
   },

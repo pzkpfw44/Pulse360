@@ -54,7 +54,7 @@ CampaignParticipant.belongsTo(Employee, { foreignKey: 'employeeId', as: 'employe
 
 // Response associations
 CampaignParticipant.hasMany(Response, { foreignKey: 'participantId', as: 'responses', onDelete: 'CASCADE' });
-Response.belongsTo(CampaignParticipant, { foreignKey: 'participantId' });
+Response.belongsTo(CampaignParticipant, { foreignKey: 'participantId', as: 'participant', constraints: false });
 
 Question.hasMany(Response, { foreignKey: 'questionId' });
 Response.belongsTo(Question, { foreignKey: 'questionId' });

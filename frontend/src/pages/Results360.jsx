@@ -5,9 +5,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, BarChart2, Download, FileText, 
   UserCheck, Users, ChevronDown, ChevronUp,
-  Clock, CheckCircle2, AlertTriangle
+  Clock, CheckCircle2, AlertTriangle, Briefcase
 } from 'lucide-react';
-import api, { campaignsApi, resultsApi } from '../services/api';
+import { resultsApi, campaignsApi } from '../services/api';
 
 const Results360 = () => {
   const { campaignId } = useParams();
@@ -39,14 +39,30 @@ const Results360 = () => {
     try {
       setLoading(true);
       const response = await campaignsApi.getAll();
-      const completedCampaigns = response.data.campaigns.filter(
-        campaign => campaign.status === 'completed'
-      );
-      setCampaigns(completedCampaigns);
+      
+      // Get all campaigns with either "completed" status or with completed assessments
+      const campaignsWithResults = response.data.campaigns
+        ? response.data.campaigns.filter(campaign => {
+            // Include completed campaigns
+            if (campaign.status === 'completed') return true;
+            
+            // Include active campaigns that have at least one completed assessment
+            if ((campaign.status === 'active' || campaign.status === 'paused') && 
+                campaign.participants && campaign.participants.length > 0) {
+              const completedParticipants = campaign.participants.filter(p => p.status === 'completed').length;
+              return completedParticipants > 0;
+            }
+            
+            return false;
+          })
+        : [];
+        
+      console.log('Campaigns with results:', campaignsWithResults);
+      setCampaigns(campaignsWithResults);
       setError(null);
     } catch (err) {
       console.error('Error fetching campaigns:', err);
-      setError('Failed to load completed campaigns. Please try again.');
+      setError('Failed to load campaigns with results. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -57,6 +73,7 @@ const Results360 = () => {
     try {
       setLoading(true);
       const response = await resultsApi.getCampaignResults(id);
+      console.log('Campaign results:', response.data);
       setResults(response.data);
       setError(null);
     } catch (err) {
@@ -77,9 +94,20 @@ const Results360 = () => {
 
   // Handle PDF export
   const handleExport = async () => {
-    // This would be implemented with a real export mechanism
-    // For now, just show a message
-    alert('Export functionality will be implemented in a future update.');
+    try {
+      setLoading(true);
+      const response = await resultsApi.exportCampaignResults(campaignId);
+      
+      // In a real implementation, handle the PDF download here
+      // For now, just show a notification
+      alert('Export functionality will be implemented in a future update.');
+      
+      setLoading(false);
+    } catch (err) {
+      console.error('Error exporting results:', err);
+      setError('Failed to export results. Please try again.');
+      setLoading(false);
+    }
   };
 
   // Format date
@@ -105,7 +133,7 @@ const Results360 = () => {
         <div className="mb-6">
           <h1 className="text-2xl font-bold">Results 360</h1>
           <p className="text-sm text-gray-500">
-            View feedback results for completed campaigns
+            View feedback results for completed and in-progress campaigns
           </p>
         </div>
 
@@ -124,9 +152,9 @@ const Results360 = () => {
         {campaigns.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <BarChart2 size={48} className="mx-auto text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Completed Campaigns</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Campaigns With Results</h3>
             <p className="text-gray-500 mb-4">
-              Complete a campaign first to view results. You'll be able to analyze feedback once campaigns are finished.
+              Wait for assessors to complete their feedback or complete a campaign to view results.
             </p>
             <button
               onClick={() => navigate('/monitor-360')}
@@ -148,10 +176,10 @@ const Results360 = () => {
                       Target Employee
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Completion Date
+                      Status
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Responses
+                      Completion
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -159,44 +187,77 @@ const Results360 = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {campaigns.map((campaign) => (
-                    <tr key={campaign.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
-                        <div className="text-sm text-gray-500">
-                          {campaign.template ? campaign.template.name : 'No template'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {campaign.targetEmployee ? (
-                          <div className="text-sm text-gray-900">
-                            {campaign.targetEmployee.firstName} {campaign.targetEmployee.lastName}
+                  {campaigns.map((campaign) => {
+                    // Calculate actual completion rate if not provided
+                    const completionRate = campaign.completionRate || (
+                      campaign.participants && campaign.participants.length > 0 
+                        ? Math.round((campaign.participants.filter(p => p.status === 'completed').length / 
+                                    campaign.participants.length) * 100)
+                        : 0
+                    );
+                    
+                    return (
+                      <tr key={campaign.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
+                          <div className="text-sm text-gray-500">
+                            {campaign.template ? campaign.template.name : 'No template'}
                           </div>
-                        ) : (
-                          <span className="text-sm text-gray-500">Not assigned</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {formatDate(campaign.updatedAt)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {campaign.completionRate}%
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => navigate(`/results-360/campaign/${campaign.id}`)}
-                          className="text-blue-600 hover:text-blue-900 flex items-center"
-                        >
-                          <BarChart2 className="h-4 w-4 mr-1" />
-                          View Results
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {campaign.targetEmployee ? (
+                            <div className="text-sm text-gray-900">
+                              {campaign.targetEmployee.firstName} {campaign.targetEmployee.lastName}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-500">Not assigned</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            campaign.status === 'completed' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            <span className="mr-1">
+                              {campaign.status === 'completed' 
+                                ? <CheckCircle2 className="h-3 w-3" /> 
+                                : <Clock className="h-3 w-3" />}
+                            </span>
+                            {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <span className="text-sm font-medium text-gray-900 mr-2">
+                              {completionRate}%
+                            </span>
+                            <div className="w-24 bg-gray-200 rounded-full h-2.5">
+                              <div
+                                className={`h-2.5 rounded-full ${
+                                  completionRate >= 80
+                                    ? 'bg-green-600'
+                                    : completionRate >= 50
+                                    ? 'bg-blue-600'
+                                    : 'bg-yellow-500'
+                                }`}
+                                style={{ width: `${completionRate}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <button
+                            onClick={() => navigate(`/results-360/campaign/${campaign.id}`)}
+                            className="text-blue-600 hover:text-blue-900 flex items-center"
+                          >
+                            <BarChart2 className="h-4 w-4 mr-1" />
+                            View Results
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -234,6 +295,33 @@ const Results360 = () => {
   }
 
   if (!results) return null;
+
+  // Define relationship type colors for consistent styling
+  const relationshipColors = {
+    'self': 'bg-purple-100 text-purple-800',
+    'manager': 'bg-blue-100 text-blue-800',
+    'peer': 'bg-green-100 text-green-800',
+    'direct_report': 'bg-amber-100 text-amber-800',
+    'external': 'bg-gray-100 text-gray-800'
+  };
+
+  // Format relationship type for display
+  const formatRelationshipType = (type) => {
+    const formats = {
+      'self': 'Self',
+      'manager': 'Manager',
+      'peer': 'Peer',
+      'direct_report': 'Direct Report',
+      'external': 'External'
+    };
+    return formats[type] || type;
+  };
+
+  // Check if there are enough responses to show anonymized data
+  const hasEnoughResponses = (type) => {
+    const count = results.participantCounts[type === 'directReport' ? 'directReport' : type];
+    return count >= 3;
+  };
 
   return (
     <div>
@@ -369,7 +457,12 @@ const Results360 = () => {
           className="p-5 border-b border-gray-200 flex justify-between items-center cursor-pointer"
           onClick={() => toggleSection('self')}
         >
-          <h2 className="text-lg font-medium">Self Assessment</h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-medium mr-2">Self Assessment</h2>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.self}`}>
+              {formatRelationshipType('self')}
+            </span>
+          </div>
           <div>
             {expandedSections.self ? (
               <ChevronUp className="h-5 w-5 text-gray-500" />
@@ -425,7 +518,12 @@ const Results360 = () => {
           className="p-5 border-b border-gray-200 flex justify-between items-center cursor-pointer"
           onClick={() => toggleSection('manager')}
         >
-          <h2 className="text-lg font-medium">Manager Feedback</h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-medium mr-2">Manager Feedback</h2>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.manager}`}>
+              {formatRelationshipType('manager')}
+            </span>
+          </div>
           <div>
             {expandedSections.manager ? (
               <ChevronUp className="h-5 w-5 text-gray-500" />
@@ -481,7 +579,12 @@ const Results360 = () => {
           className="p-5 border-b border-gray-200 flex justify-between items-center cursor-pointer"
           onClick={() => toggleSection('peer')}
         >
-          <h2 className="text-lg font-medium">Peer Feedback</h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-medium mr-2">Peer Feedback</h2>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.peer}`}>
+              {formatRelationshipType('peer')} ({results.participantCounts.peer})
+            </span>
+          </div>
           <div>
             {expandedSections.peer ? (
               <ChevronUp className="h-5 w-5 text-gray-500" />
@@ -493,8 +596,8 @@ const Results360 = () => {
         
         {expandedSections.peer && (
           <div className="p-5">
-            {results.aggregatedResponses.peer && 
-             Object.keys(results.aggregatedResponses.peer.byQuestion).length > 0 ? (
+            {/* Check if there are at least 3 responses for anonymity */}
+            {hasEnoughResponses('peer') ? (
               <div>
                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-md mb-4">
                   <p className="text-sm text-blue-700">
@@ -502,69 +605,89 @@ const Results360 = () => {
                   </p>
                 </div>
                 
-                <div className="space-y-8">
-                  {Object.entries(results.aggregatedResponses.peer.byQuestion).map(([questionId, data]) => (
-                    <div key={questionId} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
-                      <p className="font-medium">{data.questionText}</p>
-                      
-                      {data.questionType === 'rating' ? (
-                        <div className="mt-3">
-                          <div className="flex items-center mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-md">
-                              <div 
-                                className="bg-blue-600 h-2.5 rounded-full" 
-                                style={{ width: `${(data.average / 5) * 100}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium">{data.average.toFixed(1)}</span>
-                          </div>
-                          <p className="mt-1 text-xs text-gray-500">Based on {data.count} responses</p>
-                          
-                          {/* Rating distribution */}
+                {results.aggregatedResponses.peer && 
+                Object.keys(results.aggregatedResponses.peer.byQuestion).length > 0 ? (
+                  <div className="space-y-8">
+                    {Object.entries(results.aggregatedResponses.peer.byQuestion).map(([questionId, data]) => (
+                      <div key={questionId} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
+                        <p className="font-medium">{data.questionText}</p>
+                        
+                        {data.questionType === 'rating' ? (
                           <div className="mt-3">
-                            <p className="text-xs font-medium text-gray-500 mb-1">Rating Distribution:</p>
-                            <div className="grid grid-cols-5 gap-1">
-                              {[1, 2, 3, 4, 5].map(value => (
-                                <div key={value} className="text-center">
-                                  <div className="text-xs">{value}</div>
-                                  <div className="h-16 bg-gray-100 rounded-md relative">
-                                    <div 
-                                      className="absolute bottom-0 w-full bg-blue-500 rounded-b-md"
-                                      style={{ 
-                                        height: `${data.distribution[value] ? (data.distribution[value] / data.count) * 100 : 0}%` 
-                                      }}
-                                    ></div>
+                            <div className="flex items-center mt-2">
+                              <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-md">
+                                <div 
+                                  className="bg-green-600 h-2.5 rounded-full" 
+                                  style={{ width: `${(data.average / 5) * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-sm font-medium">{data.average.toFixed(1)}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">Based on {data.count} responses</p>
+                            
+                            {/* Rating distribution */}
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-gray-500 mb-1">Rating Distribution:</p>
+                              <div className="grid grid-cols-5 gap-1">
+                                {[1, 2, 3, 4, 5].map(value => (
+                                  <div key={value} className="text-center">
+                                    <div className="text-xs">{value}</div>
+                                    <div className="h-16 bg-gray-100 rounded-md relative">
+                                      <div 
+                                        className="absolute bottom-0 w-full bg-green-500 rounded-b-md"
+                                        style={{ 
+                                          height: `${data.distribution[value] ? (data.distribution[value] / data.count) * 100 : 0}%` 
+                                        }}
+                                      ></div>
+                                    </div>
+                                    <div className="text-xs mt-1">
+                                      {data.distribution[value] || 0}
+                                    </div>
                                   </div>
-                                  <div className="text-xs mt-1">
-                                    {data.distribution[value] || 0}
-                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3">
+                            <p className="text-sm text-gray-500 mb-2">
+                              {data.count} {data.count === 1 ? 'response' : 'responses'}
+                            </p>
+                            <div className="space-y-2">
+                              {data.responses.map((text, index) => (
+                                <div key={index} className="bg-gray-50 p-3 rounded-md">
+                                  <p className="text-gray-700">{text}</p>
                                 </div>
                               ))}
                             </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="mt-3">
-                          <p className="text-sm text-gray-500 mb-2">
-                            {data.count} {data.count === 1 ? 'response' : 'responses'}
-                          </p>
-                          <div className="space-y-2">
-                            {data.responses.map((text, index) => (
-                              <div key={index} className="bg-gray-50 p-3 rounded-md">
-                                <p className="text-gray-700">{text}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No peer feedback responses available</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
-                <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No peer feedback available</p>
+                <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-md inline-block">
+                  <AlertTriangle className="h-10 w-10 text-yellow-500 mx-auto mb-3" />
+                  <p className="text-gray-700">
+                    {results.participantCounts.peer > 0 ? (
+                      <>
+                        <span className="font-medium">Privacy protection active:</span> Peer feedback will be displayed when at least 3 peers have provided feedback.
+                        <br />
+                        <span className="text-sm text-gray-500">Currently {results.participantCounts.peer} {results.participantCounts.peer === 1 ? 'peer has' : 'peers have'} responded.</span>
+                      </>
+                    ) : (
+                      <span>No peer feedback available</span>
+                    )}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -577,7 +700,12 @@ const Results360 = () => {
           className="p-5 border-b border-gray-200 flex justify-between items-center cursor-pointer"
           onClick={() => toggleSection('directReport')}
         >
-          <h2 className="text-lg font-medium">Direct Report Feedback</h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-medium mr-2">Direct Report Feedback</h2>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.direct_report}`}>
+              {formatRelationshipType('direct_report')} ({results.participantCounts.directReport})
+            </span>
+          </div>
           <div>
             {expandedSections.directReport ? (
               <ChevronUp className="h-5 w-5 text-gray-500" />
@@ -589,8 +717,8 @@ const Results360 = () => {
         
         {expandedSections.directReport && (
           <div className="p-5">
-            {results.aggregatedResponses.directReport && 
-             Object.keys(results.aggregatedResponses.directReport.byQuestion).length > 0 ? (
+            {/* Check if there are at least 3 responses for anonymity */}
+            {hasEnoughResponses('directReport') ? (
               <div>
                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-md mb-4">
                   <p className="text-sm text-blue-700">
@@ -598,47 +726,89 @@ const Results360 = () => {
                   </p>
                 </div>
                 
-                <div className="space-y-8">
-                  {/* Similar display logic as peer feedback */}
-                  {Object.entries(results.aggregatedResponses.directReport.byQuestion).map(([questionId, data]) => (
-                    <div key={questionId} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
-                      <p className="font-medium">{data.questionText}</p>
-                      
-                      {data.questionType === 'rating' ? (
-                        <div className="mt-3">
-                          <div className="flex items-center mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-md">
-                              <div 
-                                className="bg-blue-600 h-2.5 rounded-full" 
-                                style={{ width: `${(data.average / 5) * 100}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium">{data.average.toFixed(1)}</span>
-                          </div>
-                          <p className="mt-1 text-xs text-gray-500">Based on {data.count} responses</p>
-                        </div>
-                      ) : (
-                        <div className="mt-3">
-                          <p className="text-sm text-gray-500 mb-2">
-                            {data.count} {data.count === 1 ? 'response' : 'responses'}
-                          </p>
-                          <div className="space-y-2">
-                            {data.responses.map((text, index) => (
-                              <div key={index} className="bg-gray-50 p-3 rounded-md">
-                                <p className="text-gray-700">{text}</p>
+                {results.aggregatedResponses.directReport && 
+                Object.keys(results.aggregatedResponses.directReport.byQuestion).length > 0 ? (
+                  <div className="space-y-8">
+                    {Object.entries(results.aggregatedResponses.directReport.byQuestion).map(([questionId, data]) => (
+                      <div key={questionId} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
+                        <p className="font-medium">{data.questionText}</p>
+                        
+                        {data.questionType === 'rating' ? (
+                          <div className="mt-3">
+                            <div className="flex items-center mt-2">
+                              <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-md">
+                                <div 
+                                  className="bg-amber-600 h-2.5 rounded-full" 
+                                  style={{ width: `${(data.average / 5) * 100}%` }}
+                                ></div>
                               </div>
-                            ))}
+                              <span className="text-sm font-medium">{data.average.toFixed(1)}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">Based on {data.count} responses</p>
+                            
+                            {/* Rating distribution */}
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-gray-500 mb-1">Rating Distribution:</p>
+                              <div className="grid grid-cols-5 gap-1">
+                                {[1, 2, 3, 4, 5].map(value => (
+                                  <div key={value} className="text-center">
+                                    <div className="text-xs">{value}</div>
+                                    <div className="h-16 bg-gray-100 rounded-md relative">
+                                      <div 
+                                        className="absolute bottom-0 w-full bg-amber-500 rounded-b-md"
+                                        style={{ 
+                                          height: `${data.distribution[value] ? (data.distribution[value] / data.count) * 100 : 0}%` 
+                                        }}
+                                      ></div>
+                                    </div>
+                                    <div className="text-xs mt-1">
+                                      {data.distribution[value] || 0}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        ) : (
+                          <div className="mt-3">
+                            <p className="text-sm text-gray-500 mb-2">
+                              {data.count} {data.count === 1 ? 'response' : 'responses'}
+                            </p>
+                            <div className="space-y-2">
+                              {data.responses.map((text, index) => (
+                                <div key={index} className="bg-gray-50 p-3 rounded-md">
+                                  <p className="text-gray-700">{text}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No direct report feedback responses available</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
-                <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No direct report feedback available</p>
+                <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-md inline-block">
+                  <AlertTriangle className="h-10 w-10 text-yellow-500 mx-auto mb-3" />
+                  <p className="text-gray-700">
+                    {results.participantCounts.directReport > 0 ? (
+                      <>
+                        <span className="font-medium">Privacy protection active:</span> Direct report feedback will be displayed when at least 3 direct reports have provided feedback.
+                        <br />
+                        <span className="text-sm text-gray-500">Currently {results.participantCounts.directReport} {results.participantCounts.directReport === 1 ? 'direct report has' : 'direct reports have'} responded.</span>
+                      </>
+                    ) : (
+                      <span>No direct report feedback available</span>
+                    )}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -651,7 +821,12 @@ const Results360 = () => {
           className="p-5 border-b border-gray-200 flex justify-between items-center cursor-pointer"
           onClick={() => toggleSection('external')}
         >
-          <h2 className="text-lg font-medium">External Feedback</h2>
+          <div className="flex items-center">
+            <h2 className="text-lg font-medium mr-2">External Feedback</h2>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.external}`}>
+              {formatRelationshipType('external')} ({results.participantCounts.external})
+            </span>
+          </div>
           <div>
             {expandedSections.external ? (
               <ChevronUp className="h-5 w-5 text-gray-500" />
@@ -663,8 +838,8 @@ const Results360 = () => {
         
         {expandedSections.external && (
           <div className="p-5">
-            {results.aggregatedResponses.external && 
-             Object.keys(results.aggregatedResponses.external.byQuestion).length > 0 ? (
+            {/* Check if there are at least 3 responses for anonymity */}
+            {hasEnoughResponses('external') ? (
               <div>
                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-md mb-4">
                   <p className="text-sm text-blue-700">
@@ -672,47 +847,89 @@ const Results360 = () => {
                   </p>
                 </div>
                 
-                {/* Similar display logic as peer feedback */}
-                <div className="space-y-8">
-                  {Object.entries(results.aggregatedResponses.external.byQuestion).map(([questionId, data]) => (
-                    <div key={questionId} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
-                      <p className="font-medium">{data.questionText}</p>
-                      
-                      {data.questionType === 'rating' ? (
-                        <div className="mt-3">
-                          <div className="flex items-center mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-md">
-                              <div 
-                                className="bg-blue-600 h-2.5 rounded-full" 
-                                style={{ width: `${(data.average / 5) * 100}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium">{data.average.toFixed(1)}</span>
-                          </div>
-                          <p className="mt-1 text-xs text-gray-500">Based on {data.count} responses</p>
-                        </div>
-                      ) : (
-                        <div className="mt-3">
-                          <p className="text-sm text-gray-500 mb-2">
-                            {data.count} {data.count === 1 ? 'response' : 'responses'}
-                          </p>
-                          <div className="space-y-2">
-                            {data.responses.map((text, index) => (
-                              <div key={index} className="bg-gray-50 p-3 rounded-md">
-                                <p className="text-gray-700">{text}</p>
+                {results.aggregatedResponses.external && 
+                Object.keys(results.aggregatedResponses.external.byQuestion).length > 0 ? (
+                  <div className="space-y-8">
+                    {Object.entries(results.aggregatedResponses.external.byQuestion).map(([questionId, data]) => (
+                      <div key={questionId} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
+                        <p className="font-medium">{data.questionText}</p>
+                        
+                        {data.questionType === 'rating' ? (
+                          <div className="mt-3">
+                            <div className="flex items-center mt-2">
+                              <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-md">
+                                <div 
+                                  className="bg-gray-600 h-2.5 rounded-full" 
+                                  style={{ width: `${(data.average / 5) * 100}%` }}
+                                ></div>
                               </div>
-                            ))}
+                              <span className="text-sm font-medium">{data.average.toFixed(1)}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">Based on {data.count} responses</p>
+                            
+                            {/* Rating distribution */}
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-gray-500 mb-1">Rating Distribution:</p>
+                              <div className="grid grid-cols-5 gap-1">
+                                {[1, 2, 3, 4, 5].map(value => (
+                                  <div key={value} className="text-center">
+                                    <div className="text-xs">{value}</div>
+                                    <div className="h-16 bg-gray-100 rounded-md relative">
+                                      <div 
+                                        className="absolute bottom-0 w-full bg-gray-500 rounded-b-md"
+                                        style={{ 
+                                          height: `${data.distribution[value] ? (data.distribution[value] / data.count) * 100 : 0}%` 
+                                        }}
+                                      ></div>
+                                    </div>
+                                    <div className="text-xs mt-1">
+                                      {data.distribution[value] || 0}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        ) : (
+                          <div className="mt-3">
+                            <p className="text-sm text-gray-500 mb-2">
+                              {data.count} {data.count === 1 ? 'response' : 'responses'}
+                            </p>
+                            <div className="space-y-2">
+                              {data.responses.map((text, index) => (
+                                <div key={index} className="bg-gray-50 p-3 rounded-md">
+                                  <p className="text-gray-700">{text}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Briefcase className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No external feedback responses available</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
-                <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No external feedback available</p>
+                <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-md inline-block">
+                  <AlertTriangle className="h-10 w-10 text-yellow-500 mx-auto mb-3" />
+                  <p className="text-gray-700">
+                    {results.participantCounts.external > 0 ? (
+                      <>
+                        <span className="font-medium">Privacy protection active:</span> External feedback will be displayed when at least 3 external assessors have provided feedback.
+                        <br />
+                        <span className="text-sm text-gray-500">Currently {results.participantCounts.external} {results.participantCounts.external === 1 ? 'external assessor has' : 'external assessors have'} responded.</span>
+                      </>
+                    ) : (
+                      <span>No external feedback available</span>
+                    )}
+                  </p>
+                </div>
               </div>
             )}
           </div>
