@@ -97,8 +97,13 @@ const campaignsApi = {
   suggestAssessors: (data) => api.post('/campaigns/suggest-assessors', data)
 };
 
+const resultsApi = {
+  getCampaignResults: (campaignId) => api.get(`/results/campaign/${campaignId}`),
+  exportCampaignResults: (campaignId) => api.get(`/results/campaign/${campaignId}/export`)
+};
+
 // Export all API services
-export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesApi };
+export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesApi, resultsApi };
 
 // Default export for backward compatibility
 export default api;

@@ -38,6 +38,7 @@ app.use('/api/campaigns', require('./routes/campaigns.routes'));
 app.use('/api/feedback', require('./routes/feedback.routes'));
 app.use('/api/communication-templates', communicationTemplatesRoutes);
 app.use('/api/communication-logs', require('./routes/communication-log.routes'));
+app.use('/api/results', require('./routes/results.routes'));
 const brandingSettingsRoutes = require('./routes/branding-settings.routes');
 
 const testRoutes = require('./routes/test.routes');

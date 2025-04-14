@@ -18,6 +18,7 @@ import Integration from './pages/Integration';
 import { MainLayout } from './components/layout/MainLayout';
 import WorkInProgress from './components/WorkInProgress';
 import FeedbackAssessmentPage from './pages/FeedbackAssessmentPage';
+import Results360 from './pages/Results360';
 
 // External routes that don't use MainLayout
 const ExternalFeedbackRoute = ({ children }) => {
@@ -104,6 +105,7 @@ function App() {
         <Route path="/feedback/:token" element={<FeedbackAssessmentPage />} />
         <Route path="/feedback/assessment" element={<FeedbackAssessmentPage />} />
         <Route path="/feedback/assessment/:token" element={<FeedbackAssessmentPage />} />
+        <Route path="/results-360/campaign/:campaignId" element={<Results360 />} />
         
         {/* System */}
         <Route path="/integration" element={<Integration />} />

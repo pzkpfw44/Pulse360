@@ -407,15 +407,24 @@ const CampaignMonitoringDashboard = () => {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex items-center justify-end space-x-3">
                         <button
                           onClick={() => viewCampaign(campaign.id)}
                           className="text-blue-600 hover:text-blue-900 flex items-center"
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           View
-                          <ArrowRight className="h-4 w-4 ml-1" />
                         </button>
+                        
+                        {campaign.status === 'completed' && (
+                          <button
+                            onClick={() => navigate(`/results-360/campaign/${campaign.id}`)}
+                            className="text-green-600 hover:text-green-900 flex items-center"
+                          >
+                            <BarChart2 className="h-4 w-4 mr-1" />
+                            Results
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
