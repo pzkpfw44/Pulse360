@@ -1,7 +1,6 @@
 // backend/controllers/results.controller.js
 
-const { Response, Campaign, CampaignParticipant, Employee, Question, Template } = require('../models');
-const { Op } = require('sequelize');
+const { Response, Campaign, CampaignParticipant, Employee, Question, Template, sequelize } = require('../models');
 
 /**
  * Controller for handling 360 feedback results operations
@@ -55,6 +54,15 @@ class ResultsController {
         ]
       });
       
+      // Track participants by relationship type
+      const participantsByType = {
+        self: participants.filter(p => p.relationshipType === 'self'),
+        manager: participants.filter(p => p.relationshipType === 'manager'),
+        peer: participants.filter(p => p.relationshipType === 'peer'),
+        direct_report: participants.filter(p => p.relationshipType === 'direct_report'),
+        external: participants.filter(p => p.relationshipType === 'external')
+      };
+      
       // Get all responses for the campaign
       const responses = await Response.findAll({
         where: { campaignId },
@@ -63,14 +71,7 @@ class ResultsController {
         ]
       });
       
-      // Map participants to their relationship types for easy reference
-      const participantMap = participants.reduce((acc, participant) => {
-        acc[participant.id] = {
-          ...participant.toJSON(),
-          relationshipType: participant.relationshipType
-        };
-        return acc;
-      }, {});
+      console.log(`Found ${responses.length} responses for campaign ${campaignId}`);
       
       // Group responses by relationship type
       const responsesByType = {
@@ -81,25 +82,40 @@ class ResultsController {
         external: []
       };
       
+      // Map participants to their relationship types for easy reference
+      const participantMap = {};
+      participants.forEach(participant => {
+        participantMap[participant.id] = participant.relationshipType;
+      });
+      
+      // Count unique participants who have submitted responses
+      const participantsWithResponses = {
+        self: new Set(),
+        manager: new Set(),
+        peer: new Set(),
+        direct_report: new Set(),
+        external: new Set()
+      };
+      
+      // Process responses and group by relationship type
       responses.forEach(response => {
-        const participant = participantMap[response.participantId];
-        if (participant) {
-          const relationshipType = participant.relationshipType;
-          if (responsesByType[relationshipType]) {
-            responsesByType[relationshipType].push(response.toJSON());
-          }
+        const type = participantMap[response.participantId];
+        if (type && responsesByType[type]) {
+          responsesByType[type].push(response.toJSON());
+          participantsWithResponses[type].add(response.participantId);
         }
       });
       
-      // For peer, direct_report and external responses, anonymize except for the count
-      const peerCount = responsesByType.peer.length > 0 ? 
-        [...new Set(responsesByType.peer.map(r => r.participantId))].length : 0;
+      // Calculate counts
+      const typeCounts = {
+        self: participantsWithResponses.self.size,
+        manager: participantsWithResponses.manager.size,
+        peer: participantsWithResponses.peer.size,
+        directReport: participantsWithResponses.direct_report.size,
+        external: participantsWithResponses.external.size
+      };
       
-      const directReportCount = responsesByType.direct_report.length > 0 ? 
-        [...new Set(responsesByType.direct_report.map(r => r.participantId))].length : 0;
-      
-      const externalCount = responsesByType.external.length > 0 ? 
-        [...new Set(responsesByType.external.map(r => r.participantId))].length : 0;
+      console.log("Response counts by type:", typeCounts);
       
       // Calculate rating averages by question and relationship type
       const ratingAverages = calculateRatingAverages(responsesByType, campaign.template.questions);
@@ -127,12 +143,11 @@ class ResultsController {
         participantCounts: {
           total: participants.length,
           completed: participants.filter(p => p.status === 'completed').length,
-          self: responsesByType.self.length > 0 ? 1 : 0,
-          manager: responsesByType.manager.length > 0 ? 
-            [...new Set(responsesByType.manager.map(r => r.participantId))].length : 0,
-          peer: peerCount,
-          directReport: directReportCount,
-          external: externalCount
+          self: typeCounts.self,
+          manager: typeCounts.manager,
+          peer: typeCounts.peer,
+          directReport: typeCounts.directReport,
+          external: typeCounts.external
         },
         // Include individual responses for self and manager
         individualResponses: {
