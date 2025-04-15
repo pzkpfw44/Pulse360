@@ -1,6 +1,7 @@
 // backend/controllers/results.controller.js
 
 const { Response, Campaign, CampaignParticipant, Employee, Question, Template, sequelize } = require('../models');
+const { Op } = require('sequelize');
 
 /**
  * Controller for handling 360 feedback results operations
@@ -20,6 +21,32 @@ class ResultsController {
           message: 'Campaign ID is required' 
         });
       }
+
+      try {
+        const checkResults = await sequelize.query(
+          'DESCRIBE responses;',
+          { type: sequelize.QueryTypes.RAW }
+        );
+        console.log('Responses table structure:', JSON.stringify(checkResults));
+        
+        const responseCount = await sequelize.query(
+          'SELECT COUNT(*) as count FROM responses;',
+          { type: sequelize.QueryTypes.SELECT }
+        );
+        console.log('Total responses in database:', responseCount);
+        
+        if (responseCount[0].count > 0) {
+          const sampleResponses = await sequelize.query(
+            'SELECT * FROM responses LIMIT 5;',
+            { type: sequelize.QueryTypes.SELECT }
+          );
+          console.log('Sample responses:', JSON.stringify(sampleResponses));
+        }
+      } catch (diagError) {
+        console.error('Diagnostic check failed:', diagError);
+      }
+      
+      console.log(`Fetching results for campaign: ${campaignId}`);
       
       // First, verify the campaign exists and user has access
       const campaign = await Campaign.findOne({
@@ -54,24 +81,50 @@ class ResultsController {
         ]
       });
       
-      // Track participants by relationship type
-      const participantsByType = {
-        self: participants.filter(p => p.relationshipType === 'self'),
-        manager: participants.filter(p => p.relationshipType === 'manager'),
-        peer: participants.filter(p => p.relationshipType === 'peer'),
-        direct_report: participants.filter(p => p.relationshipType === 'direct_report'),
-        external: participants.filter(p => p.relationshipType === 'external')
-      };
+      console.log(`Found ${participants.length} participants for campaign`);
       
-      // Get all responses for the campaign
-      const responses = await Response.findAll({
-        where: { campaignId },
-        include: [
-          { model: Question, attributes: ['id', 'text', 'type', 'category', 'perspective', 'order'] }
-        ]
+      // Direct database query to get all responses with their relationship types
+      const [responseData] = await sequelize.query(
+        `SELECT r.*, cp.relationshipType 
+         FROM responses r
+         JOIN campaign_participants cp ON r.participantId = cp.id
+         WHERE r.campaignId = ?`,
+        {
+          replacements: [campaignId],
+          type: sequelize.QueryTypes.SELECT
+        }
+      );
+      
+      console.log(`Found ${responseData ? responseData.length : 0} responses with direct query`);
+      
+      // If no responses found with direct query, try the model approach
+      let responses = [];
+      if (!responseData || responseData.length === 0) {
+        responses = await Response.findAll({
+          where: { campaignId },
+          include: [
+            { model: Question, attributes: ['id', 'text', 'type', 'category', 'perspective', 'order'] }
+          ]
+        });
+        
+        console.log(`Found ${responses.length} responses with model approach`);
+      }
+      
+      // Group participants by type
+      const participantsByType = {};
+      participants.forEach(participant => {
+        const type = participant.relationshipType;
+        if (!participantsByType[type]) {
+          participantsByType[type] = [];
+        }
+        participantsByType[type].push(participant);
       });
       
-      console.log(`Found ${responses.length} responses for campaign ${campaignId}`);
+      // Map participants to their relationship types for easy lookup
+      const participantMap = {};
+      participants.forEach(p => {
+        participantMap[p.id] = p.relationshipType;
+      });
       
       // Group responses by relationship type
       const responsesByType = {
@@ -82,14 +135,40 @@ class ResultsController {
         external: []
       };
       
-      // Map participants to their relationship types for easy reference
-      const participantMap = {};
-      participants.forEach(participant => {
-        participantMap[participant.id] = participant.relationshipType;
+      // Use either the direct query results or model results
+      const responsesToProcess = responseData && responseData.length > 0 
+        ? responseData 
+        : responses.map(r => {
+            const json = r.toJSON();
+            json.relationshipType = participantMap[r.participantId] || 'unknown';
+            return json;
+          });
+      
+      // Process and group responses
+      responsesToProcess.forEach(response => {
+        const type = response.relationshipType;
+        if (responsesByType[type]) {
+          // Find the question data for this response
+          const question = campaign.template.questions.find(q => q.id === response.questionId);
+          if (question) {
+            // Attach question data if needed
+            if (!response.Question) {
+              response.Question = {
+                id: question.id,
+                text: question.text,
+                type: question.type,
+                category: question.category,
+                perspective: question.perspective,
+                order: question.order
+              };
+            }
+            responsesByType[type].push(response);
+          }
+        }
       });
       
-      // Count unique participants who have submitted responses
-      const participantsWithResponses = {
+      // Count unique participants with responses by type
+      const responseCountsByType = {
         self: new Set(),
         manager: new Set(),
         peer: new Set(),
@@ -97,22 +176,20 @@ class ResultsController {
         external: new Set()
       };
       
-      // Process responses and group by relationship type
-      responses.forEach(response => {
-        const type = participantMap[response.participantId];
-        if (type && responsesByType[type]) {
-          responsesByType[type].push(response.toJSON());
-          participantsWithResponses[type].add(response.participantId);
+      responsesToProcess.forEach(response => {
+        const type = response.relationshipType;
+        if (responseCountsByType[type]) {
+          responseCountsByType[type].add(response.participantId);
         }
       });
       
-      // Calculate counts
+      // Convert sets to counts
       const typeCounts = {
-        self: participantsWithResponses.self.size,
-        manager: participantsWithResponses.manager.size,
-        peer: participantsWithResponses.peer.size,
-        directReport: participantsWithResponses.direct_report.size,
-        external: participantsWithResponses.external.size
+        self: responseCountsByType.self.size,
+        manager: responseCountsByType.manager.size,
+        peer: responseCountsByType.peer.size,
+        directReport: responseCountsByType.direct_report.size,
+        external: responseCountsByType.external.size
       };
       
       console.log("Response counts by type:", typeCounts);

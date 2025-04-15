@@ -142,10 +142,10 @@ class FeedbackController {
         campaignId, 
         assessorToken, 
         targetEmployeeId, 
-        responses, 
-        bypassedAiRecommendations,
-        aiEvaluationResults
+        responses 
       } = req.body;
+      
+      console.log(`[SUBMIT] Processing feedback for campaign ${campaignId} with token ${assessorToken}`);
       
       // Validation
       if (!campaignId || !assessorToken || !targetEmployeeId || !responses) {
@@ -154,115 +154,104 @@ class FeedbackController {
         });
       }
       
-      // Ensure responses is an array
-      if (!Array.isArray(responses)) {
-        return res.status(400).json({
-          message: 'Responses must be provided as an array'
-        });
-      }
-
-      // First find the participant by token
+      // Get the participant
       const participant = await CampaignParticipant.findOne({
-        where: { invitationToken: assessorToken, campaignId: campaignId }
+        where: { invitationToken: assessorToken },
+        include: [{ model: Campaign, as: 'campaign' }]
       });
-
+  
       if (!participant) {
+        console.log(`[SUBMIT] Participant not found for token ${assessorToken}`);
         return res.status(404).json({ 
           message: 'Participant not found with the provided token',
           error: 'invalid_token'
         });
       }
       
-      // Store responses - use raw SQL to avoid foreign key issues
-      const savedResponses = [];
+      console.log(`[SUBMIT] Found participant ${participant.id} with relationship ${participant.relationshipType}`);
+      console.log(`[SUBMIT] Campaign from participant: ${participant.campaign ? participant.campaign.id : 'null'}`);
+      
+      // Delete existing responses to prevent duplicates
+      await sequelize.query(
+        'DELETE FROM responses WHERE participantId = ?',
+        { 
+          replacements: [participant.id],
+          type: sequelize.QueryTypes.DELETE 
+        }
+      );
+      
+      console.log(`[SUBMIT] Cleared previous responses for participant ${participant.id}`);
+      
+      // Save new responses
+      let saveCount = 0;
       
       for (const response of responses) {
-        // Skip invalid responses
         if (!response.questionId) continue;
         
         try {
-          // Use raw query to avoid foreign key constraint issues
-          const id = uuidv4();
-          const now = new Date().toISOString();
-          
+          // Insert response directly with SQL to ensure proper values
           await sequelize.query(
-            `INSERT INTO responses (id, participantId, questionId, ratingValue, textResponse, targetEmployeeId, campaignId, createdAt, updatedAt) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO responses 
+             (id, participantId, questionId, ratingValue, textResponse, targetEmployeeId, campaignId, createdAt, updatedAt) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             {
               replacements: [
-                id,
+                uuidv4(),
                 participant.id,
                 response.questionId,
                 response.rating || null,
                 response.text || '',
                 targetEmployeeId,
-                campaignId,
-                now,
-                now
+                campaignId  // Explicitly use the campaignId from req.body
               ],
               type: sequelize.QueryTypes.INSERT
             }
           );
           
-          savedResponses.push({
-            id,
-            participantId: participant.id,
-            questionId: response.questionId
-          });
+          saveCount++;
         } catch (err) {
-          console.error('Error saving response:', err);
-          // Continue with other responses
+          console.error(`[SUBMIT] Error saving response for question ${response.questionId}:`, err);
         }
       }
       
-      // Try to update participant status if using the actual model
+      console.log(`[SUBMIT] Saved ${saveCount} responses for campaign ${campaignId}`);
+      
+      // Mark participant as completed
+      await participant.update({ 
+        status: 'completed', 
+        completedAt: new Date() 
+      });
+      
+      console.log(`[SUBMIT] Updated participant status to completed`);
+      
+      // Update campaign completion rate
       try {
-        await CampaignParticipant.update(
-          { status: 'completed', completedAt: new Date() },
-          { where: { id: participant.id } } // Use ID instead of token
+        const allParticipants = await CampaignParticipant.findAll({
+          where: { campaignId }
+        });
+        
+        const completedCount = allParticipants.filter(p => 
+          p.status === 'completed'
+        ).length;
+        
+        const newCompletionRate = Math.round((completedCount / allParticipants.length) * 100);
+        
+        await Campaign.update(
+          { completionRate: newCompletionRate },
+          { where: { id: campaignId } }
         );
-
-        // Update campaign completion rate
-        try {
-          // Get all participants for this campaign
-          const allParticipants = await CampaignParticipant.findAll({
-            where: { campaignId: campaignId }
-          });
-          
-          if (allParticipants && allParticipants.length > 0) {
-            // Count completed participants (including the one we just updated)
-            const completedParticipants = allParticipants.filter(p => 
-              p.status === 'completed' || p.id === participant.id
-            ).length;
-            
-            // Calculate new completion rate
-            const totalParticipants = allParticipants.length;
-            const newCompletionRate = Math.round((completedParticipants / totalParticipants) * 100);
-            
-            // Update the campaign's completion rate
-            await Campaign.update(
-              { completionRate: newCompletionRate },
-              { where: { id: campaignId } }
-            );
-            
-            console.log(`Updated campaign ${campaignId} completion rate to ${newCompletionRate}%`);
-          }
-        } catch (updateError) {
-          console.error('Error updating campaign completion rate:', updateError);
-          // Don't fail the request if updating completion rate fails
-        }
-      } catch (err) {
-        // Just log the error, don't fail the request if this part fails
-        console.log('Could not update participant status:', err.message);
+        
+        console.log(`[SUBMIT] Updated campaign ${campaignId} completion rate to ${newCompletionRate}%`);
+      } catch (rateError) {
+        console.error('[SUBMIT] Error updating completion rate:', rateError);
       }
       
       return res.status(200).json({
         message: 'Feedback submitted successfully',
-        responseCount: savedResponses.length
+        responseCount: saveCount
       });
     } catch (error) {
-      console.error('Error submitting feedback:', error);
-      
+      console.error('[SUBMIT] Error submitting feedback:', error);
       return res.status(500).json({
         message: 'An error occurred while submitting feedback',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -443,6 +432,8 @@ class FeedbackController {
     try {
       const { assessorToken, responses } = req.body;
       
+      console.log(`[DRAFT] Saving draft for token ${assessorToken}`);
+      
       if (!assessorToken || !responses || !Array.isArray(responses)) {
         return res.status(400).json({ 
           message: 'Token and responses are required' 
@@ -456,113 +447,89 @@ class FeedbackController {
       });
       
       if (!participant) {
+        console.log(`[DRAFT] Participant not found for token ${assessorToken}`);
         return res.status(404).json({ 
           message: 'Assessment not found',
           error: 'invalid_token'
         });
       }
       
-      // Check if the campaign is still active
-      if (participant.campaign.status !== 'active') {
-        return res.status(400).json({ 
-          message: 'This campaign is no longer active',
-          error: 'campaign_inactive'
-        });
-      }
+      const campaignId = participant.campaign.id;
+      console.log(`[DRAFT] Found participant ${participant.id} for campaign ${campaignId}`);
       
-      // Check if the participant has already completed the assessment
-      if (participant.status === 'completed') {
-        return res.status(400).json({ 
-          message: 'You have already completed this assessment',
-          error: 'already_completed'
-        });
-      }
-      
-      // Update or create responses using raw SQL to avoid foreign key issues
-      const savedResponses = [];
+      // Update or create responses using raw SQL
+      let savedCount = 0;
       
       for (const response of responses) {
         if (!response.questionId) continue;
         
         try {
-          // Check if response already exists
-          const existingResponses = await sequelize.query(
-            `SELECT id FROM responses WHERE participantId = ? AND questionId = ?`,
+          // Check if response exists
+          const existing = await sequelize.query(
+            'SELECT id FROM responses WHERE participantId = ? AND questionId = ?',
             {
               replacements: [participant.id, response.questionId],
               type: sequelize.QueryTypes.SELECT
             }
           );
           
-          if (existingResponses.length > 0) {
-            // Update existing response
+          if (existing.length > 0) {
+            // Update existing
             await sequelize.query(
-              `UPDATE responses SET ratingValue = ?, textResponse = ?, updatedAt = ? WHERE id = ?`,
+              `UPDATE responses 
+               SET ratingValue = ?, textResponse = ?, updatedAt = NOW() 
+               WHERE id = ?`,
               {
                 replacements: [
                   response.rating || null,
                   response.text || '',
-                  new Date().toISOString(),
-                  existingResponses[0].id
+                  existing[0].id
                 ],
                 type: sequelize.QueryTypes.UPDATE
               }
             );
-            
-            savedResponses.push({
-              id: existingResponses[0].id,
-              updated: true
-            });
           } else {
-            // Create new response
-            const id = uuidv4();
-            const now = new Date().toISOString();
-            
+            // Create new
             await sequelize.query(
-              `INSERT INTO responses (id, participantId, questionId, ratingValue, textResponse, targetEmployeeId, campaignId, createdAt, updatedAt) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO responses 
+               (id, participantId, questionId, ratingValue, textResponse, campaignId, createdAt, updatedAt) 
+               VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
               {
                 replacements: [
-                  id,
+                  uuidv4(),
                   participant.id,
                   response.questionId,
                   response.rating || null,
                   response.text || '',
-                  participant.campaign.targetEmployeeId,
-                  participant.campaign.id,
-                  now,
-                  now
+                  campaignId
                 ],
                 type: sequelize.QueryTypes.INSERT
               }
             );
-            
-            savedResponses.push({
-              id,
-              updated: false
-            });
           }
+          
+          savedCount++;
         } catch (err) {
-          console.error('Error saving/updating response:', err);
-          // Continue with other responses
+          console.error(`[DRAFT] Error saving/updating response:`, err);
         }
       }
       
-      // Update participant status to 'in_progress' if it was 'pending' or 'invited'
+      // Update participant status if it was pending or invited
       if (['pending', 'invited'].includes(participant.status)) {
         await participant.update({ 
           status: 'in_progress',
           lastAccessedAt: new Date()
         });
+        console.log(`[DRAFT] Updated participant status to in_progress`);
       }
       
       return res.status(200).json({
         message: 'Draft saved successfully',
-        responseCount: savedResponses.length,
+        responseCount: savedCount,
         timestamp: new Date()
       });
     } catch (error) {
-      console.error('Error saving feedback draft:', error);
+      console.error('[DRAFT] Error saving feedback draft:', error);
       
       return res.status(500).json({
         message: 'An error occurred while saving the draft',
