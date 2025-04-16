@@ -589,9 +589,11 @@ function aggregateResponses(responses, questions) {
       } 
       // For open-ended questions, include anonymized text responses
       else if (question.type === 'open_ended' || question.type === 'text') {
-        // Handle different response structures
+        // Handle different response structures - ONLY use real responses, no synthetic ones
         const textResponses = questionResponses
           .map(r => {
+
+            
             // Try both textResponse and traditional object structures
             return r.textResponse !== undefined ? r.textResponse : 
                   (r.text !== undefined ? r.text : null);
