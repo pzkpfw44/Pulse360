@@ -16,6 +16,8 @@ const dangerZoneRoutes = require('./routes/danger-zone.routes'); // Add this lin
 const documentsController = require('./controllers/documents.controller');
 const upload = require('./middleware/upload.middleware');
 const communicationTemplatesRoutes = require('./routes/communication-templates.routes');
+const databaseTestRoutes = require('./routes/database-test.routes');
+const fixDatabaseRoutes = require('./routes/fix-database.routes');
 
 // Initialize express app
 const app = express();
@@ -40,6 +42,8 @@ app.use('/api/communication-templates', communicationTemplatesRoutes);
 app.use('/api/communication-logs', require('./routes/communication-log.routes'));
 app.use('/api/results', require('./routes/results.routes'));
 const brandingSettingsRoutes = require('./routes/branding-settings.routes');
+app.use('/api/db-test', databaseTestRoutes);
+app.use('/api/fix-db', fixDatabaseRoutes);
 
 const testRoutes = require('./routes/test.routes');
 app.use('/api/flux-test', testRoutes);  // Using a different path to avoid conflicts

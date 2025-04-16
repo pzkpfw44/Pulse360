@@ -145,84 +145,138 @@ class FeedbackController {
         responses 
       } = req.body;
       
-      console.log(`[SUBMIT] Processing feedback for campaign ${campaignId} with token ${assessorToken}`);
+      console.log(`[FEEDBACK] Processing for campaign ${campaignId} with token ${assessorToken}`);
       
-      // Validation
       if (!campaignId || !assessorToken || !targetEmployeeId || !responses) {
         return res.status(400).json({ 
           message: 'Missing required fields for feedback submission' 
         });
       }
-      
-      // Get the participant
-      const participant = await CampaignParticipant.findOne({
-        where: { invitationToken: assessorToken },
-        include: [{ model: Campaign, as: 'campaign' }]
-      });
   
+      // Find the participant using the token
+      const participant = await CampaignParticipant.findOne({
+        where: { invitationToken: assessorToken }
+      });
+      
       if (!participant) {
-        console.log(`[SUBMIT] Participant not found for token ${assessorToken}`);
+        console.log(`[FEEDBACK] Participant not found for token ${assessorToken}`);
         return res.status(404).json({ 
           message: 'Participant not found with the provided token',
           error: 'invalid_token'
         });
       }
       
-      console.log(`[SUBMIT] Found participant ${participant.id} with relationship ${participant.relationshipType}`);
-      console.log(`[SUBMIT] Campaign from participant: ${participant.campaign ? participant.campaign.id : 'null'}`);
+      console.log(`[FEEDBACK] Found participant ${participant.id} with relationship type ${participant.relationshipType}`);
       
-      // Delete existing responses to prevent duplicates
-      await sequelize.query(
-        'DELETE FROM responses WHERE participantId = ?',
-        { 
-          replacements: [participant.id],
-          type: sequelize.QueryTypes.DELETE 
+      // Check if the responses table exists
+      try {
+        const tableCheck = await sequelize.query(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='responses';",
+          { type: sequelize.QueryTypes.SELECT }
+        );
+        console.log(`[FEEDBACK] Responses table check: ${JSON.stringify(tableCheck)}`);
+      } catch (err) {
+        console.error('[FEEDBACK] Table check error:', err);
+      }
+      
+      // Manually count existing responses
+      let existingCount = 0;
+      try {
+        const countResult = await sequelize.query(
+          "SELECT COUNT(*) as count FROM responses WHERE participantId = ?",
+          { 
+            replacements: [participant.id],
+            type: sequelize.QueryTypes.SELECT 
+          }
+        );
+        existingCount = countResult[0].count;
+        console.log(`[FEEDBACK] Found ${existingCount} existing responses for this participant`);
+      } catch (err) {
+        console.error('[FEEDBACK] Error counting responses:', err);
+      }
+      
+      // Delete existing responses
+      if (existingCount > 0) {
+        try {
+          await sequelize.query(
+            "DELETE FROM responses WHERE participantId = ?",
+            { 
+              replacements: [participant.id],
+              type: sequelize.QueryTypes.DELETE 
+            }
+          );
+          console.log(`[FEEDBACK] Deleted ${existingCount} existing responses`);
+        } catch (delErr) {
+          console.error('[FEEDBACK] Error deleting responses:', delErr);
         }
-      );
+      }
       
-      console.log(`[SUBMIT] Cleared previous responses for participant ${participant.id}`);
+      // Save new responses - using basic INSERT to avoid model issues
+      const savedResponses = [];
       
-      // Save new responses
-      let saveCount = 0;
-      
-      for (const response of responses) {
+      for (let i = 0; i < responses.length; i++) {
+        const response = responses[i];
         if (!response.questionId) continue;
         
+        const responseId = uuidv4();
+        
         try {
-          // Insert response directly with SQL to ensure proper values
+          console.log(`[FEEDBACK] Saving response ${i+1}/${responses.length} for question ${response.questionId}`);
+          
+          // Use direct SQL to insert the response
           await sequelize.query(
             `INSERT INTO responses 
-             (id, participantId, questionId, ratingValue, textResponse, targetEmployeeId, campaignId, createdAt, updatedAt) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+             (id, participantId, questionId, ratingValue, textResponse, campaignId, targetEmployeeId, createdAt, updatedAt) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
             {
               replacements: [
-                uuidv4(),
+                responseId,
                 participant.id,
                 response.questionId,
                 response.rating || null,
-                response.text || '',
-                targetEmployeeId,
-                campaignId  // Explicitly use the campaignId from req.body
+                response.text || null,
+                campaignId, // Important: Include campaignId
+                targetEmployeeId
               ],
               type: sequelize.QueryTypes.INSERT
             }
           );
           
-          saveCount++;
-        } catch (err) {
-          console.error(`[SUBMIT] Error saving response for question ${response.questionId}:`, err);
+          savedResponses.push(responseId);
+          console.log(`[FEEDBACK] Successfully saved response with ID ${responseId}`);
+        } catch (insertErr) {
+          console.error(`[FEEDBACK] Error saving response ${i+1}:`, insertErr);
         }
       }
       
-      console.log(`[SUBMIT] Saved ${saveCount} responses for campaign ${campaignId}`);
+      console.log(`[FEEDBACK] Saved ${savedResponses.length} responses`);
       
-      // Mark participant as completed
-      await participant.update({ 
-        status: 'completed', 
-        completedAt: new Date() 
-      });
+      // Update participant status
+      if (savedResponses.length > 0) {
+        try {
+          await participant.update({
+            status: 'completed',
+            completedAt: new Date()
+          });
+          console.log(`[FEEDBACK] Updated participant status to completed`);
+        } catch (updateErr) {
+          console.error('[FEEDBACK] Error updating participant status:', updateErr);
+        }
+      }
       
-      console.log(`[SUBMIT] Updated participant status to completed`);
+      // Verify saved responses
+      try {
+        const verifyResult = await sequelize.query(
+          "SELECT COUNT(*) as count FROM responses WHERE participantId = ?",
+          { 
+            replacements: [participant.id],
+            type: sequelize.QueryTypes.SELECT 
+          }
+        );
+        console.log(`[FEEDBACK] Verification: ${verifyResult[0].count} responses now in database for this participant`);
+      } catch (verifyErr) {
+        console.error('[FEEDBACK] Error verifying responses:', verifyErr);
+      }
       
       // Update campaign completion rate
       try {
@@ -231,27 +285,31 @@ class FeedbackController {
         });
         
         const completedCount = allParticipants.filter(p => 
-          p.status === 'completed'
+          p.status === 'completed' || p.id === participant.id
         ).length;
         
-        const newCompletionRate = Math.round((completedCount / allParticipants.length) * 100);
+        const totalParticipants = allParticipants.length;
+        const newCompletionRate = totalParticipants > 0 
+          ? Math.round((completedCount / totalParticipants) * 100) 
+          : 0;
         
         await Campaign.update(
           { completionRate: newCompletionRate },
           { where: { id: campaignId } }
         );
         
-        console.log(`[SUBMIT] Updated campaign ${campaignId} completion rate to ${newCompletionRate}%`);
-      } catch (rateError) {
-        console.error('[SUBMIT] Error updating completion rate:', rateError);
+        console.log(`[FEEDBACK] Updated campaign completion rate to ${newCompletionRate}%`);
+      } catch (rateErr) {
+        console.error('[FEEDBACK] Error updating completion rate:', rateErr);
       }
       
       return res.status(200).json({
         message: 'Feedback submitted successfully',
-        responseCount: saveCount
+        responseCount: savedResponses.length
       });
     } catch (error) {
-      console.error('[SUBMIT] Error submitting feedback:', error);
+      console.error('[FEEDBACK] Error submitting feedback:', error);
+      
       return res.status(500).json({
         message: 'An error occurred while submitting feedback',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
