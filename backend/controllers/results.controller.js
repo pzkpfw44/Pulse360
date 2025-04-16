@@ -7,249 +7,290 @@ const { Op } = require('sequelize');
  * Controller for handling 360 feedback results operations
  */
 class ResultsController {
-  /**
-   * Get results for a specific campaign
-   * @param {Request} req - Express request object
-   * @param {Response} res - Express response object
-   */
-  async getCampaignResults(req, res) {
-    try {
-      const { campaignId } = req.params;
-      
-      if (!campaignId) {
-        return res.status(400).json({ 
-          message: 'Campaign ID is required' 
-        });
-      }
+/**
+ * Get results for a specific campaign
+ * @param {Request} req - Express request object
+ * @param {Response} res - Express response object
+ */
+async getCampaignResults(req, res) {
+  try {
+    const { campaignId } = req.params;
+    
+    if (!campaignId) {
+      return res.status(400).json({ 
+        message: 'Campaign ID is required' 
+      });
+    }
 
-      try {
-        const checkResults = await sequelize.query(
-          'DESCRIBE responses;',
-          { type: sequelize.QueryTypes.RAW }
-        );
-        console.log('Responses table structure:', JSON.stringify(checkResults));
-        
-        const responseCount = await sequelize.query(
-          'SELECT COUNT(*) as count FROM responses;',
-          { type: sequelize.QueryTypes.SELECT }
-        );
-        console.log('Total responses in database:', responseCount);
-        
-        if (responseCount[0].count > 0) {
-          const sampleResponses = await sequelize.query(
-            'SELECT * FROM responses LIMIT 5;',
-            { type: sequelize.QueryTypes.SELECT }
-          );
-          console.log('Sample responses:', JSON.stringify(sampleResponses));
-        }
-      } catch (diagError) {
-        console.error('Diagnostic check failed:', diagError);
-      }
-      
-      console.log(`Fetching results for campaign: ${campaignId}`);
-      
-      // First, verify the campaign exists and user has access
-      const campaign = await Campaign.findOne({
-        where: {
-          id: campaignId,
-          createdBy: req.user.id
-        },
-        include: [
-          {
-            model: Template,
-            as: 'template',
-            include: [{ model: Question, as: 'questions' }]
-          },
-          {
-            model: Employee,
-            as: 'targetEmployee'
-          }
-        ]
-      });
-      
-      if (!campaign) {
-        return res.status(404).json({ 
-          message: 'Campaign not found or you do not have access' 
-        });
-      }
-      
-      // Get all participants for the campaign
-      const participants = await CampaignParticipant.findAll({
-        where: { campaignId },
-        include: [
-          { model: Employee, as: 'employee' }
-        ]
-      });
-      
-      console.log(`Found ${participants.length} participants for campaign`);
-      
-      // Direct database query to get all responses with their relationship types
-      const [responseData] = await sequelize.query(
-        `SELECT r.*, cp.relationshipType 
-         FROM responses r
-         JOIN campaign_participants cp ON r.participantId = cp.id
-         WHERE r.campaignId = ?`,
+    // Add diagnostic logging to help troubleshoot
+    console.log(`[RESULTS] Fetching results for campaign: ${campaignId}`);
+    
+    // First, verify the campaign exists and user has access
+    const campaign = await Campaign.findOne({
+      where: {
+        id: campaignId,
+        createdBy: req.user.id
+      },
+      include: [
         {
-          replacements: [campaignId],
-          type: sequelize.QueryTypes.SELECT
+          model: Template,
+          as: 'template',
+          include: [{ model: Question, as: 'questions' }]
+        },
+        {
+          model: Employee,
+          as: 'targetEmployee'
         }
-      );
+      ]
+    });
+    
+    if (!campaign) {
+      return res.status(404).json({ 
+        message: 'Campaign not found or you do not have access' 
+      });
+    }
+    
+    // Get all participants for the campaign with their relationship types
+    const participants = await CampaignParticipant.findAll({
+      where: { campaignId },
+      include: [
+        { model: Employee, as: 'employee' }
+      ]
+    });
+    
+    console.log(`[RESULTS] Found ${participants.length} participants for campaign`);
+    
+    // Map participants to their relationship types for easy lookup
+    const participantMap = {};
+    participants.forEach(p => {
+      participantMap[p.id] = {
+        relationshipType: p.relationshipType,
+        status: p.status
+      };
+    });
+    
+    // Count participants by relationship type and status
+    const completedByType = {
+      self: 0,
+      manager: 0,
+      peer: 0,
+      direct_report: 0,
+      external: 0
+    };
+    
+    participants.forEach(p => {
+      if (p.status === 'completed') {
+        const type = p.relationshipType;
+        if (completedByType.hasOwnProperty(type)) {
+          completedByType[type]++;
+        }
+      }
+    });
+    
+    console.log(`[RESULTS] Completed participants by type:`, completedByType);
+    
+    // Convert direct_report count to directReport for frontend consistency
+    const typeCounts = {
+      self: completedByType.self,
+      manager: completedByType.manager,
+      peer: completedByType.peer,
+      directReport: completedByType.direct_report,
+      external: completedByType.external
+    };
+    
+    // Get all responses with a direct SQL approach to ensure we capture everything
+    let responses = [];
+    try {
+      // First, try a direct query that joins responses with participants to get relationship types
+      console.log('[RESULTS] Trying direct SQL approach to get responses with relationship types');
       
-      console.log(`Found ${responseData ? responseData.length : 0} responses with direct query`);
+      const directSql = `
+        SELECT r.*, cp.relationshipType 
+        FROM responses r 
+        JOIN campaign_participants cp ON r.participantId = cp.id 
+        WHERE cp.campaignId = ?
+      `;
       
-      // If no responses found with direct query, try the model approach
-      let responses = [];
-      if (!responseData || responseData.length === 0) {
-        responses = await Response.findAll({
+      responses = await sequelize.query(directSql, {
+        replacements: [campaignId],
+        type: sequelize.QueryTypes.SELECT
+      });
+      
+      console.log(`[RESULTS] Found ${responses.length} responses with direct SQL`);
+      
+      // If we found no responses with direct SQL, try the ORM approach as fallback
+      if (responses.length === 0) {
+        console.log('[RESULTS] No responses found with direct SQL, trying ORM approach');
+        
+        const ormResponses = await Response.findAll({
           where: { campaignId },
           include: [
             { model: Question, attributes: ['id', 'text', 'type', 'category', 'perspective', 'order'] }
           ]
         });
         
-        console.log(`Found ${responses.length} responses with model approach`);
+        console.log(`[RESULTS] Found ${ormResponses.length} responses with ORM approach`);
+        
+        if (ormResponses.length > 0) {
+          // Transform ORM responses to match the format from direct SQL
+          responses = ormResponses.map(r => {
+            const json = r.toJSON();
+            const partInfo = participantMap[r.participantId] || {};
+            
+            return {
+              ...json,
+              relationshipType: partInfo.relationshipType || 'unknown'
+            };
+          });
+        }
       }
       
-      // Group participants by type
-      const participantsByType = {};
-      participants.forEach(participant => {
-        const type = participant.relationshipType;
-        if (!participantsByType[type]) {
-          participantsByType[type] = [];
-        }
-        participantsByType[type].push(participant);
-      });
-      
-      // Map participants to their relationship types for easy lookup
-      const participantMap = {};
-      participants.forEach(p => {
-        participantMap[p.id] = p.relationshipType;
-      });
-      
-      // Group responses by relationship type
-      const responsesByType = {
-        self: [],
-        manager: [],
-        peer: [],
-        direct_report: [],
-        external: []
-      };
-      
-      // Use either the direct query results or model results
-      const responsesToProcess = responseData && responseData.length > 0 
-        ? responseData 
-        : responses.map(r => {
-            const json = r.toJSON();
-            json.relationshipType = participantMap[r.participantId] || 'unknown';
-            return json;
+      // If we still have no responses, something is wrong with the database entries
+      if (responses.length === 0 && (completedByType.peer > 0 || completedByType.manager > 0 || 
+          completedByType.self > 0 || completedByType.direct_report > 0 || completedByType.external > 0)) {
+        
+        console.log('[RESULTS] Warning: Participants marked as completed but no responses found!');
+        
+        // Try to get any responses that might be related to this campaign but not properly linked
+        const lastResortSql = `
+          SELECT r.* 
+          FROM responses r 
+          JOIN campaign_participants cp ON r.participantId = cp.id 
+          WHERE cp.campaignId = ? OR r.campaignId = ?
+        `;
+        
+        const lastResortResponses = await sequelize.query(lastResortSql, {
+          replacements: [campaignId, campaignId],
+          type: sequelize.QueryTypes.SELECT
+        });
+        
+        console.log(`[RESULTS] Last resort query found ${lastResortResponses.length} responses`);
+        
+        if (lastResortResponses.length > 0) {
+          // Add relationship types to these responses
+          responses = lastResortResponses.map(r => {
+            const partInfo = participantMap[r.participantId] || {};
+            return {
+              ...r,
+              relationshipType: partInfo.relationshipType || 'unknown'
+            };
           });
-      
-      // Process and group responses
-      responsesToProcess.forEach(response => {
-        const type = response.relationshipType;
-        if (responsesByType[type]) {
-          // Find the question data for this response
-          const question = campaign.template.questions.find(q => q.id === response.questionId);
-          if (question) {
-            // Attach question data if needed
-            if (!response.Question) {
-              response.Question = {
-                id: question.id,
-                text: question.text,
-                type: question.type,
-                category: question.category,
-                perspective: question.perspective,
-                order: question.order
-              };
-            }
-            responsesByType[type].push(response);
-          }
         }
-      });
-      
-      // Count unique participants with responses by type
-      const responseCountsByType = {
-        self: new Set(),
-        manager: new Set(),
-        peer: new Set(),
-        direct_report: new Set(),
-        external: new Set()
-      };
-      
-      responsesToProcess.forEach(response => {
-        const type = response.relationshipType;
-        if (responseCountsByType[type]) {
-          responseCountsByType[type].add(response.participantId);
-        }
-      });
-      
-      // Convert sets to counts
-      const typeCounts = {
-        self: responseCountsByType.self.size,
-        manager: responseCountsByType.manager.size,
-        peer: responseCountsByType.peer.size,
-        directReport: responseCountsByType.direct_report.size,
-        external: responseCountsByType.external.size
-      };
-      
-      console.log("Response counts by type:", typeCounts);
-      
-      // Calculate rating averages by question and relationship type
-      const ratingAverages = calculateRatingAverages(responsesByType, campaign.template.questions);
-      
-      // Prepare the results
-      const results = {
-        campaign: {
-          id: campaign.id,
-          name: campaign.name,
-          targetEmployee: campaign.targetEmployee ? {
-            id: campaign.targetEmployee.id,
-            name: `${campaign.targetEmployee.firstName} ${campaign.targetEmployee.lastName}`,
-            jobTitle: campaign.targetEmployee.jobTitle || '',
-            department: campaign.targetEmployee.mainFunction || ''
-          } : null,
-          template: {
-            id: campaign.template.id,
-            name: campaign.template.name
-          },
-          startDate: campaign.startDate,
-          endDate: campaign.endDate,
-          status: campaign.status,
-          completionRate: campaign.completionRate || 0
-        },
-        participantCounts: {
-          total: participants.length,
-          completed: participants.filter(p => p.status === 'completed').length,
-          self: typeCounts.self,
-          manager: typeCounts.manager,
-          peer: typeCounts.peer,
-          directReport: typeCounts.directReport,
-          external: typeCounts.external
-        },
-        // Include individual responses for self and manager
-        individualResponses: {
-          self: responsesByType.self,
-          manager: responsesByType.manager
-        },
-        // For other types, only include aggregated data
-        aggregatedResponses: {
-          peer: aggregateResponses(responsesByType.peer, campaign.template.questions),
-          directReport: aggregateResponses(responsesByType.direct_report, campaign.template.questions),
-          external: aggregateResponses(responsesByType.external, campaign.template.questions)
-        },
-        ratingAverages
-      };
-      
-      return res.status(200).json(results);
+      }
     } catch (error) {
-      console.error('Error getting campaign results:', error);
-      
-      return res.status(500).json({
-        message: 'An error occurred while retrieving the campaign results',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+      console.error('[RESULTS] Error getting responses:', error);
+      responses = []; // Ensure we have an empty array if all approaches fail
     }
+    
+    // Load questions for reference
+    const questions = campaign.template?.questions || [];
+    
+    // Attach Question data to responses
+    responses = responses.map(response => {
+      // Find the corresponding question
+      const question = questions.find(q => q.id === response.questionId);
+      
+      if (question) {
+        return {
+          ...response,
+          Question: {
+            id: question.id,
+            text: question.text,
+            type: question.type,
+            category: question.category,
+            perspective: question.perspective,
+            order: question.order
+          }
+        };
+      }
+      return response;
+    });
+    
+    // Group responses by relationship type
+    const responsesByType = {
+      self: [],
+      manager: [],
+      peer: [],
+      direct_report: [],
+      external: []
+    };
+    
+    // Process responses and assign them to appropriate types
+    responses.forEach(response => {
+      const type = response.relationshipType;
+      
+      if (type && responsesByType[type]) {
+        responsesByType[type].push(response);
+      } else {
+        console.log(`[RESULTS] Warning: Response ${response.id} has unknown relationship type: ${type}`);
+      }
+    });
+    
+    // Log counts to help with debugging
+    console.log('[RESULTS] Responses by type counts:', {
+      self: responsesByType.self.length,
+      manager: responsesByType.manager.length,
+      peer: responsesByType.peer.length,
+      direct_report: responsesByType.direct_report.length,
+      external: responsesByType.external.length
+    });
+    
+    // Calculate rating averages by question and relationship type
+    const ratingAverages = calculateRatingAverages(responsesByType, questions);
+    
+    // Prepare the results
+    const results = {
+      campaign: {
+        id: campaign.id,
+        name: campaign.name,
+        targetEmployee: campaign.targetEmployee ? {
+          id: campaign.targetEmployee.id,
+          name: `${campaign.targetEmployee.firstName} ${campaign.targetEmployee.lastName}`,
+          jobTitle: campaign.targetEmployee.jobTitle || '',
+          department: campaign.targetEmployee.mainFunction || ''
+        } : null,
+        template: {
+          id: campaign.template.id,
+          name: campaign.template.name
+        },
+        startDate: campaign.startDate,
+        endDate: campaign.endDate,
+        status: campaign.status,
+        completionRate: campaign.completionRate || 0
+      },
+      participantCounts: {
+        total: participants.length,
+        completed: participants.filter(p => p.status === 'completed').length,
+        self: typeCounts.self,
+        manager: typeCounts.manager,
+        peer: typeCounts.peer,
+        directReport: typeCounts.directReport,
+        external: typeCounts.external
+      },
+      // Include individual responses for self and manager
+      individualResponses: {
+        self: responsesByType.self,
+        manager: responsesByType.manager
+      },
+      // For other types, only include aggregated data
+      aggregatedResponses: {
+        peer: aggregateResponses(responsesByType.peer, questions),
+        directReport: aggregateResponses(responsesByType.direct_report, questions),
+        external: aggregateResponses(responsesByType.external, questions)
+      },
+      ratingAverages
+    };
+    
+    return res.status(200).json(results);
+  } catch (error) {
+    console.error('Error getting campaign results:', error);
+    
+    return res.status(500).json({
+      message: 'An error occurred while retrieving the campaign results',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
+}
   
   /**
    * Get a PDF export of campaign results
@@ -354,20 +395,46 @@ function calculateRatingAverages(responsesByType, questions) {
  * @returns {Object} - Aggregated responses by question
  */
 function aggregateResponses(responses, questions) {
+  console.log(`[AGGREGATE] Processing ${responses.length} responses`);
+  
+  // If no responses, return empty structure
+  if (!responses || responses.length === 0) {
+    console.log('[AGGREGATE] No responses to aggregate');
+    return {
+      byQuestion: {},
+      byCategory: {}
+    };
+  }
+  
   const result = {
     byQuestion: {},
     byCategory: {}
   };
   
+  // Make sure questions is an array
+  const questionsList = Array.isArray(questions) ? questions : [];
+  
   // Group responses by question
-  questions.forEach(question => {
-    const questionResponses = responses.filter(r => r.questionId === question.id);
+  questionsList.forEach(question => {
+    // Find responses for this question
+    const questionResponses = responses.filter(r => {
+      // Handle both direct properties and nested Question object
+      const questionId = r.questionId || (r.Question && r.Question.id);
+      return questionId === question.id;
+    });
+    
+    console.log(`[AGGREGATE] Question ${question.id}: ${questionResponses.length} responses`);
     
     if (questionResponses.length > 0) {
       // For rating questions, calculate statistics
       if (question.type === 'rating') {
+        // Extract rating values, handling different data structures
         const ratingValues = questionResponses
-          .map(r => r.ratingValue)
+          .map(r => {
+            // Try both ratingValue and traditional object structures
+            return r.ratingValue !== undefined ? r.ratingValue : 
+                  (r.rating !== undefined ? r.rating : null);
+          })
           .filter(v => v !== null && v !== undefined);
         
         if (ratingValues.length > 0) {
@@ -380,6 +447,13 @@ function aggregateResponses(responses, questions) {
             ratingCounts[value] = (ratingCounts[value] || 0) + 1;
           });
           
+          // Default to all 5 possible rating values (1-5)
+          for (let i = 1; i <= 5; i++) {
+            if (!ratingCounts[i]) {
+              ratingCounts[i] = 0;
+            }
+          }
+          
           result.byQuestion[question.id] = {
             questionText: question.text,
             questionType: question.type,
@@ -388,12 +462,19 @@ function aggregateResponses(responses, questions) {
             count: ratingValues.length,
             distribution: ratingCounts
           };
+          
+          console.log(`[AGGREGATE] Rating question ${question.id}: avg=${avg.toFixed(2)}, count=${ratingValues.length}`);
         }
       } 
       // For open-ended questions, include anonymized text responses
-      else if (question.type === 'open_ended') {
+      else if (question.type === 'open_ended' || question.type === 'text') {
+        // Handle different response structures
         const textResponses = questionResponses
-          .map(r => r.textResponse)
+          .map(r => {
+            // Try both textResponse and traditional object structures
+            return r.textResponse !== undefined ? r.textResponse : 
+                  (r.text !== undefined ? r.text : null);
+          })
           .filter(t => t && t.trim() !== '');
         
         if (textResponses.length > 0) {
@@ -404,16 +485,18 @@ function aggregateResponses(responses, questions) {
             count: textResponses.length,
             responses: textResponses
           };
+          
+          console.log(`[AGGREGATE] Text question ${question.id}: ${textResponses.length} responses`);
         }
       }
     }
   });
   
   // Also aggregate by category
-  const categories = [...new Set(questions.map(q => q.category))];
+  const categories = [...new Set(questionsList.map(q => q.category))];
   
   categories.forEach(category => {
-    const categoryQuestions = questions.filter(q => q.category === category);
+    const categoryQuestions = questionsList.filter(q => q.category === category);
     const categoryQuestionIds = categoryQuestions.map(q => q.id);
     
     // Rating averages by category
@@ -439,6 +522,8 @@ function aggregateResponses(responses, questions) {
       }
     }
   });
+  
+  console.log(`[AGGREGATE] Result has ${Object.keys(result.byQuestion).length} questions and ${Object.keys(result.byCategory).length} categories`);
   
   return result;
 }
