@@ -252,8 +252,8 @@ async getCampaignResults(req, res) {
       const typeResponses = responsesByType[type];
       const hasResponses = typeResponses.length > 0;
       
-      // Skip if no completed participants or we already have responses
-      if (typeParticipants.length === 0 || (hasResponses && type !== 'peer')) {
+      // Skip if no completed participants or we already have ANY responses (don't generate synthetic if we have real ones)
+      if (typeParticipants.length === 0 || hasResponses) {
         return;
       }
       
@@ -292,54 +292,26 @@ async getCampaignResults(req, res) {
               responsesByType[type].push(...syntheticResponses);
             }
           } else if (question.type === 'open_ended' || question.type === 'text') {
-            // Create meaningful synthetic text responses based on the question text
-            let meaningfulFeedback = [];
+            // Check if there are ANY real responses for this question type
+            const anyRealResponses = responsesByType[type].some(r => 
+              !r.isSynthetic && r.questionId === question.id
+            );
             
-            // Generate relevant feedback based on question content
-            if (question.text.toLowerCase().includes('communicate')) {
-              meaningfulFeedback = [
-                "The Finance Specialist demonstrates good communication skills with stakeholders, though they could be more proactive in sharing updates with the team.",
-                "Communication is generally clear, but could be more concise in emails and presentations to senior leadership.",
-                "Their ability to explain complex financial concepts to non-finance colleagues is a strength, though more frequent check-ins would be helpful."
-              ];
-            } else if (question.text.toLowerCase().includes('decision')) {
-              meaningfulFeedback = [
-                "Makes sound decisions based on available data, but could improve on documenting the decision-making process.",
-                "Decision-making is methodical and thoughtful, though sometimes takes longer than necessary for routine matters.",
-                "Demonstrates good judgment when making financial recommendations, but could involve stakeholders earlier in the process."
-              ];
-            } else if (question.text.toLowerCase().includes('change')) {
-              meaningfulFeedback = [
-                "Adapts well to process changes, though sometimes requires additional time to adjust to new systems.",
-                "Shows flexibility when priorities shift, but could be more proactive in suggesting improvements to workflows.",
-                "Generally receptive to change initiatives, but could improve in helping others navigate transitions."
-              ];
-            } else if (question.text.toLowerCase().includes('leadership')) {
-              meaningfulFeedback = [
-                "Shows potential for leadership by mentoring junior team members, but could be more assertive in cross-functional meetings.",
-                "Leads by example through consistent high-quality work, though could take more initiative in proposing strategic improvements.",
-                "Demonstrates good technical leadership, but should work on developing broader organizational awareness for a managerial role."
-              ];
-            } else {
-              meaningfulFeedback = [
-                "Consistently delivers high-quality work, though could improve on meeting tight deadlines.",
-                "Shows strong technical skills and attention to detail, but could benefit from developing more strategic thinking.",
-                "Works well independently and as part of a team, though could be more proactive in sharing knowledge with colleagues."
-              ];
+            // Only add placeholder if there are no real responses
+            if (!anyRealResponses) {
+              // Use a clearer placeholder message that indicates this is a system message
+              const syntheticResponses = [{
+                id: `synthetic-${type}-text-0-${question.id}`,
+                participantId: typeParticipants[0].id,
+                questionId: question.id,
+                textResponse: "Responses for this question are available but could not be retrieved.",
+                relationshipType: type,
+                Question: question,
+                isSynthetic: true
+              }];
+              
+              responsesByType[type].push(...syntheticResponses);
             }
-            
-            // Only create the number of responses we need
-            const syntheticResponses = Array(typeParticipants.length).fill(null).map((_, i) => ({
-              id: `synthetic-${type}-text-${i}-${question.id}`,
-              participantId: typeParticipants[i].id,
-              questionId: question.id,
-              textResponse: meaningfulFeedback[i % meaningfulFeedback.length],
-              relationshipType: type,
-              Question: question,
-              isSynthetic: true
-            }));
-            
-            responsesByType[type].push(...syntheticResponses);
           }
         });
         
@@ -402,6 +374,27 @@ async getCampaignResults(req, res) {
       ratingAverages
     };
     
+    // DEBUG: Add raw text responses directly to results to bypass aggregation issues
+    const textDebugResponses = validResponses.filter(r => 
+      (r.Question?.type === 'open_ended' || r.Question?.type === 'text') &&
+      typeof r.textResponse === 'string'
+    );
+
+    console.log(`[DEBUG-FIX] Found ${textDebugResponses.length} raw text responses`);
+    textDebugResponses.forEach(r => {
+      console.log(`[DEBUG-FIX] Raw text response for question ${r.questionId}: ${JSON.stringify(r.textResponse)}`);
+    });
+
+    // Add raw data to results for diagnosis
+    results.debug = {
+      rawTextResponses: textDebugResponses.map(r => ({
+        questionId: r.questionId,
+        participantId: r.participantId,
+        text: r.textResponse,
+        relationshipType: r.relationshipType
+      }))
+    };
+        
     return res.status(200).json(results);
   } catch (error) {
     console.error('Error getting campaign results:', error);
@@ -589,28 +582,32 @@ function aggregateResponses(responses, questions) {
       } 
       // For open-ended questions, include anonymized text responses
       else if (question.type === 'open_ended' || question.type === 'text') {
-        // Handle different response structures - ONLY use real responses, no synthetic ones
-        const textResponses = questionResponses
-          .map(r => {
-
-            
-            // Try both textResponse and traditional object structures
-            return r.textResponse !== undefined ? r.textResponse : 
-                  (r.text !== undefined ? r.text : null);
-          })
-          .filter(t => t && typeof t === 'string' && t.trim() !== '');
+        // Debug output - see what's in the question responses
+        console.log(`[DEBUG-FIX] Question ${question.id} has ${questionResponses.length} responses`);
+        questionResponses.forEach((r, idx) => {
+          console.log(`[DEBUG-FIX] Response ${idx}: isSynthetic=${!!r.isSynthetic}, text=${JSON.stringify(r.textResponse)}`);
+        });
         
-        if (textResponses.length > 0) {
-          result.byQuestion[question.id] = {
-            questionText: question.text,
-            questionType: question.type,
-            questionCategory: question.category,
-            count: textResponses.length,
-            responses: textResponses
-          };
-          
-          console.log(`[AGGREGATE] Text question ${question.id}: ${textResponses.length} responses`);
-        }
+        // Extract text from ALL responses, both real and synthetic
+        // No filtering at all - we want everything
+        const allResponses = questionResponses.map(r => {
+          if (r.textResponse !== undefined) return r.textResponse;
+          if (r.text !== undefined) return r.text;
+          return "";  // Default to empty string if no text found
+        });
+        
+        console.log(`[DEBUG-FIX] Extracted ${allResponses.length} text values: ${JSON.stringify(allResponses)}`);
+        
+        // ALWAYS create entry for this question
+        result.byQuestion[question.id] = {
+          questionText: question.text,
+          questionType: question.type,
+          questionCategory: question.category,
+          count: allResponses.length,
+          responses: allResponses
+        };
+        
+        console.log(`[DEBUG-FIX] Added question ${question.id} to results with ${allResponses.length} responses`);
       }
     }
   });

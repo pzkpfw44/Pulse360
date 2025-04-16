@@ -460,7 +460,7 @@ const Results360 = () => {
           <div className="flex items-center">
             <h2 className="text-lg font-medium mr-2">Self Assessment</h2>
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.self}`}>
-              {formatRelationshipType('self')}
+              {formatRelationshipType('self')} ({results.participantCounts.self})
             </span>
           </div>
           <div>
@@ -521,7 +521,7 @@ const Results360 = () => {
           <div className="flex items-center">
             <h2 className="text-lg font-medium mr-2">Manager Feedback</h2>
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${relationshipColors.manager}`}>
-              {formatRelationshipType('manager')}
+              {formatRelationshipType('manager')} ({results.participantCounts.manager})
             </span>
           </div>
           <div>
