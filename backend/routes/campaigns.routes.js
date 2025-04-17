@@ -34,4 +34,47 @@ router.post('/:id/cancel', campaignsController.cancelCampaign);
 // Delete campaign
 router.delete('/:id', campaignsController.deleteCampaign);
 
+// Complete campaign
+router.post('/:id/complete', campaignsController.completeCampaign);
+
+// Auto-complete all campaigns with 100% completion rate
+router.post('/auto-complete', campaignsController.autoCompleteFullCampaigns);
+
+// Debug endpoint to fix campaigns stuck at 100% but still active
+router.post('/fix-completed', async (req, res) => {
+    try {
+      // Find all active campaigns with 100% completion
+      const campaigns = await Campaign.findAll({
+        where: {
+          status: 'active',
+          completionRate: 100
+        }
+      });
+      
+      if (campaigns.length === 0) {
+        return res.status(200).json({
+          message: 'No campaigns need fixing',
+          count: 0
+        });
+      }
+      
+      // Update them to completed
+      const campaignIds = campaigns.map(c => c.id);
+      await Campaign.update(
+        { status: 'completed' },
+        { where: { id: campaignIds } }
+      );
+      
+      res.status(200).json({
+        message: `Fixed ${campaigns.length} campaigns`,
+        campaignIds
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Error fixing campaigns',
+        error: error.message
+      });
+    }
+  });
+
 module.exports = router;

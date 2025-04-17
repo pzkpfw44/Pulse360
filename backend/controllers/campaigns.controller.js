@@ -1269,3 +1269,82 @@ exports.sendReminders = async (req, res) => {
     });
   }
 };
+
+// Complete campaign
+exports.completeCampaign = async (req, res) => {
+  try {
+    const campaign = await Campaign.findOne({
+      where: { 
+        id: req.params.id,
+        createdBy: req.user.id
+      }
+    });
+    
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign not found' });
+    }
+    
+    // Check if campaign can be completed
+    if (campaign.status !== 'active') {
+      return res.status(400).json({ 
+        message: 'Only active campaigns can be marked as completed' 
+      });
+    }
+    
+    // Update campaign status to completed
+    await campaign.update({
+      status: 'completed'
+    });
+    
+    res.status(200).json({ 
+      message: 'Campaign marked as completed successfully' 
+    });
+  } catch (error) {
+    console.error('Error completing campaign:', error);
+    res.status(500).json({ 
+      message: 'Failed to complete campaign', 
+      error: error.message 
+    });
+  }
+};
+
+// Auto-complete campaigns at 100%
+exports.autoCompleteFullCampaigns = async (req, res) => {
+  try {
+    // Find all active campaigns with 100% completion rate
+    const campaigns = await Campaign.findAll({
+      where: { 
+        status: 'active',
+        completionRate: 100,
+        createdBy: req.user.id
+      }
+    });
+    
+    if (campaigns.length === 0) {
+      return res.status(200).json({ 
+        message: 'No campaigns ready for completion',
+        updatedCount: 0
+      });
+    }
+    
+    // Update all found campaigns to completed status
+    const campaignIds = campaigns.map(c => c.id);
+    
+    await Campaign.update(
+      { status: 'completed' },
+      { where: { id: campaignIds } }
+    );
+    
+    res.status(200).json({ 
+      message: `${campaigns.length} campaigns marked as completed`,
+      updatedCount: campaigns.length,
+      campaignIds
+    });
+  } catch (error) {
+    console.error('Error auto-completing campaigns:', error);
+    res.status(500).json({ 
+      message: 'Failed to auto-complete campaigns', 
+      error: error.message 
+    });
+  }
+};

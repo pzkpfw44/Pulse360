@@ -293,8 +293,17 @@ class FeedbackController {
           ? Math.round((completedCount / totalParticipants) * 100) 
           : 0;
         
+        // Create update data object with completion rate
+        const updateData = { completionRate: newCompletionRate };
+        
+        // If completion rate is 100%, mark campaign as completed
+        if (newCompletionRate === 100) {
+          updateData.status = 'completed';
+          console.log(`[FEEDBACK] Campaign ${campaignId} is now complete, updating status to 'completed'`);
+        }
+        
         await Campaign.update(
-          { completionRate: newCompletionRate },
+          updateData,
           { where: { id: campaignId } }
         );
         
