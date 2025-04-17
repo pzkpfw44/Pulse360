@@ -20,6 +20,7 @@ import WorkInProgress from './components/WorkInProgress';
 import FeedbackAssessmentPage from './pages/FeedbackAssessmentPage';
 import Results360 from './pages/Results360';
 import Insights360 from './pages/Insights360';
+import InsightViewPage from './pages/InsightViewPage';
 
 // External routes that don't use MainLayout
 const ExternalFeedbackRoute = ({ children }) => {
@@ -109,6 +110,9 @@ function App() {
         <Route path="/results-360" element={<Results360 />} />
         <Route path="/results-360/campaign/:campaignId" element={<Results360 />} />
         <Route path="/insights-360" element={<Insights360 />} />
+        <Route path="/insights-360" element={<Insights360 />} />
+        <Route path="/insights-360/:section" element={<Insights360 />} />
+        <Route path="/insights-360/view/:id" element={<InsightViewPage />} />
         
         {/* System */}
         <Route path="/integration" element={<Integration />} />

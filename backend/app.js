@@ -18,6 +18,7 @@ const upload = require('./middleware/upload.middleware');
 const communicationTemplatesRoutes = require('./routes/communication-templates.routes');
 const databaseTestRoutes = require('./routes/database-test.routes');
 const fixDatabaseRoutes = require('./routes/fix-database.routes');
+const brandingSettingsRoutes = require('./routes/branding-settings.routes');
 
 // Initialize express app
 const app = express();
@@ -41,9 +42,9 @@ app.use('/api/feedback', require('./routes/feedback.routes'));
 app.use('/api/communication-templates', communicationTemplatesRoutes);
 app.use('/api/communication-logs', require('./routes/communication-log.routes'));
 app.use('/api/results', require('./routes/results.routes'));
-const brandingSettingsRoutes = require('./routes/branding-settings.routes');
 app.use('/api/db-test', databaseTestRoutes);
 app.use('/api/fix-db', fixDatabaseRoutes);
+app.use('/api/insights', require('./routes/insights.routes'));
 
 const testRoutes = require('./routes/test.routes');
 app.use('/api/flux-test', testRoutes);  // Using a different path to avoid conflicts

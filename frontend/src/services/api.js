@@ -48,6 +48,16 @@ const templatesApi = {
   generateConfigured: (data) => api.post('/templates/generate-configured', data)
 };
 
+const insightsApi = {
+  getAvailableCampaigns: () => api.get('/insights/campaigns'),
+  getAllInsights: () => api.get('/insights'),
+  getById: (id) => api.get(`/insights/${id}`),
+  generate: (data) => api.post('/insights/generate', data),
+  update: (id, data) => api.put(`/insights/${id}`, data),
+  delete: (id) => api.delete(`/insights/${id}`),
+  exportPdf: (id, visibilityLevel) => api.get(`/insights/${id}/export-pdf?visibilityLevel=${visibilityLevel || 'employeeVisible'}`)
+};
+
 const employeesApi = {
   getAll: () => api.get('/employees'),
   getById: (id) => api.get(`/employees/${id}`),
@@ -103,7 +113,7 @@ const resultsApi = {
 };
 
 // Export all API services
-export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesApi, resultsApi };
+export { documentsApi, templatesApi, employeesApi, settingsApi, campaignsApi, communicationTemplatesApi, resultsApi, insightsApi  };
 
 // Default export for backward compatibility
 export default api;

@@ -13,6 +13,7 @@ const CommunicationTemplate = require('./communication-template.model');
 const CommunicationLog = require('./communication-log.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 const BrandingSettings = require('./branding-settings.model');
+const Insight = require('./insight.model');
 
 // Define associations between models
 User.hasMany(Document, { foreignKey: 'uploadedBy' });
@@ -115,5 +116,6 @@ module.exports = {
   CommunicationTemplate,
   CommunicationLog,
   BrandingSettings,
+  Insight,
   Op 
 };
