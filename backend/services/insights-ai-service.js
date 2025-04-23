@@ -71,6 +71,7 @@ class InsightsAiService {
    * @param {Object} feedbackData - Aggregated feedback data
    * @param {Object} employeeData - Employee information
    * @param {Object} campaignData - Campaign information
+   * @returns {Object} Completed content structure
    * @returns {String} Formatted prompt
    */
   buildGrowthBlueprintPrompt(feedbackData, employeeData, campaignData) {

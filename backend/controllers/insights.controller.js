@@ -1,6 +1,5 @@
 // backend/controllers/insights.controller.js
 
-const { generateMockInsight } = require('../utils/mock-insight-generator');
 const { 
     Insight, 
     Campaign, 
@@ -15,6 +14,7 @@ const {
   const PDFDocument = require('pdfkit');
   const fs = require('fs');
   const path = require('path');
+  const { generateMockInsight } = require('../utils/mock-insight-generator');
     
   /**
    * Controller for handling insights operations
