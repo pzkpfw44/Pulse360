@@ -29,4 +29,6 @@ router.delete('/:id', insightsController.deleteInsight);
 // Export insight as PDF
 router.get('/:id/export-pdf', insightsController.exportInsightPdf);
 
+router.post('/:id/regenerate', insightsController.regenerateInsight);
+
 module.exports = router;

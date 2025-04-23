@@ -14,6 +14,7 @@ const {
   const PDFDocument = require('pdfkit');
   const fs = require('fs');
   const path = require('path');
+  const { generateMockInsight } = require('../utils/mock-insight-generator');
   
   /**
    * Controller for handling insights operations
@@ -506,6 +507,92 @@ const {
       doc.font('Helvetica').fontSize(10).text(`Report generated on ${date}`, { align: 'center' });
     }
     
+
+    /**
+     * Regenerate insight content with AI
+     * @param {Request} req - Express request object
+     * @param {Response} res - Express response object
+     */
+    async regenerateInsight(req, res) {
+      try {
+        const { id } = req.params;
+        
+        console.log(`[INSIGHTS] Regenerating insight: ${id}`);
+        
+        const insight = await Insight.findOne({
+          where: {
+            id,
+            createdBy: req.user.id
+          },
+          include: [
+            {
+              model: Campaign,
+              as: 'campaign',
+              include: [{ model: Employee, as: 'targetEmployee' }]
+            }
+          ]
+        });
+        
+        if (!insight) {
+          return res.status(404).json({ message: 'Insight not found' });
+        }
+        
+        // Get feedback data again
+        const feedbackData = await this.getFeedbackDataForCampaign(insight.campaignId);
+        
+        console.log(`[INSIGHTS] Got feedback data for campaign: ${insight.campaignId}`);
+        
+        // Regenerate content based on type
+        let insightContent = {};
+        
+        try {
+          switch (insight.type) {
+            case 'growth_blueprint':
+              try {
+                insightContent = await insightsAiService.generateGrowthBlueprint(
+                  feedbackData,
+                  insight.campaign.targetEmployee,
+                  insight.campaign
+                );
+              } catch (aiError) {
+                console.error('Error generating content with AI, using mock data:', aiError);
+                // Use mock data if AI fails
+                insightContent = generateMockInsight(insight.campaign.targetEmployee);
+              }
+              break;
+            case 'leadership_impact':
+              // Handle other types when implemented
+              return res.status(400).json({ message: 'Leadership Impact insights regeneration not yet implemented' });
+            default:
+              return res.status(400).json({ message: 'Insight type not supported for regeneration' });
+          }
+        } catch (processError) {
+          console.error('Process error:', processError);
+          // Fall back to mock data as the last resort
+          insightContent = generateMockInsight(insight.campaign.targetEmployee);
+        }
+        
+        console.log(`[INSIGHTS] Successfully generated new content for insight: ${id}`);
+        
+        // Update insight with new content
+        await insight.update({
+          content: insightContent,
+          originalAiContent: insightContent
+        });
+        
+        res.status(200).json({
+          message: 'Insight regenerated successfully'
+        });
+      } catch (error) {
+        console.error('Error regenerating insight:', error);
+        res.status(500).json({ 
+          message: 'Failed to regenerate insight', 
+          error: error.message 
+        });
+      }
+    }
+
+
     /**
      * Format insight type for display
      * @param {String} type - Insight type

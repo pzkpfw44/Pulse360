@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Download, Save, Eye, EyeOff, Edit, 
-  FileText, User, Clock, Calendar, CheckCircle, AlertTriangle 
+  FileText, User, Clock, Calendar, CheckCircle, AlertTriangle, RefreshCw 
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -31,8 +31,8 @@ const InsightView = () => {
       setInsight(response.data.insight);
       
       // Initialize edited content with the current content
-      setEditedContent(response.data.insight.content);
-      setOriginalContent(response.data.insight.originalAiContent || response.data.insight.content);
+      setEditedContent(response.data.insight.content || {});
+      setOriginalContent(response.data.insight.originalAiContent || response.data.insight.content || {});
       
       setError(null);
     } catch (err) {
@@ -91,6 +91,25 @@ const InsightView = () => {
     } catch (error) {
       console.error('Error downloading PDF:', error);
       alert('Failed to download PDF. Please try again.');
+    }
+  };
+
+  const handleRegenerateContent = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Call the regenerate endpoint
+      await api.post(`/insights/${id}/regenerate`);
+      
+      // Fetch updated insight
+      await fetchInsight();
+      
+      setLoading(false);
+    } catch (err) {
+      console.error('Error regenerating insight:', err);
+      setError('Failed to regenerate insight content. Please try again.');
+      setLoading(false);
     }
   };
   
@@ -156,17 +175,17 @@ const InsightView = () => {
     };
     
     return Object.entries(insight.content)
-      .filter(([_, sectionData]) => shouldIncludeSection(sectionData.visibility))
+      .filter(([_, sectionData]) => shouldIncludeSection(sectionData?.visibility))
       .map(([key, data]) => ({
         id: key,
         title: key
           .replace(/([A-Z])/g, ' $1')
           .replace(/^./, str => str.toUpperCase())
           .replace(/([a-z])([A-Z])/g, '$1 $2'),
-        content: data.content,
-        visibility: data.visibility,
-        editedContent: editedContent[key]?.content || data.content,
-        originalContent: originalContent[key]?.content || data.content
+        content: data?.content || "No content available",
+        visibility: data?.visibility || "employeeVisible",
+        editedContent: editedContent[key]?.content || data?.content || "No content available",
+        originalContent: originalContent[key]?.content || data?.content || "No content available"
       }));
   };
   
@@ -237,7 +256,29 @@ const InsightView = () => {
               <Download className="h-4 w-4 mr-2" />
               Export PDF
             </button>
-            
+
+            {/* Regenerate with AI button */}
+            <button
+              onClick={handleRegenerateContent}
+              disabled={loading}
+              className="inline-flex items-center px-3 py-2 border border-purple-300 shadow-sm text-sm leading-4 font-medium rounded-md text-purple-700 bg-white hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-purple-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Regenerating...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Regenerate with AI
+                </>
+              )}
+            </button>
+
             {insight.status === 'draft' && (
               <button
                 onClick={handlePublish}
@@ -351,6 +392,29 @@ const InsightView = () => {
             <div className="text-center py-8">
               <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500">No content available for this visibility level.</p>
+              <p className="text-sm text-gray-400 mt-2">Try using the "Regenerate with AI" button or switching to a different view.</p>
+              
+              {/* Add a button to make it easier to regenerate */}
+              <button
+                onClick={handleRegenerateContent}
+                disabled={loading}
+                className="mt-4 inline-flex items-center px-4 py-2 border border-purple-300 bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-purple-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Regenerating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Regenerate Content
+                  </>
+                )}
+              </button>
             </div>
           ) : (
             <div className="space-y-8">
@@ -404,9 +468,12 @@ const InsightView = () => {
                     </div>
                   ) : (
                     <div className="prose max-w-none">
-                      {section.content.split('\n').map((paragraph, index) => (
-                        <p key={index}>{paragraph}</p>
-                      ))}
+                      {section.content && typeof section.content === 'string' ? 
+                        section.content.split('\n').map((paragraph, index) => (
+                          <p key={index}>{paragraph}</p>
+                        )) : 
+                        <p className="text-gray-500">Content not available in the correct format. Please regenerate.</p>
+                      }
                     </div>
                   )}
                 </div>

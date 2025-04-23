@@ -40,12 +40,23 @@ class InsightsAiService {
           }
         }
       );
+
+      // For better debugging
+      console.log('FluxAI Response Status:', response.status);
+      console.log('FluxAI Response Data Structure:', Object.keys(response.data));
+      if (!response.data || !response.data.choices || !response.data.choices[0] || !response.data.choices[0].message) {
+        console.error('Invalid FluxAI response structure:', JSON.stringify(response.data, null, 2));
+        throw new Error('Invalid FluxAI response structure');
+      }
       
       // Process the AI response
       const aiContent = response.data.choices[0].message.content;
       
       // Parse the content into structured sections
-      return this.parseAiResponseToReportSections(aiContent);
+      const parsedContent = this.parseAiResponseToReportSections(aiContent);
+      
+      // Ensure the content has the required structure for all visibility levels
+      return this.ensureCompleteContentStructure(parsedContent);
       
     } catch (error) {
       console.error('Error generating growth blueprint with AI:', error);
@@ -132,26 +143,124 @@ class InsightsAiService {
    */
   parseAiResponseToReportSections(aiContent) {
     try {
+      // Check if input is valid
+      if (!aiContent || typeof aiContent !== 'string') {
+        console.error('Invalid AI response received:', aiContent);
+        return this.getEmptyContentStructure();
+      }
+      
       // Extract JSON from response (in case there's additional text)
       const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
       
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          console.error('Error parsing JSON match:', parseError);
+          return this.getEmptyContentStructure();
+        }
       }
       
       // If no JSON found, try to parse the entire response
-      return JSON.parse(aiContent);
+      try {
+        return JSON.parse(aiContent);
+      } catch (parseError) {
+        console.error('Error parsing entire response as JSON:', parseError);
+        return this.getEmptyContentStructure();
+      }
     } catch (error) {
       console.error('Error parsing AI response:', error);
-      
-      // If parsing fails, create a structured format manually
+      return this.getEmptyContentStructure();
+    }
+  }
+  
+  /**
+   * Get a basic empty content structure
+   * @returns {Object} Empty content structure
+   */
+  getEmptyContentStructure() {
+    return {
+      executiveSummary: { 
+        content: "Failed to parse AI-generated content. Please regenerate the report.", 
+        visibility: "employeeVisible" 
+      }
+    };
+  }
+  
+  /**
+   * Ensure complete content structure with all required sections
+   * @param {Object} content - Original content
+   * @returns {Object} Completed content structure
+   */
+  ensureCompleteContentStructure(content) {
+    // If content is null or empty, return complete fallback structure
+    if (!content || Object.keys(content).length === 0) {
       return {
-        executiveSummary: { 
-          content: "Failed to parse AI-generated content properly. Please regenerate the report.", 
-          visibility: "employeeVisible" 
+        executiveSummary: {
+          content: "No executive summary content was generated. Please try regenerating.",
+          visibility: "employeeVisible"
+        },
+        strengthsAssessment: {
+          content: "No strengths assessment content was generated. Please try regenerating.",
+          visibility: "employeeVisible"
+        },
+        developmentOpportunities: {
+          content: "No development opportunities content was generated. Please try regenerating.",
+          visibility: "employeeVisible"
+        },
+        recommendedActions: {
+          content: "No recommended actions content was generated. Please try regenerating.",
+          visibility: "employeeVisible"
+        },
+        blindSpotsAnalysis: {
+          content: "No blind spots analysis content was generated. Please try regenerating.",
+          visibility: "managerOnly"
+        },
+        careerDevelopmentInsights: {
+          content: "No career development insights content was generated. Please try regenerating.",
+          visibility: "managerOnly"
+        },
+        talentManagementImplications: {
+          content: "No talent management implications content was generated. Please try regenerating.",
+          visibility: "hrOnly"
         }
       };
     }
+    
+    // Create a new object with all required sections
+    const completeContent = { ...content };
+    
+    // Ensure all sections exist with correct structure
+    const requiredSections = {
+      executiveSummary: "employeeVisible",
+      strengthsAssessment: "employeeVisible",
+      developmentOpportunities: "employeeVisible",
+      recommendedActions: "employeeVisible",
+      blindSpotsAnalysis: "managerOnly",
+      careerDevelopmentInsights: "managerOnly",
+      talentManagementImplications: "hrOnly"
+    };
+    
+    Object.entries(requiredSections).forEach(([section, visibility]) => {
+      // Ensure section exists
+      if (!completeContent[section]) {
+        completeContent[section] = {
+          content: `No ${section.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} content was generated. Please try regenerating.`,
+          visibility: visibility
+        };
+      }
+      
+      // Ensure section has the correct structure
+      if (!completeContent[section].content) {
+        completeContent[section].content = `No ${section.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} content was provided. Please try regenerating.`;
+      }
+      
+      if (!completeContent[section].visibility) {
+        completeContent[section].visibility = visibility;
+      }
+    });
+    
+    return completeContent;
   }
   
   /**
@@ -163,7 +272,7 @@ class InsightsAiService {
   generateFallbackGrowthBlueprint(feedbackData, employeeData) {
     return {
       executiveSummary: {
-        content: `Development report for ${employeeData.firstName} ${employeeData.lastName}. This is a fallback report generated due to an issue with AI content generation. The system has preserved the feedback data and you can try regenerating the report.`,
+        content: `Development report for ${employeeData ? employeeData.firstName + ' ' + employeeData.lastName : 'the employee'}. This is a fallback report generated due to an issue with AI content generation. The system has preserved the feedback data and you can try regenerating the report.`,
         visibility: "employeeVisible"
       },
       strengthsAssessment: {
