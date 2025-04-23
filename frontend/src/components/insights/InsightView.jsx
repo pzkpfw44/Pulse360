@@ -172,7 +172,7 @@ const InsightView = ({ insight: propInsight, loading: propLoading, error: propEr
   // Filter content sections by visibility level - FIXED: Better handling of different content structures
   const getContentSections = (visibilityLevel) => {
     // Log the insight content structure for debugging
-    console.log('INSIGHT CONTENT:', JSON.stringify(insight.content));
+    console.log('INSIGHT CONTENT TYPE:', typeof insight.content);
     
     if (!insight || !insight.content) {
       console.log('Insight has no content');
@@ -190,33 +190,33 @@ const InsightView = ({ insight: propInsight, loading: propLoading, error: propEr
     let sections = [];
     
     try {
-      // Handle different content structures
-      if (Array.isArray(insight.content)) {
-        // Handle array-type content
-        sections = insight.content.map((item, index) => ({
-          id: `section${index}`,
-          title: `Section ${index + 1}`,
-          content: item?.content || "No content available",
-          visibility: item?.visibility || "employeeVisible",
-          editedContent: editedContent[`section${index}`]?.content || item?.content || "No content available",
-          originalContent: originalContent[`section${index}`]?.content || item?.content || "No content available"
-        }));
-      } 
-      else if (typeof insight.content === 'string') {
-        // Handle string content (possibly JSON string)
+      // Try to handle content if it's a string (could be JSON string)
+      if (typeof insight.content === 'string') {
         try {
+          // Try to parse as JSON
           const parsedContent = JSON.parse(insight.content);
-          if (typeof parsedContent === 'object') {
-            // Process the parsed object
+          
+          if (typeof parsedContent === 'object' && parsedContent !== null) {
+            // Create sections from the parsed object
             sections = Object.entries(parsedContent)
-              .filter(([_, sectionData]) => shouldIncludeSection(sectionData?.visibility))
+              .filter(([_, sectionData]) => {
+                if (!sectionData) return false;
+                return shouldIncludeSection(sectionData.visibility || 'employeeVisible');
+              })
               .map(([key, data]) => ({
                 id: key,
-                title: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).replace(/([a-z])([A-Z])/g, '$1 $2'),
-                content: data?.content || "No content available",
-                visibility: data?.visibility || "employeeVisible",
-                editedContent: editedContent[key]?.content || data?.content || "No content available",
-                originalContent: originalContent[key]?.content || data?.content || "No content available"
+                title: key
+                  .replace(/([A-Z])/g, ' $1')
+                  .replace(/^./, str => str.toUpperCase())
+                  .replace(/([a-z])([A-Z])/g, '$1 $2'),
+                content: typeof data === 'object' ? data.content : data,
+                visibility: typeof data === 'object' ? data.visibility || 'employeeVisible' : 'employeeVisible',
+                editedContent: editedContent[key]?.content || 
+                              (typeof data === 'object' ? data.content : data) || 
+                              "No content available",
+                originalContent: originalContent[key]?.content || 
+                              (typeof data === 'object' ? data.content : data) || 
+                              "No content available"
               }));
           }
         } catch (e) {
@@ -232,28 +232,108 @@ const InsightView = ({ insight: propInsight, loading: propLoading, error: propEr
           }];
         }
       } 
+      // Handle object-type content - this is the expected structure
       else if (typeof insight.content === 'object' && insight.content !== null) {
-        // Handle object-type content - this is the expected structure
         sections = Object.entries(insight.content)
           .filter(([_, sectionData]) => {
             // Handle null or undefined in content gracefully
             if (!sectionData) return false;
-            return shouldIncludeSection(sectionData?.visibility);
+            
+            // Check section visibility
+            const visibility = typeof sectionData === 'object' && sectionData.visibility 
+              ? sectionData.visibility 
+              : 'employeeVisible';
+              
+            return shouldIncludeSection(visibility);
           })
-          .map(([key, data]) => ({
-            id: key,
-            title: key
+          .map(([key, data]) => {
+            const title = key
               .replace(/([A-Z])/g, ' $1')
               .replace(/^./, str => str.toUpperCase())
-              .replace(/([a-z])([A-Z])/g, '$1 $2'),
-            content: data?.content || "No content available",
-            visibility: data?.visibility || "employeeVisible",
-            editedContent: editedContent[key]?.content || data?.content || "No content available",
-            originalContent: originalContent[key]?.content || data?.content || "No content available"
-          }));
+              .replace(/([a-z])([A-Z])/g, '$1 $2');
+              
+            // Handle both object format with content/visibility and direct string content
+            const content = typeof data === 'object' && data !== null && data.content 
+              ? data.content 
+              : typeof data === 'string' 
+                ? data 
+                : "No content available";
+                
+            const visibility = typeof data === 'object' && data !== null && data.visibility 
+              ? data.visibility 
+              : 'employeeVisible';
+              
+            return {
+              id: key,
+              title,
+              content,
+              visibility,
+              editedContent: editedContent[key]?.content || content,
+              originalContent: originalContent[key]?.content || content
+            };
+          });
+      }
+      
+      // If still no sections and we have originalAiContent, try to use that
+      if (sections.length === 0 && insight.originalAiContent) {
+        console.log('Trying to use originalAiContent');
+        
+        // Similar processing as above for originalAiContent
+        if (typeof insight.originalAiContent === 'object' && insight.originalAiContent !== null) {
+          sections = Object.entries(insight.originalAiContent)
+            .filter(([_, sectionData]) => {
+              if (!sectionData) return false;
+              const visibility = typeof sectionData === 'object' && sectionData.visibility 
+                ? sectionData.visibility 
+                : 'employeeVisible';
+              return shouldIncludeSection(visibility);
+            })
+            .map(([key, data]) => ({
+              id: key,
+              title: key
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^./, str => str.toUpperCase())
+                .replace(/([a-z])([A-Z])/g, '$1 $2'),
+              content: typeof data === 'object' && data.content ? data.content : data,
+              visibility: typeof data === 'object' && data.visibility ? data.visibility : 'employeeVisible',
+              editedContent: typeof data === 'object' && data.content ? data.content : data,
+              originalContent: typeof data === 'object' && data.content ? data.content : data
+            }));
+        }
+      }
+      
+      // Last resort: Create a default section if everything else fails
+      if (sections.length === 0) {
+        console.log('Creating default sections due to empty/invalid content');
+        sections = [
+          {
+            id: 'strengthsSummary',
+            title: 'Strengths Summary',
+            content: "Content is not available in the expected format. Please regenerate the insight.",
+            visibility: 'employeeVisible',
+            editedContent: "Content is not available in the expected format. Please regenerate the insight.",
+            originalContent: "Content is not available in the expected format. Please regenerate the insight."
+          },
+          {
+            id: 'growthAreas',
+            title: 'Growth Areas',
+            content: "The insight data needs to be regenerated to display properly.",
+            visibility: 'employeeVisible',
+            editedContent: "The insight data needs to be regenerated to display properly.",
+            originalContent: "The insight data needs to be regenerated to display properly."
+          }
+        ];
       }
     } catch (error) {
       console.error('Error processing content:', error);
+      sections = [{
+        id: 'error',
+        title: 'Error Processing Content',
+        content: "There was an error processing the content. Please try regenerating the insight.",
+        visibility: 'employeeVisible',
+        editedContent: "There was an error processing the content. Please try regenerating the insight.",
+        originalContent: "There was an error processing the content. Please try regenerating the insight."
+      }];
     }
     
     console.log(`Filtered sections for ${visibilityLevel}:`, sections.length);

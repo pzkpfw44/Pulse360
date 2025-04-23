@@ -537,55 +537,45 @@ const {
           return res.status(404).json({ message: 'Insight not found' });
         }
         
-        // Generate directly here as a fallback instead of calling the AI service
-        const employee = insight.campaign.targetEmployee || { firstName: 'Employee', lastName: 'Name' };
-        const employeeName = `${employee.firstName} ${employee.lastName}`;
-        
-        // Create a simple but complete insight content structure
-        const mockContent = {
-          strengthsSummary: {
-            content: `Based on the feedback data, ${employeeName} demonstrates several key strengths. They are well-regarded for their technical expertise, problem-solving abilities, and dedication to quality work. Colleagues particularly appreciate their willingness to help others and their ability to remain calm under pressure.`,
-            visibility: 'employeeVisible'
-          },
-          growthAreas: {
-            content: `Areas for potential development include enhancing communication skills, particularly when explaining complex concepts to non-technical team members. There may also be opportunities to improve time management and delegation to increase overall effectiveness.`,
-            visibility: 'employeeVisible'
-          },
-          impactAnalysis: {
-            content: `${employeeName} has made notable contributions in several key projects. Their technical solutions have directly impacted efficiency and quality. Team members value their collaborative approach and technical mentorship.`,
-            visibility: 'employeeVisible'
-          },
-          recommendedActions: {
-            content: `1. Consider participating in communication skills training to enhance the ability to explain technical concepts\n2. Work with a mentor on developing strategic time management techniques\n3. Seek opportunities to lead cross-functional initiatives to broaden perspective\n4. Schedule regular feedback sessions with team members to maintain awareness of impact`,
-            visibility: 'employeeVisible'
-          },
-          feedbackPatterns: {
-            content: `Consistent patterns in the feedback indicate strong technical abilities coupled with opportunities to enhance soft skills. There is alignment between self-assessment and peer feedback regarding technical strengths, with manager feedback highlighting potential for greater leadership development.`,
-            visibility: 'managerOnly'
-          },
-          leadershipInsights: {
-            content: `When supporting ${employeeName}'s development, focus on providing opportunities that combine technical excellence with increased cross-functional collaboration. Consider pairing technical projects with communication-focused objectives to create balanced growth.`,
-            visibility: 'managerOnly'
-          },
-          talentDevelopmentNotes: {
-            content: `${employeeName} represents valuable technical talent with potential for growth into technical leadership roles. Consider for high-visibility projects that require both technical depth and stakeholder management to develop a broader skill set.`,
-            visibility: 'hrOnly'
-          }
-        };
-        
-        console.log('[INSIGHTS] Generated mock content with sections:', Object.keys(mockContent).join(', '));
-        
-        // Update insight with new content - use the mock content directly
-        await insight.update({
-          content: mockContent,
-          originalAiContent: mockContent
-        });
-        
-        console.log(`[INSIGHTS] Successfully updated insight with mock content: ${id}`);
-        
-        res.status(200).json({
-          message: 'Insight regenerated successfully'
-        });
+        try {
+          // Get feedback data for the campaign
+          const feedbackData = await this.getFeedbackDataForCampaign(insight.campaignId);
+          
+          // Use the AI service to regenerate the insight content
+          const regeneratedContent = await insightsAiService.regenerateInsight(insight, feedbackData);
+          
+          // Update insight with new content
+          await insight.update({
+            content: regeneratedContent,
+            originalAiContent: regeneratedContent
+          });
+          
+          console.log(`[INSIGHTS] Successfully updated insight with AI-generated content: ${id}`);
+          
+          res.status(200).json({
+            message: 'Insight regenerated successfully'
+          });
+        } catch (aiError) {
+          console.error('Error with AI service:', aiError);
+          
+          // Generate a fallback response instead
+          const employee = insight.campaign?.targetEmployee || { firstName: 'Employee', lastName: 'Name' };
+          const fallbackContent = await insightsAiService.generateFallbackInsight(employee);
+          
+          // Update insight with fallback content
+          await insight.update({
+            content: fallbackContent,
+            originalAiContent: fallbackContent
+          });
+          
+          console.log(`[INSIGHTS] Used fallback content due to AI error: ${id}`);
+          
+          // Still return success to the user
+          res.status(200).json({
+            message: 'Insight regenerated with fallback content',
+            usedFallback: true
+          });
+        }
       } catch (error) {
         console.error('Error regenerating insight:', error);
         res.status(500).json({ 

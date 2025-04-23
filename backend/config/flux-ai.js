@@ -16,14 +16,46 @@ const config = {
     files: '/v1/files'
   },
 
-  isConfigured: function() {
-    return !!this.apiKey;
+  /**
+   * Check if Flux AI is properly configured
+   * @returns {Boolean}
+   */
+  isConfigured() {
+    return !!this.apiKey && !!this.baseUrl;
   },
 
   isDevelopment: process.env.NODE_ENV === 'development',
 
+  /**
+   * Get the full endpoint URL
+   * @param {String} endpoint - Either predefined endpoint key or custom path
+   * @returns {String} - Full URL
+   */
   getEndpointUrl: function(endpoint) {
-    return `${this.baseUrl}${this.endpoints[endpoint]}`;
+    // Ensure baseUrl doesn't end with a slash
+    const cleanBaseUrl = this.baseUrl.endsWith('/')
+      ? this.baseUrl.substring(0, this.baseUrl.length - 1)
+      : this.baseUrl;
+    
+    // Check if this is a predefined endpoint key
+    if (this.endpoints[endpoint]) {
+      return `${cleanBaseUrl}${this.endpoints[endpoint]}`;
+    } 
+    
+    // Handle custom endpoint path
+    let path = endpoint;
+    
+    // Ensure path starts with a slash if not already
+    if (!path.startsWith('/')) {
+      path = '/' + path;
+    }
+    
+    // Ensure path starts with /v1/ prefix if needed
+    if (!path.startsWith('/v1/') && !path.includes('/v1/')) {
+      path = '/v1' + path;
+    }
+    
+    return `${cleanBaseUrl}${path}`;
   },
 
   getSystemPrompt: function(task) {
