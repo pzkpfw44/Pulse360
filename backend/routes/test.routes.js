@@ -154,4 +154,43 @@ router.get('/flux-api', async (req, res) => {
   }
 });
 
+// FluxAI test endpoint
+router.get('/flux-ai-test', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const fluxAiConfig = require('../config/flux-ai');
+    
+    console.log('[TEST] Testing FluxAI connection with:');
+    console.log(`[TEST] API URL: ${fluxAiConfig.baseUrl}/v1/llms`);
+    console.log(`[TEST] API Key present: ${!!fluxAiConfig.apiKey}`);
+    
+    // Test the connection to the FluxAI API
+    const response = await axios.get(
+      `${fluxAiConfig.baseUrl}/v1/llms`,
+      {
+        headers: {
+          'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    console.log('[TEST] FluxAI connection successful');
+    
+    res.status(200).json({
+      success: true,
+      message: 'Successfully connected to FluxAI API',
+      models: response.data
+    });
+  } catch (error) {
+    console.error('[TEST] Error testing FluxAI connection:', error.message);
+    
+    res.status(500).json({
+      success: false,
+      message: `Failed to connect to FluxAI API: ${error.message}`,
+      error: error.response ? error.response.data : null
+    });
+  }
+});
+
 module.exports = router;

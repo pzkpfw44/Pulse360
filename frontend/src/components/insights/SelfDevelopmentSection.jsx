@@ -60,6 +60,17 @@ const SelfDevelopmentSection = ({ campaigns, loading, onRefresh }) => {
     navigate(`/insights-360/view/${id}`);
   };
   
+  // ADD THIS FUNCTION - Handle deleting insights
+  const handleDeleteInsight = async (insightId) => {
+    try {
+      const updatedInsights = insights.filter(insight => insight.id !== insightId);
+      setInsights(updatedInsights);
+    } catch (err) {
+      console.error('Error deleting insight:', err);
+      setInsightsError('Failed to delete insight. Please try again.');
+    }
+  };
+  
   const filteredInsights = insights.filter(insight => {
     if (!searchTerm) return true;
     
@@ -227,6 +238,7 @@ const SelfDevelopmentSection = ({ campaigns, loading, onRefresh }) => {
                 key={insight.id}
                 insight={insight}
                 onView={() => handleViewInsight(insight.id)}
+                onDelete={handleDeleteInsight}
               />
             ))}
           </div>

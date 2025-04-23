@@ -1,10 +1,12 @@
 // frontend/src/components/insights/InsightCard.jsx
 
-import React from 'react';
-import { FileText, User, Calendar, Eye, Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileText, User, Calendar, Eye, Download, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 
-const InsightCard = ({ insight, onView }) => {
+const InsightCard = ({ insight, onView, onDelete }) => {
+  const [deleting, setDeleting] = useState(false);
+  
   // Format dates
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString(undefined, {
@@ -56,6 +58,26 @@ const InsightCard = ({ insight, onView }) => {
       alert('Failed to download PDF. Please try again.');
     }
   };
+
+  // Delete insight
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    
+    if (!confirm('Are you sure you want to delete this insight? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      setDeleting(true);
+      await api.delete(`/insights/${insight.id}`);
+      if (onDelete) onDelete(insight.id);
+    } catch (error) {
+      console.error('Error deleting insight:', error);
+      alert('Failed to delete insight. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
   
   return (
     <div 
@@ -97,6 +119,14 @@ const InsightCard = ({ insight, onView }) => {
               title="Download PDF"
             >
               <Download className="h-5 w-5" />
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full"
+              title="Delete Insight"
+            >
+              <Trash2 className="h-5 w-5" />
             </button>
           </div>
         </div>
