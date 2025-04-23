@@ -8,12 +8,12 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 
-const InsightView = () => {
+const InsightView = ({ insight: propInsight, loading: propLoading, error: propError, onRefresh }) => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [insight, setInsight] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [insight, setInsight] = useState(propInsight || null);
+  const [loading, setLoading] = useState(propLoading || false);
+  const [error, setError] = useState(propError || null);
   const [editMode, setEditMode] = useState(false);
   const [editedContent, setEditedContent] = useState({});
   const [saving, setSaving] = useState(false);
@@ -21,8 +21,14 @@ const InsightView = () => {
   const [originalContent, setOriginalContent] = useState({});
   
   useEffect(() => {
-    fetchInsight();
-  }, [id]);
+    if (propInsight) {
+      setInsight(propInsight);
+      setEditedContent(propInsight.content || {});
+      setOriginalContent(propInsight.originalAiContent || propInsight.content || {});
+    } else if (id) {
+      fetchInsight();
+    }
+  }, [propInsight, id]);
   
   const fetchInsight = async () => {
     try {
@@ -162,9 +168,12 @@ const InsightView = () => {
     );
   };
   
-  // Filter content sections by visibility level
+  // Filter content sections by visibility level - FIXED: Better handling of different content structures
   const getContentSections = (visibilityLevel) => {
-    if (!insight || !insight.content) return [];
+    if (!insight || !insight.content || Object.keys(insight.content).length === 0) {
+      console.log('Insight has no content');
+      return [];
+    }
     
     // Helper to determine if a section should be included
     const shouldIncludeSection = (sectionVisibility) => {
@@ -174,19 +183,37 @@ const InsightView = () => {
       return false;
     };
     
-    return Object.entries(insight.content)
-      .filter(([_, sectionData]) => shouldIncludeSection(sectionData?.visibility))
-      .map(([key, data]) => ({
-        id: key,
-        title: key
-          .replace(/([A-Z])/g, ' $1')
-          .replace(/^./, str => str.toUpperCase())
-          .replace(/([a-z])([A-Z])/g, '$1 $2'),
-        content: data?.content || "No content available",
-        visibility: data?.visibility || "employeeVisible",
-        editedContent: editedContent[key]?.content || data?.content || "No content available",
-        originalContent: originalContent[key]?.content || data?.content || "No content available"
+    let sections = [];
+    
+    // Handle different content structures
+    if (Array.isArray(insight.content)) {
+      // Handle array-type content
+      sections = insight.content.map((item, index) => ({
+        id: `section${index}`,
+        title: `Section ${index + 1}`,
+        content: item?.content || "No content available",
+        visibility: item?.visibility || "employeeVisible",
+        editedContent: editedContent[`section${index}`]?.content || item?.content || "No content available",
+        originalContent: originalContent[`section${index}`]?.content || item?.content || "No content available"
       }));
+    } else if (typeof insight.content === 'object' && insight.content !== null) {
+      // Handle object-type content - this is the expected structure
+      sections = Object.entries(insight.content)
+        .filter(([_, sectionData]) => shouldIncludeSection(sectionData?.visibility))
+        .map(([key, data]) => ({
+          id: key,
+          title: key
+            .replace(/([A-Z])/g, ' $1')
+            .replace(/^./, str => str.toUpperCase())
+            .replace(/([a-z])([A-Z])/g, '$1 $2'),
+          content: data?.content || "No content available",
+          visibility: data?.visibility || "employeeVisible",
+          editedContent: editedContent[key]?.content || data?.content || "No content available",
+          originalContent: originalContent[key]?.content || data?.content || "No content available"
+        }));
+    }
+    
+    return sections;
   };
   
   if (loading) {
@@ -215,7 +242,7 @@ const InsightView = () => {
           <p>{error}</p>
           <button
             className="text-red-700 underline mt-1"
-            onClick={fetchInsight}
+            onClick={onRefresh || fetchInsight}
           >
             Try Again
           </button>

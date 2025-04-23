@@ -2,305 +2,230 @@
 
 const axios = require('axios');
 const fluxAiConfig = require('../config/flux-ai');
+const { generateMockInsight } = require('../utils/mock-insight-generator');
 
 /**
- * Service for generating insights using FluxAI
+ * Service for AI-powered insights generation
  */
 class InsightsAiService {
   /**
-   * Generate a growth blueprint report for an individual
-   * @param {Object} feedbackData - Aggregated feedback data for the individual
-   * @param {Object} employeeData - Employee information
-   * @param {Object} campaignData - Campaign information
-   * @returns {Object} Generated report content
+   * Generate a Growth Blueprint insight
+   * @param {Object} feedbackData - Aggregated feedback data
+   * @param {Object} targetEmployee - Target employee data
+   * @param {Object} campaign - Campaign data
+   * @returns {Object} - Structured insight content
    */
-  async generateGrowthBlueprint(feedbackData, employeeData, campaignData) {
+  async generateGrowthBlueprint(feedbackData, targetEmployee, campaign) {
     try {
       console.log('Generating growth blueprint with FluxAI...');
       
-      // Prepare the prompt for the AI
-      const prompt = this.buildGrowthBlueprintPrompt(feedbackData, employeeData, campaignData);
-      
-      // Call Flux AI
-      const response = await axios.post(
-        `${fluxAiConfig.baseUrl}/v1/chat/completions`, // Fixed URL construction
-        {
-          model: fluxAiConfig.model,
-          messages: [
-            { role: "system", content: "You are an expert HR consultant specializing in talent development and 360-degree feedback analysis. Your task is to analyze feedback data and generate a comprehensive individual development report." },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 4000
-        }, 
-        {
-          headers: {
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      // For better debugging
-      console.log('FluxAI Response Status:', response.status);
-      console.log('FluxAI Response Data Structure:', Object.keys(response.data));
-      if (!response.data || !response.data.choices || !response.data.choices[0] || !response.data.choices[0].message) {
-        console.error('Invalid FluxAI response structure:', JSON.stringify(response.data, null, 2));
-        throw new Error('Invalid FluxAI response structure');
+      // Check if we have necessary data
+      if (!targetEmployee) {
+        console.error('Missing target employee data, using mock data');
+        return generateMockInsight({ firstName: 'Employee', lastName: 'Name' });
       }
       
-      // Process the AI response
-      const aiContent = response.data.choices[0].message.content;
+      // Format the employee name for use in prompts
+      const employeeName = `${targetEmployee.firstName} ${targetEmployee.lastName}`;
+      console.log(`Generating insights for employee: ${employeeName}`);
       
-      // Parse the content into structured sections
-      const parsedContent = this.parseAiResponseToReportSections(aiContent);
-      
-      // Ensure the content has the required structure for all visibility levels
-      return this.ensureCompleteContentStructure(parsedContent);
-      
-    } catch (error) {
-      console.error('Error generating growth blueprint with AI:', error);
-      
-      // Return a fallback report if AI generation fails
-      return this.generateFallbackGrowthBlueprint(feedbackData, employeeData);
-    }
-  }
-  
-  /**
-   * Build the prompt for growth blueprint generation
-   * @param {Object} feedbackData - Aggregated feedback data
-   * @param {Object} employeeData - Employee information
-   * @param {Object} campaignData - Campaign information
-   * @returns {Object} Completed content structure
-   * @returns {String} Formatted prompt
-   */
-  buildGrowthBlueprintPrompt(feedbackData, employeeData, campaignData) {
-    return `
-    ## Task: Generate a "Your Growth Blueprint" report for ${employeeData.firstName} ${employeeData.lastName}
-
-    ## Employee Information:
-    - Name: ${employeeData.firstName} ${employeeData.lastName}
-    - Position: ${employeeData.jobTitle || 'Not specified'}
-    - Department: ${employeeData.department || 'Not specified'}
-    
-    ## Feedback Data:
-    ${JSON.stringify(feedbackData, null, 2)}
-    
-    ## Report Structure:
-    Create a comprehensive development report with the following sections:
-    
-    1. EXECUTIVE SUMMARY (employeeVisible)
-    - Brief overview of key strengths and development areas
-    - 3-5 bullet points highlighting main insights
-    
-    2. STRENGTHS ASSESSMENT (employeeVisible)
-    - 3-5 key strengths identified from feedback
-    - Specific examples and impact of these strengths
-    - How to leverage these strengths further
-    
-    3. DEVELOPMENT OPPORTUNITIES (employeeVisible)
-    - 3-5 key areas for development
-    - Specific examples from feedback
-    - Impact of these development areas on performance
-    
-    4. RECOMMENDED ACTIONS (employeeVisible)
-    - Specific, actionable development recommendations
-    - Learning resources and activities
-    - Timeline suggestions for development
-    
-    5. BLIND SPOTS ANALYSIS (managerOnly)
-    - Areas where self-perception differs from others' perception
-    - Potential underlying causes
-    - Coaching suggestions for managers
-    
-    6. CAREER DEVELOPMENT INSIGHTS (managerOnly)
-    - Potential career paths based on strengths
-    - Skills needed for advancement
-    - Recommended experiences and exposure
-    
-    7. TALENT MANAGEMENT IMPLICATIONS (hrOnly)
-    - Flight risk assessment
-    - Succession planning considerations
-    - Long-term development investment recommendations
-    
-    For each section, provide practical, specific insights based on the feedback data. Use a professional, constructive tone throughout.
-    
-    Format the response as JSON with the following structure:
-    {
-      "executiveSummary": { "content": "...", "visibility": "employeeVisible" },
-      "strengthsAssessment": { "content": "...", "visibility": "employeeVisible" },
-      "developmentOpportunities": { "content": "...", "visibility": "employeeVisible" },
-      "recommendedActions": { "content": "...", "visibility": "employeeVisible" },
-      "blindSpotsAnalysis": { "content": "...", "visibility": "managerOnly" },
-      "careerDevelopmentInsights": { "content": "...", "visibility": "managerOnly" },
-      "talentManagementImplications": { "content": "...", "visibility": "hrOnly" }
-    }`;
-  }
-  
-  /**
-   * Parse AI response into structured report sections
-   * @param {String} aiContent - Raw AI response
-   * @returns {Object} Structured report content
-   */
-  parseAiResponseToReportSections(aiContent) {
-    try {
-      // Check if input is valid
-      if (!aiContent || typeof aiContent !== 'string') {
-        console.error('Invalid AI response received:', aiContent);
-        return this.getEmptyContentStructure();
-      }
-      
-      // Extract JSON from response (in case there's additional text)
-      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
-      
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch (parseError) {
-          console.error('Error parsing JSON match:', parseError);
-          return this.getEmptyContentStructure();
-        }
-      }
-      
-      // If no JSON found, try to parse the entire response
       try {
-        return JSON.parse(aiContent);
-      } catch (parseError) {
-        console.error('Error parsing entire response as JSON:', parseError);
-        return this.getEmptyContentStructure();
-      }
-    } catch (error) {
-      console.error('Error parsing AI response:', error);
-      return this.getEmptyContentStructure();
-    }
-  }
-  
-  /**
-   * Get a basic empty content structure
-   * @returns {Object} Empty content structure
-   */
-  getEmptyContentStructure() {
-    return {
-      executiveSummary: { 
-        content: "Failed to parse AI-generated content. Please regenerate the report.", 
-        visibility: "employeeVisible" 
-      }
-    };
-  }
-  
-  /**
-   * Ensure complete content structure with all required sections
-   * @param {Object} content - Original content
-   * @returns {Object} Completed content structure
-   */
-  ensureCompleteContentStructure(content) {
-    // If content is null or empty, return complete fallback structure
-    if (!content || Object.keys(content).length === 0) {
-      return {
-        executiveSummary: {
-          content: "No executive summary content was generated. Please try regenerating.",
-          visibility: "employeeVisible"
-        },
-        strengthsAssessment: {
-          content: "No strengths assessment content was generated. Please try regenerating.",
-          visibility: "employeeVisible"
-        },
-        developmentOpportunities: {
-          content: "No development opportunities content was generated. Please try regenerating.",
-          visibility: "employeeVisible"
-        },
-        recommendedActions: {
-          content: "No recommended actions content was generated. Please try regenerating.",
-          visibility: "employeeVisible"
-        },
-        blindSpotsAnalysis: {
-          content: "No blind spots analysis content was generated. Please try regenerating.",
-          visibility: "managerOnly"
-        },
-        careerDevelopmentInsights: {
-          content: "No career development insights content was generated. Please try regenerating.",
-          visibility: "managerOnly"
-        },
-        talentManagementImplications: {
-          content: "No talent management implications content was generated. Please try regenerating.",
-          visibility: "hrOnly"
+        // Prepare feedback data for the AI
+        const feedbackSummary = this.prepareFeedbackForAI(feedbackData);
+        
+        // Get API config - FIX: properly construct the API URL
+        const apiUrl = `${fluxAiConfig.baseUrl}/chat/completions`;
+        
+        // Log API call
+        console.log(`Calling FluxAI at: ${apiUrl}`);
+        
+        // Create the prompt for the AI
+        const messages = [
+          {
+            role: 'system',
+            content: `You are an expert HR analytics tool that generates personalized development insights from 360 feedback data. You analyze patterns in feedback and create structured growth blueprints that are actionable and specific.`
+          },
+          {
+            role: 'user',
+            content: `Generate a comprehensive Growth Blueprint for ${employeeName} based on the following 360 feedback data. Structure your response as JSON with these sections:
+            
+            1. strengthsSummary: Key strengths identified in the feedback
+            2. growthAreas: Areas that need development
+            3. impactAnalysis: How the employee's behaviors impact others
+            4. recommendedActions: Specific action items for growth
+            5. feedbackPatterns: Patterns observed across different relationship types
+            6. leadershipInsights: Insights for managers to support this employee
+            7. talentDevelopmentNotes: Notes for HR and talent management
+            
+            For sections 1-4, use "employeeVisible" visibility. For 5-6, use "managerOnly". For 7, use "hrOnly".
+            
+            Each section in your JSON should have this structure:
+            {
+              "sectionName": {
+                "content": "Detailed multi-paragraph text with specific insights",
+                "visibility": "employeeVisible OR managerOnly OR hrOnly"
+              }
+            }
+            
+            Feedback data: ${JSON.stringify(feedbackSummary, null, 2)}`
+          }
+        ];
+        
+        // Call the FluxAI API
+        const response = await axios.post(
+          apiUrl,
+          {
+            model: fluxAiConfig.model,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 3000
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        // Log API response status
+        console.log(`FluxAI Response Status: ${response.status}`);
+        console.log(`FluxAI Response Data Structure: ${Object.keys(response.data)}`);
+        
+        // Check for valid response with content
+        if (response && response.data && response.data.choices && 
+            response.data.choices[0] && response.data.choices[0].message && 
+            response.data.choices[0].message.content) {
+          
+          try {
+            // Try to parse the JSON response
+            const rawContent = response.data.choices[0].message.content.trim();
+            
+            // Some AI models add markdown code blocks - clean those up
+            const jsonContent = rawContent
+              .replace(/```json/g, '')
+              .replace(/```/g, '')
+              .trim();
+            
+            // Parse the cleaned JSON
+            const parsedContent = JSON.parse(jsonContent);
+            
+            // Validate the content structure
+            if (typeof parsedContent === 'object' && Object.keys(parsedContent).length > 0) {
+              // Check if it has at least the basic required sections
+              if (parsedContent.strengthsSummary && parsedContent.growthAreas && parsedContent.recommendedActions) {
+                console.log('Successfully parsed AI-generated content with sections:', Object.keys(parsedContent).join(', '));
+                return parsedContent;
+              }
+            }
+            
+            console.log('AI response was valid JSON but missing required sections, using mock data');
+          } catch (parseError) {
+            console.error('Error parsing AI JSON response:', parseError);
+            console.log('AI response content format was invalid, using mock data');
+          }
+        } else {
+          console.log('Invalid AI response structure, using mock data');
         }
-      };
+        
+      } catch (apiError) {
+        console.error('Error calling FluxAI API:', apiError.message);
+      }
+      
+      // If we reach here, use mock data as fallback
+      return generateMockInsight(targetEmployee);
+      
+    } catch (error) {
+      console.error('Error in generateGrowthBlueprint:', error);
+      // Even if everything fails, we still need to return something
+      return generateMockInsight(targetEmployee);
     }
-    
-    // Create a new object with all required sections
-    const completeContent = { ...content };
-    
-    // Ensure all sections exist with correct structure
-    const requiredSections = {
-      executiveSummary: "employeeVisible",
-      strengthsAssessment: "employeeVisible",
-      developmentOpportunities: "employeeVisible",
-      recommendedActions: "employeeVisible",
-      blindSpotsAnalysis: "managerOnly",
-      careerDevelopmentInsights: "managerOnly",
-      talentManagementImplications: "hrOnly"
-    };
-    
-    Object.entries(requiredSections).forEach(([section, visibility]) => {
-      // Ensure section exists
-      if (!completeContent[section]) {
-        completeContent[section] = {
-          content: `No ${section.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} content was generated. Please try regenerating.`,
-          visibility: visibility
-        };
-      }
-      
-      // Ensure section has the correct structure
-      if (!completeContent[section].content) {
-        completeContent[section].content = `No ${section.replace(/([A-Z])/g, ' $1').toLowerCase().trim()} content was provided. Please try regenerating.`;
-      }
-      
-      if (!completeContent[section].visibility) {
-        completeContent[section].visibility = visibility;
-      }
-    });
-    
-    return completeContent;
   }
-  
+
   /**
-   * Generate a fallback report if AI generation fails
-   * @param {Object} feedbackData - Aggregated feedback data
-   * @param {Object} employeeData - Employee information
-   * @returns {Object} Basic fallback report content
+   * Helper method to prepare feedback data for AI consumption
+   * @param {Object} feedbackData - Raw feedback data
+   * @returns {Object} - Simplified feedback summary
    */
-  generateFallbackGrowthBlueprint(feedbackData, employeeData) {
-    return {
-      executiveSummary: {
-        content: `Development report for ${employeeData ? employeeData.firstName + ' ' + employeeData.lastName : 'the employee'}. This is a fallback report generated due to an issue with AI content generation. The system has preserved the feedback data and you can try regenerating the report.`,
-        visibility: "employeeVisible"
-      },
-      strengthsAssessment: {
-        content: "Based on the feedback data, the employee appears to have strengths in specific technical areas. However, due to system limitations, a detailed analysis couldn't be generated at this time. Please try regenerating the report.",
-        visibility: "employeeVisible"
-      },
-      developmentOpportunities: {
-        content: "There are several areas for potential growth and development. The system has identified these from the feedback data but couldn't generate a detailed analysis. Please try regenerating the report for more specific insights.",
-        visibility: "employeeVisible"
-      },
-      recommendedActions: {
-        content: "We recommend focusing on key development areas highlighted in the feedback. For more specific recommendations, please try regenerating the report when the system is fully available.",
-        visibility: "employeeVisible"
-      },
-      blindSpotsAnalysis: {
-        content: "Blind spots analysis requires comparing self-perception with feedback from others. The system has the data but couldn't generate a detailed analysis at this time. Please try again later.",
-        visibility: "managerOnly"
-      },
-      careerDevelopmentInsights: {
-        content: "Based on the employee's strengths and development areas, there are potential career paths to explore. For detailed insights, please regenerate this report when the system is fully available.",
-        visibility: "managerOnly"
-      },
-      talentManagementImplications: {
-        content: "This employee shows potential in specific areas that align with organizational needs. For a more comprehensive talent management analysis, please try regenerating this report.",
-        visibility: "hrOnly"
+  prepareFeedbackForAI(feedbackData) {
+    try {
+      // Create a simplified representation of feedback data for the AI
+      const summary = {
+        relationshipTypes: {},
+        categories: {},
+        questions: {},
+        completedCount: {}
+      };
+      
+      // Extract relationship data
+      if (feedbackData.byRelationshipType) {
+        Object.entries(feedbackData.byRelationshipType).forEach(([type, data]) => {
+          // Get ratings
+          const ratings = {};
+          if (data.ratings) {
+            Object.entries(data.ratings).forEach(([questionId, ratingData]) => {
+              ratings[questionId] = {
+                average: ratingData.average || 0,
+                count: ratingData.count || 0
+              };
+            });
+          }
+          
+          // Get text responses
+          const textResponses = {};
+          if (data.textResponses) {
+            Object.entries(data.textResponses).forEach(([questionId, responses]) => {
+              textResponses[questionId] = responses || [];
+            });
+          }
+          
+          summary.relationshipTypes[type] = {
+            ratings,
+            textResponses,
+            count: data.count || 0
+          };
+        });
       }
-    };
+      
+      // Add participant counts
+      if (feedbackData.completedParticipantsByType) {
+        summary.completedCount = feedbackData.completedParticipantsByType;
+      }
+      
+      // Add question data for context
+      if (feedbackData.byQuestion) {
+        Object.entries(feedbackData.byQuestion).forEach(([questionId, data]) => {
+          summary.questions[questionId] = {
+            text: data.text || '',
+            type: data.type || '',
+            category: data.category || ''
+          };
+        });
+      }
+      
+      // Add category data
+      if (feedbackData.byCategory) {
+        Object.entries(feedbackData.byCategory).forEach(([category, data]) => {
+          const categoryRatings = {};
+          
+          if (data.ratings) {
+            Object.entries(data.ratings).forEach(([questionId, ratingData]) => {
+              categoryRatings[questionId] = {
+                average: ratingData.average || 0,
+                count: ratingData.count || 0
+              };
+            });
+          }
+          
+          summary.categories[category] = categoryRatings;
+        });
+      }
+      
+      return summary;
+    } catch (error) {
+      console.error('Error preparing feedback for AI:', error);
+      return { error: 'Failed to prepare feedback data' };
+    }
   }
 }
 

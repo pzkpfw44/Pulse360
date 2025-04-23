@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import api from '../services/api';
+import InsightView from '../components/insights/InsightView';
 
 const InsightViewPage = () => {
   const { id } = useParams();
@@ -101,7 +102,8 @@ const InsightViewPage = () => {
     );
   }
   
-  return null; // The main content is rendered by the InsightView component
+  // FIXED: Rendering the InsightView component instead of returning null
+  return <InsightView insight={insight} loading={loading} error={error} onRefresh={fetchInsight} />;
 };
 
 export default InsightViewPage;
