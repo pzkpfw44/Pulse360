@@ -71,6 +71,17 @@ CommunicationLog.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' 
 CampaignParticipant.hasMany(CommunicationLog, { foreignKey: 'participantId', as: 'communicationLogs' });
 CommunicationLog.belongsTo(CampaignParticipant, { foreignKey: 'participantId', as: 'participant', constraints: false });
 
+// Insight associations
+Campaign.hasMany(Insight, { foreignKey: 'campaignId', as: 'insights', onDelete: 'CASCADE' });
+Insight.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
+
+// Optional: Add these if you want Employee and User associations
+Employee.hasMany(Insight, { foreignKey: 'targetEmployeeId', as: 'insights' });
+Insight.belongsTo(Employee, { foreignKey: 'targetEmployeeId', as: 'targetEmployee' });
+
+User.hasMany(Insight, { foreignKey: 'createdBy', as: 'insights' });
+Insight.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+
 // Function to sync all models with the database - improved with better logging
 const syncDatabase = async (force = false) => {
   try {

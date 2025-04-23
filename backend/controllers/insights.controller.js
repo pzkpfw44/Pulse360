@@ -721,4 +721,12 @@ const {
     }
   }
   
-  module.exports = new InsightsController();
+// Bind instance methods to ensure 'this' context is preserved
+const insightsController = new InsightsController();
+Object.getOwnPropertyNames(InsightsController.prototype)
+  .filter(prop => typeof insightsController[prop] === 'function')
+  .forEach(method => {
+    insightsController[method] = insightsController[method].bind(insightsController);
+  });
+
+module.exports = insightsController;

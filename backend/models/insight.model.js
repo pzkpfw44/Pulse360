@@ -9,24 +9,6 @@ const Insight = sequelize.define('Insight', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
-  title: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  type: {
-    type: DataTypes.ENUM,
-    values: ['growth_blueprint', 'leadership_impact', 'team_synergy', 'collaboration_patterns', 
-             'talent_landscape', 'culture_pulse', 'development_impact'],
-    allowNull: false
-  },
-  targetEmployeeId: {
-    type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'employees',
-      key: 'id'
-    }
-  },
   campaignId: {
     type: DataTypes.UUID,
     allowNull: false,
@@ -35,38 +17,41 @@ const Insight = sequelize.define('Insight', {
       key: 'id'
     }
   },
-  content: {
-    type: DataTypes.JSON,
+  type: {
+    type: DataTypes.ENUM,
+    values: ['growth_blueprint', 'leadership_impact', 'team_synergy', 'collaboration_patterns', 'talent_landscape', 'culture_pulse', 'development_impact'],
     allowNull: false,
-    comment: 'Contains the full report content with all sections'
-  },
-  visibility: {
-    type: DataTypes.JSON,
-    allowNull: false,
-    defaultValue: {
-      employeeVisible: true,
-      managerOnly: true,
-      hrOnly: true
-    },
-    comment: 'Controls which sections are visible to which audience'
-  },
-  originalAiContent: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    comment: 'Original AI-generated content for comparison'
+    comment: 'Type of insight report'
   },
   status: {
     type: DataTypes.ENUM,
-    values: ['draft', 'published', 'archived'],
-    defaultValue: 'draft'
+    values: ['generating', 'completed', 'failed'],
+    defaultValue: 'generating',
+    allowNull: false
   },
-  createdBy: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'users',
-      key: 'id'
-    }
+  title: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  content: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Structured content of the insight'
+  },
+  aiAnalysis: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Raw AI analysis results'
+  },
+  metadata: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Additional information about the insight'
+  },
+  visibilitySettings: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Settings for the three-tier visibility structure'
   },
   createdAt: {
     type: DataTypes.DATE,
