@@ -1,37 +1,39 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, MessageSquare, FileText, BarChart2, 
-  CheckCircle, Clock, AlertTriangle, 
-  ArrowUpRight, ArrowDownRight
+  ArrowUpRight, ArrowDownRight, AlertTriangle,
+  ArrowRight, RefreshCw
 } from 'lucide-react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
-const MetricCard = ({ title, value, subtitle, icon: Icon, trend }) => {
+// API base URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// Simple card component that shows raw data
+const MetricCard = ({ title, rawData, icon: Icon, isLoading, error }) => {
   return (
     <div className="bg-white rounded-lg shadow p-5">
       <div className="flex justify-between">
         <div>
           <p className="text-sm text-gray-500">{title}</p>
-          <p className="mt-1 text-2xl font-bold">{value}</p>
-          {subtitle && (
-            <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
-          )}
-          
-          {trend && (
-            <div className={`mt-2 flex items-center text-xs font-medium ${
-              trend.isPositive ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {trend.isPositive ? (
-                <ArrowUpRight className="h-3 w-3 mr-1" />
-              ) : (
-                <ArrowDownRight className="h-3 w-3 mr-1" />
-              )}
-              {Math.abs(trend.value)}% vs last period
+          {isLoading ? (
+            <p className="mt-1 text-2xl font-bold">Loading...</p>
+          ) : error ? (
+            <div className="mt-1">
+              <p className="text-red-500 text-sm">Error loading data</p>
             </div>
+          ) : (
+            <>
+              <p className="mt-1 text-2xl font-bold">{rawData.value}</p>
+              {rawData.subtitle && (
+                <p className="text-xs text-gray-500 mt-0.5">{rawData.subtitle}</p>
+              )}
+            </>
           )}
         </div>
         
-        <div className={`flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600`}>
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
           <Icon size={20} />
         </div>
       </div>
@@ -53,6 +55,67 @@ const StatusIndicator = ({ label, status }) => {
 };
 
 const Dashboard = () => {
+  // Raw data state
+  const [rawData, setRawData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const navigate = useNavigate();
+
+  // Function to fetch dashboard data
+  const fetchDashboardData = async () => {
+    setRefreshing(true);
+    try {
+      // Query the metrics directly using raw SQL via backend
+      const response = await axios.get(`${API_URL}/dashboard/raw-stats`);
+      console.log('Dashboard data:', response.data);
+      setRawData(response.data);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Unable to load some metrics. Please try again later.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchDashboardData();
+    
+    // Refresh every 5 minutes
+    const refreshInterval = setInterval(fetchDashboardData, 5 * 60 * 1000);
+    return () => clearInterval(refreshInterval);
+  }, []);
+
+  // Navigate to campaign details
+  const navigateToCampaign = (campaignId) => {
+    navigate(`/monitor-360/campaign/${campaignId}`);
+  };
+
+  // Navigate based on activity type
+  const navigateToActivity = (activity) => {
+    if (activity.type === 'template' && activity.id) {
+      navigate(`/templates/${activity.id}`);
+    } else if (activity.type === 'participants' && activity.campaignId) {
+      navigate(`/monitor-360/campaign/${activity.campaignId}`);
+    } else if (activity.type === 'report' && activity.campaignId) {
+      navigate(`/results-360/campaign/${activity.campaignId}`);
+    }
+  };
+
+  // Handle manual refresh
+  const handleRefresh = () => {
+    fetchDashboardData();
+  };
+
+  // Calculate last update time
+  const getLastUpdateTime = () => {
+    const now = new Date();
+    return now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  };
+
   return (
     <div>
       <div className="mb-6">
@@ -62,37 +125,81 @@ const Dashboard = () => {
         </p>
       </div>
 
+      {/* Error message */}
+      {error && (
+        <div className="bg-yellow-50 border border-yellow-100 text-yellow-700 px-4 py-3 rounded-md mb-6 flex items-start">
+          <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 mt-0.5 flex-shrink-0" />
+          <p>{error}</p>
+        </div>
+      )}
+
+      {/* Dashboard Live Overview - More user-friendly message */}
+      {!loading && !error && rawData && (
+        <div className="flex justify-between items-center mb-6">
+          <div className="text-sm text-gray-600">
+            <span className="font-medium">Last updated:</span> {getLastUpdateTime()}
+          </div>
+          <button 
+            onClick={handleRefresh} 
+            className="flex items-center text-blue-600 text-sm hover:text-blue-800"
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Updating...' : 'Refresh dashboard'}
+          </button>
+        </div>
+      )}
+
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard 
           title="Active Participants" 
-          value="126" 
-          subtitle="Across 4 feedback cycles"
+          rawData={{
+            value: rawData?.participants?.activeCount || '0',
+            subtitle: rawData?.participants ? 
+              `Across ${rawData.participants.cycleCount} feedback cycles` : 
+              'No data available'
+          }}
           icon={Users}
-          trend={{ value: 12, isPositive: true }}
+          isLoading={loading}
+          error={!rawData?.participants}
         />
         
         <MetricCard 
           title="Feedback Responses" 
-          value="843" 
-          subtitle="78% completion rate"
+          rawData={{
+            value: rawData?.responses?.count || '0',
+            subtitle: rawData?.responses ? 
+              `${parseFloat(rawData.responses.completionRate).toFixed(0)}% completion rate` : 
+              'No data available'
+          }}
           icon={MessageSquare}
-          trend={{ value: 8, isPositive: true }}
+          isLoading={loading}
+          error={!rawData?.responses}
         />
         
         <MetricCard 
           title="Active Templates" 
-          value="12" 
-          subtitle="3 pending approval"
+          rawData={{
+            value: rawData?.templates?.activeCount || '0',
+            subtitle: rawData?.templates ? 
+              `${rawData.templates.pendingCount} pending approval` : 
+              'No data available'
+          }}
           icon={FileText}
+          isLoading={loading}
+          error={!rawData?.templates}
         />
         
         <MetricCard 
           title="Reports Generated" 
-          value="38" 
-          subtitle="Last 30 days"
+          rawData={{
+            value: rawData?.reports?.count || '0',
+            subtitle: 'Last 30 days'
+          }}
           icon={BarChart2}
-          trend={{ value: 5, isPositive: false }}
+          isLoading={loading}
+          error={!rawData?.reports}
         />
       </div>
 
@@ -128,35 +235,43 @@ const Dashboard = () => {
           <div className="bg-white rounded-lg shadow p-5 h-full">
             <h2 className="text-lg font-semibold mb-4">Upcoming Deadlines</h2>
             
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <h3 className="text-sm font-medium">Q2 Performance Cycle</h3>
-                <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full">
-                  High Priority
-                </span>
+            {loading ? (
+              <div className="text-center py-2">
+                <p className="text-gray-500">Loading deadlines...</p>
               </div>
-              <p className="text-sm text-gray-500">Ends in 5 days</p>
-            </div>
-            
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <h3 className="text-sm font-medium">Leadership Assessment</h3>
-                <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                  Medium Priority
-                </span>
+            ) : !rawData?.deadlines || rawData.deadlines.length === 0 ? (
+              <div className="text-center py-2">
+                <p className="text-gray-500">No upcoming deadlines found in active campaigns</p>
               </div>
-              <p className="text-sm text-gray-500">Ends in 12 days</p>
-            </div>
-            
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <h3 className="text-sm font-medium">Product Team 360</h3>
-                <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                  Upcoming
-                </span>
-              </div>
-              <p className="text-sm text-gray-500">Starts in 3 days</p>
-            </div>
+            ) : (
+              rawData.deadlines.map((deadline) => (
+                <div 
+                  key={deadline.id} 
+                  className="mb-4 last:mb-0 p-3 border border-transparent hover:border-blue-100 hover:bg-blue-50 rounded-md cursor-pointer transition-colors"
+                  onClick={() => navigateToCampaign(deadline.id)}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <h3 className="text-sm font-medium">{deadline.name}</h3>
+                    <span className={`px-2 py-0.5 text-xs font-medium 
+                      ${deadline.priority === 'high' ? 'bg-red-100 text-red-800' : 
+                        deadline.priority === 'medium' ? 'bg-blue-100 text-blue-800' : 
+                          'bg-green-100 text-green-800'} rounded-full`}>
+                      {deadline.priority === 'high' ? 'High Priority' : 
+                        deadline.priority === 'medium' ? 'Medium Priority' : 
+                          'Upcoming'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-gray-500">
+                      {deadline.daysRemaining && deadline.daysRemaining > 0 ? 
+                        `Ends in ${deadline.daysRemaining} day${deadline.daysRemaining !== 1 ? 's' : ''}` : 
+                        'End date unknown'}
+                    </p>
+                    <ArrowRight className="h-4 w-4 text-blue-500" />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
         
@@ -164,51 +279,43 @@ const Dashboard = () => {
           <div className="bg-white rounded-lg shadow p-5 h-full">
             <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
             
-            <div className="flex mb-4">
-              <FileText size={16} className="mt-0.5 mr-3 text-gray-400 flex-shrink-0" />
-              <div>
-                <h3 className="text-sm font-medium">New template added</h3>
-                <p className="text-sm text-gray-500">Technical Leadership Review</p>
-                <p className="text-xs text-gray-400 mt-0.5">2 hours ago</p>
+            {loading ? (
+              <div className="text-center py-2">
+                <p className="text-gray-500">Loading activities...</p>
               </div>
-            </div>
-            
-            <div className="flex mb-4">
-              <Users size={16} className="mt-0.5 mr-3 text-gray-400 flex-shrink-0" />
-              <div>
-                <h3 className="text-sm font-medium">15 users added to cycle</h3>
-                <p className="text-sm text-gray-500">Q2 Performance Review</p>
-                <p className="text-xs text-gray-400 mt-0.5">Yesterday</p>
+            ) : !rawData?.activities || rawData.activities.length === 0 ? (
+              <div className="text-center py-2">
+                <p className="text-gray-500">No recent activity found</p>
               </div>
-            </div>
-            
-            <div className="flex">
-              <BarChart2 size={16} className="mt-0.5 mr-3 text-gray-400 flex-shrink-0" />
-              <div>
-                <h3 className="text-sm font-medium">5 reports generated</h3>
-                <p className="text-sm text-gray-500">Leadership Assessment</p>
-                <p className="text-xs text-gray-400 mt-0.5">2 days ago</p>
-              </div>
-            </div>
+            ) : (
+              rawData.activities.map((activity, index) => (
+                <div 
+                  key={index} 
+                  className="flex mb-4 last:mb-0 p-3 border border-transparent hover:border-blue-100 hover:bg-blue-50 rounded-md cursor-pointer transition-colors"
+                  onClick={() => navigateToActivity(activity)}
+                >
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    activity.type === 'report' ? 'bg-blue-100 text-blue-600' :
+                    activity.type === 'template' ? 'bg-green-100 text-green-600' :
+                    'bg-purple-100 text-purple-600'
+                  } mr-3 flex-shrink-0`}>
+                    {activity.type === 'report' ? <BarChart2 size={16} /> :
+                     activity.type === 'template' ? <FileText size={16} /> :
+                     <Users size={16} />}
+                  </div>
+                  <div className="flex-grow">
+                    <h3 className="text-sm font-medium">{activity.title}</h3>
+                    <p className="text-sm text-gray-500">{activity.description}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{activity.timeAgo}</p>
+                  </div>
+                  <div className="self-center">
+                    <ArrowRight className="h-4 w-4 text-blue-500" />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
-      </div>
-      
-      {/* Quick Action Buttons */}
-      <div className="mt-6 flex flex-wrap gap-3 justify-center">
-        <Link 
-          to="/contexthub"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors text-sm font-medium"
-        >
-          Go to ContextHub
-        </Link>
-        
-        <Link 
-          to="/feedback"
-          className="px-4 py-2 border border-blue-600 bg-white hover:bg-blue-50 text-blue-600 rounded-md shadow-sm transition-colors text-sm font-medium"
-        >
-          Provide Feedback
-        </Link>
       </div>
     </div>
   );

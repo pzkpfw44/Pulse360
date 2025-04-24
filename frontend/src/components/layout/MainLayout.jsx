@@ -7,6 +7,7 @@ import {
   PlayCircle, Activity, ChartBar, Briefcase
 } from 'lucide-react';
 import fluxLogo from "../../../assets/Flux_white_symbol.png";
+import NotificationBell from '../ui/NotificationBell';
 
 // Sidebar navigation item component
 const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
@@ -141,12 +142,8 @@ export function MainLayout({ children }) {
               </span>
             </div>
 
-            <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full">
-              <Bell className="h-6 w-6" />
-              <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
-                3
-              </span>
-            </button>
+            {/* Replace notification button with NotificationBell component for mobile */}
+            <NotificationBell />
           </div>
         </header>
 
@@ -156,12 +153,8 @@ export function MainLayout({ children }) {
             {/* This would be dynamic based on current page */}
           </h1>
           <div className="flex items-center gap-4">
-            <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
-                3
-              </span>
-            </button>
+            {/* Replace notification button with NotificationBell component for desktop */}
+            <NotificationBell />
             <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
               <User className="h-5 w-5" />
             </div>
