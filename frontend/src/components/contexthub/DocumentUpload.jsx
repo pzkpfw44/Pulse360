@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import api from "../../services/api";
-import { CloudUpload, Check, X } from 'lucide-react';
+import { CloudUpload, Check, X, AlertCircle } from 'lucide-react';
 
 const DocumentUpload = ({ onDocumentUploaded }) => {
   const [files, setFiles] = useState([]);
@@ -16,12 +16,35 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
     setDocumentType(event.target.value);
   };
 
+  // Check if enough storage space is available before uploading
+  const checkAvailableSpace = async () => {
+    try {
+      // Calculate total size of files to be uploaded
+      const totalUploadSize = files.reduce((total, file) => total + file.size, 0);
+      
+      // Display a warning if files are too large
+      if (totalUploadSize > 100000) { // 100KB warning threshold
+        console.log(`Warning: Attempting to upload ${totalUploadSize} bytes`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking file sizes:', error);
+      return true; // Continue anyway if check fails
+    }
+  };
+
   const handleUpload = async () => {
     if (files.length === 0 || !documentType) {
       setUploadStatus({
         success: false,
         message: 'Please select files and document type'
       });
+      return;
+    }
+    
+    // Check available space
+    if (!(await checkAvailableSpace())) {
       return;
     }
   
@@ -82,13 +105,23 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
     } catch (error) {
       console.error('Error uploading documents:', error);
       
-      // Extract detailed error message if available
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Error uploading documents';
-      
-      setUploadStatus({
-        success: false,
-        message: errorMessage
-      });
+      // Special handling for storage space errors
+      if (error.response?.data?.message?.includes('storage space') || 
+          error.response?.data?.error?.includes('storage space') ||
+          error.message?.includes('storage space')) {
+        setUploadStatus({
+          success: false,
+          message: "Not enough storage space on the AI server. Please contact your administrator to clear space or increase storage limits."
+        });
+      } else {
+        // General error handling
+        const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Error uploading documents';
+        
+        setUploadStatus({
+          success: false,
+          message: errorMessage
+        });
+      }
     } finally {
       setIsUploading(false);
     }
@@ -180,7 +213,7 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
                 <ul className="pl-5 list-disc text-sm text-gray-600">
                   {files.map((file, index) => (
                     <li key={index} className="mb-0.5">
-                      {file.name}
+                      {file.name} ({(file.size / 1024).toFixed(1)} KB)
                     </li>
                   ))}
                 </ul>

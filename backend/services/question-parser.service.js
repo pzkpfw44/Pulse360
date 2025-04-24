@@ -1,11 +1,95 @@
 // backend/services/question-parser.service.js
 
 /**
- * Parses questions from AI response organized by perspective
- * @param {string} aiResponse - The text response from AI
- * @returns {Object} - Questions organized by perspective
+ * Sanitizes question text by removing department/template references
+ * @param {string} text - The question text to sanitize
+ * @param {string} departmentName - The department name to sanitize (default: 'General')
+ * @returns {string} - Sanitized question text
  */
-function parseQuestionsFromAiResponse(aiResponse) {
+function sanitizeQuestionText(text, departmentName = 'General') {
+    if (!text) return text;
+    
+    let cleanedText = text.trim();
+    
+    // Create dynamic regex patterns based on the actual department name
+    const patterns = [
+      { regex: new RegExp(`\\s+in the ${departmentName} Department`, 'gi'), replacement: ' in this role' },
+      { regex: new RegExp(`\\s+for the ${departmentName} Department`, 'gi'), replacement: ' for this role' },
+      { regex: new RegExp(`\\s+of the ${departmentName} Department`, 'gi'), replacement: ' of the team' },
+      { regex: new RegExp(`\\s+to the ${departmentName} Department`, 'gi'), replacement: ' to the team' },
+      { regex: new RegExp(`\\s+within the ${departmentName} Department`, 'gi'), replacement: ' within the organization' },
+      { regex: new RegExp(`the ${departmentName} Department's`, 'gi'), replacement: 'this role\'s' },
+      { regex: new RegExp(`the ${departmentName} department`, 'gi'), replacement: 'this role' },
+      { regex: new RegExp(`${departmentName} department`, 'gi'), replacement: 'team' },
+      
+      // Handle "use template" references
+      { regex: new RegExp(`\\s+in the ${departmentName} use template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`\\s+for the ${departmentName} use template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`\\s+of the ${departmentName} use template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`\\s+to the ${departmentName} use template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`\\s+within the ${departmentName} use template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`the ${departmentName} use template's`, 'gi'), replacement: 'your' },
+      { regex: new RegExp(`the ${departmentName} use template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`${departmentName} use template`, 'gi'), replacement: '' },
+      
+      // General purpose references without "Department"
+      { regex: new RegExp(`\\s+in the ${departmentName}\\b`, 'gi'), replacement: ' in this role' },
+      { regex: new RegExp(`\\s+for the ${departmentName}\\b`, 'gi'), replacement: ' for this role' },
+      { regex: new RegExp(`\\s+of the ${departmentName}\\b`, 'gi'), replacement: ' of the team' },
+      { regex: new RegExp(`\\s+to the ${departmentName}\\b`, 'gi'), replacement: ' to the team' },
+      { regex: new RegExp(`\\s+within the ${departmentName}\\b`, 'gi'), replacement: ' within the organization' },
+      
+      // Final cleanup for any remaining references
+      { regex: new RegExp(`\\s+in ${departmentName}\\b`, 'gi'), replacement: '' },
+      { regex: new RegExp(`\\s+for ${departmentName}\\b`, 'gi'), replacement: '' }
+    ];
+    
+    // Apply all regex patterns
+    patterns.forEach(pattern => {
+      cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
+    });
+    
+    // Also apply standard cleanup for "General" references for backward compatibility
+    if (departmentName.toLowerCase() !== 'general') {
+      const generalPatterns = [
+        { regex: /\s+in the General Department/gi, replacement: ' in this role' },
+        { regex: /\s+for the General Department/gi, replacement: ' for this role' },
+        { regex: /\s+of the General Department/gi, replacement: ' of the team' },
+        { regex: /\s+to the General Department/gi, replacement: ' to the team' },
+        { regex: /\s+within the General Department/gi, replacement: ' within the organization' },
+        { regex: /the General Department's/gi, replacement: 'this role\'s' },
+        { regex: /the General department/gi, replacement: 'this role' },
+        { regex: /General department/gi, replacement: 'team' },
+        { regex: /\s+in the General use template/gi, replacement: '' },
+        { regex: /\s+for the General use template/gi, replacement: '' },
+        { regex: /\s+of the General use template/gi, replacement: '' },
+        { regex: /\s+to the General use template/gi, replacement: '' },
+        { regex: /\s+within the General use template/gi, replacement: '' },
+        { regex: /the General use template's/gi, replacement: 'your' },
+        { regex: /the General use template/gi, replacement: '' },
+        { regex: /General use template/gi, replacement: '' },
+        { regex: /\s+in the general department/g, replacement: ' in this role' },
+        { regex: /\s+for the general department/g, replacement: ' for this role' },
+        { regex: /\s+in the general use template/g, replacement: '' },
+        { regex: /\s+for the general use template/g, replacement: '' },
+        { regex: /\s+in general\b/gi, replacement: '' },
+        { regex: /\s+for general\b/gi, replacement: '' }
+      ];
+      
+      generalPatterns.forEach(pattern => {
+        cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
+      });
+    }
+    
+    return cleanedText;
+  }
+  
+  /**
+   * Parses questions from AI response organized by perspective
+   * @param {string} aiResponse - The text response from AI
+   * @returns {Object} - Questions organized by perspective
+   */
+  function parseQuestionsFromAiResponse(aiResponse) {
     // Initialize result structure
     const result = {
       manager: [],
@@ -65,20 +149,10 @@ function parseQuestionsFromAiResponse(aiResponse) {
             questionText = questionText.replace(categoryMatch[0], '');
           }
           
-          // Clean up question text - SANITIZE HERE DIRECTLY
+          // Just trim the text - sanitizeQuestionText will be applied later
           questionText = questionText.trim();
           
-          // Remove department references directly
-          questionText = questionText.replace(/\s+in the General Department/gi, ' in this role');
-          questionText = questionText.replace(/\s+for the General Department/gi, ' for this role');
-          questionText = questionText.replace(/\s+of the General Department/gi, ' of the team');
-          questionText = questionText.replace(/\s+to the General Department/gi, ' to the team');
-          questionText = questionText.replace(/\s+within the General Department/gi, ' within the organization');
-          questionText = questionText.replace(/the General Department's/gi, 'this role\'s');
-          questionText = questionText.replace(/the General department/gi, 'this role');
-          questionText = questionText.replace(/General department/gi, 'team');
-          
-          // Add the sanitized question
+          // Add the question with basic trimming
           if (questionText) {
             result[currentPerspective].push({
               text: questionText,
@@ -98,4 +172,7 @@ function parseQuestionsFromAiResponse(aiResponse) {
     return result;
   }
   
-  module.exports = { parseQuestionsFromAiResponse };
+  module.exports = { 
+    parseQuestionsFromAiResponse,
+    sanitizeQuestionText 
+  };

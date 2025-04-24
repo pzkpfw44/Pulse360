@@ -1743,7 +1743,6 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
     // Create a prompt that doesn't use department names
     const promptContent = createAnalysisPrompt(documentType, templateInfo);
 
-    // --- START OF FIX ---
     // Make the AI analysis request
     const analysisRequest = {
       model: fluxAiConfig.model, // Explicitly set the model here
@@ -1758,23 +1757,25 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
         }
       ],
       temperature: 0.3,
-      // *** THIS ATTACHMENTS FIELD IS CRITICAL ***
+      // IMPORTANT: This attachments field is critical
       attachments: {
         files: fileIds // Use the fileIds obtained earlier
-      }
-      // You might also need to add the 'mode' based on the API docs if required
-      // mode: 'rag'
+      },
+      // Enable RAG mode for document processing
+      mode: 'rag'
     };
 
     // Log which model and attachments we're sending
     console.log('Requesting analysis with model:', analysisRequest.model, 'and attachments:', JSON.stringify(analysisRequest.attachments));
 
-    // *** "Trying simple request..." log IS REMOVED ***
-
-    // Log the actual request being sent (DEBUG line)
+    // Log the actual request being sent
     console.log('DEBUG: Sending this to AI:', JSON.stringify(analysisRequest, null, 2));
-    const analysisResponse = await makeAiChatRequest(analysisRequest); // API call now includes attachments
-    // --- END OF FIX ---
+
+    // Make ONLY ONE request that includes the attachments
+    const analysisResponse = await makeAiChatRequest(analysisRequest);
+
+    // Log the model from the actual response to verify
+    console.log('Analysis response model:', analysisResponse.model);
 
     // Log the model from the actual response
     console.log('Analysis response model:', analysisResponse.model);
