@@ -3,6 +3,8 @@
 const { Template, Question, SourceDocument, RatingScale } = require('../models');
 const { Document } = require('../models');
 const documentController = require('./documents.controller');
+const { parseQuestionsFromAiResponse } = require('../services/question-parser.service');
+const { uploadFileToFluxAi, makeAiChatRequest } = require('../services/flux-ai.service');
 
 // Get all templates
 exports.getAllTemplates = async (req, res) => {
@@ -1687,3 +1689,214 @@ function addGenericQuestions(questions, perspective, startOrder) {
     );
   }
 }
+
+async function startDocumentAnalysis(documents, documentType, userId, templateInfo = {}) {
+  try {
+    console.log('Starting document analysis for documents:', documents.length);
+    
+    // Import the necessary services
+    const fluxAiConfig = require('../config/flux-ai');
+    const { sanitizeQuestionText, createAnalysisPrompt } = require('../services/prompt-helper.service');
+    
+    // First update the documents to mark them as being analyzed
+    for (const document of documents) {
+      await document.update({ status: 'analysis_in_progress' });
+    }
+    
+    // Upload the documents to Flux AI
+    const fileIds = [];
+    for (const document of documents) {
+      try {
+        const filePath = document.path;
+        console.log('Uploading file:', filePath);
+        
+        // Make sure we're passing the correct model in all API calls
+        const uploadResponse = await uploadFileToFluxAi(filePath);
+        
+        if (uploadResponse.success && uploadResponse.data && uploadResponse.data.length > 0) {
+          console.log('File upload response:', uploadResponse);
+          
+          // Update document with file ID
+          await document.update({
+            fluxAiFileId: uploadResponse.data[0].id,
+            status: 'uploaded_to_ai'
+          });
+          
+          fileIds.push(uploadResponse.data[0].id);
+        } else {
+          console.error('Failed to upload file:', uploadResponse);
+        }
+      } catch (error) {
+        console.error(`Error uploading document ${document.id}:`, error);
+      }
+    }
+    
+    console.log('Valid File IDs:', fileIds);
+    
+    if (fileIds.length === 0) {
+      throw new Error('No valid files uploaded to AI');
+    }
+    
+    // Process files with AI
+    console.log('File IDs:', fileIds);
+    console.log('Document Type:', documentType);
+    console.log('Configured AI Model:', fluxAiConfig.model);
+    
+    console.log('Waiting for file processing...');
+    
+    // Create a prompt that doesn't use department names
+    const promptContent = createAnalysisPrompt(documentType, templateInfo);
+    
+    // Make the AI analysis request
+    const analysisRequest = {
+      model: fluxAiConfig.model, // Explicitly set the model here
+      messages: [
+        {
+          role: 'system',
+          content: fluxAiConfig.getSystemPrompt('document_analysis')
+        },
+        {
+          role: 'user',
+          content: promptContent
+        }
+      ],
+      temperature: 0.3
+    };
+    
+    // Log which model we're using
+    console.log('Requesting analysis with model:', analysisRequest.model);
+    
+    // If development mode without file IDs, we can still try a simple request
+    console.log('Trying simple request without file attachments');
+    const analysisResponse = await makeAiChatRequest(analysisRequest);
+    
+    console.log('Simple request response model:', analysisResponse.model);
+    
+    // Get the text content from the AI response
+    if (!analysisResponse || !analysisResponse.choices || analysisResponse.choices.length === 0) {
+      throw new Error('No valid response from AI analysis');
+    }
+    
+    // Get the AI response text
+    const aiResponseText = analysisResponse.choices[0].message.content;
+    
+    // Check if we got a valid response
+    if (!aiResponseText) {
+      throw new Error('No valid content in AI response');
+    }
+    
+    console.log('AI seems to have analyzed the document successfully!');
+    console.log('AI response sample (first 500 chars):', aiResponseText.substring(0, 500));
+    
+    // Parse questions from AI response using our improved parser
+    console.log('Parsing questions from AI response');
+    const parsedQuestions = parseQuestionsFromAiResponse(aiResponseText);
+    
+    // Department name for sanitization
+    const departmentName = templateInfo.department || 'General';
+    
+    // Sanitize all question texts to replace department name with generic references
+    Object.keys(parsedQuestions).forEach(perspective => {
+      parsedQuestions[perspective] = parsedQuestions[perspective].map(question => ({
+        ...question,
+        text: sanitizeQuestionText(question.text, departmentName)
+      }));
+    });
+    
+    // Count total questions
+    const totalQuestions = Object.values(parsedQuestions).reduce((sum, arr) => sum + arr.length, 0);
+    console.log(`Extracted ${totalQuestions} questions from AI response`);
+    
+    // Create template
+    const template = await Template.create({
+      name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
+      description: templateInfo.description || '',
+      purpose: templateInfo.purpose || '',
+      department: templateInfo.department || '',
+      documentType,
+      generatedBy: 'flux_ai',
+      status: 'pending_review',
+      perspectiveSettings: templateInfo.perspectiveSettings || {
+        manager: { questionCount: 10, enabled: true },
+        peer: { questionCount: 10, enabled: true },
+        direct_report: { questionCount: 10, enabled: true },
+        self: { questionCount: 10, enabled: true },
+        external: { questionCount: 5, enabled: false }
+      },
+      createdBy: userId
+    });
+    
+    console.log(`Found ${totalQuestions} questions from AI response, balancing by perspective`);
+    
+    // Get all questions organized by perspective
+    const allQuestions = [];
+    
+    // Balance the number of questions by perspective
+    console.log('Balancing questions by perspective settings');
+    
+    for (const perspective in parsedQuestions) {
+      // Skip if this perspective is not enabled
+      if (!template.perspectiveSettings[perspective]?.enabled) {
+        console.log(`Perspective ${perspective} is disabled, skipping questions`);
+        continue;
+      }
+      
+      const targetCount = template.perspectiveSettings[perspective]?.questionCount || 10;
+      const availableQuestions = parsedQuestions[perspective] || [];
+      
+      console.log(`Perspective ${perspective}: Target count ${targetCount}, available ${availableQuestions.length}`);
+      
+      // Use all available questions, no matter how many there are
+      allQuestions.push(...availableQuestions);
+    }
+    
+    console.log(`Balanced questions: ${allQuestions.length} total questions`);
+    
+    // Create all questions
+    for (const question of allQuestions) {
+      await Question.create({
+        ...question,
+        templateId: template.id
+      });
+    }
+    
+    // Create source document references
+    for (const document of documents) {
+      await SourceDocument.create({
+        fluxAiFileId: document.fluxAiFileId,
+        documentId: document.id,
+        templateId: template.id
+      });
+    }
+    
+    // Update documents to mark them as analysis complete
+    for (const document of documents) {
+      await document.update({
+        status: 'analysis_complete',
+        associatedTemplateId: template.id
+      });
+    }
+    
+    console.log(`Template created with ID: ${template.id}`);
+    return template;
+  } catch (error) {
+    console.error('Error in document analysis:', error);
+    
+    // Update documents to mark them as analysis failed
+    for (const document of documents) {
+      try {
+        await document.update({
+          status: 'analysis_failed',
+          analysisError: error.message
+        });
+      } catch (updateError) {
+        console.error(`Error updating document ${document.id} status:`, updateError);
+      }
+    }
+    
+    throw error;
+  }
+}
+
+// Export the function (keep this at the end of the file)
+module.exports.startDocumentAnalysis = startDocumentAnalysis;

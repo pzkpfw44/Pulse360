@@ -76,7 +76,22 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'API is running' });
 });
 
-// Error handling middleware
+// Specific middleware for handling multer errors
+app.use((err, req, res, next) => {
+  if (err && err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ 
+        message: 'File too large. Maximum upload size is 10MB per file.' 
+      });
+    }
+    return res.status(400).json({ 
+      message: `Upload error: ${err.message}` 
+    });
+  }
+  next(err);
+});
+
+// Generic error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({

@@ -333,7 +333,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                           {selectedDocumentIds.includes(doc.id) && <Check className="w-3 h-3" />}
                         </div>
                         <div className="ml-2 flex-1">
-                          <p className="font-medium text-gray-900 truncate">{doc.filename}</p>
+                        <p className="font-medium text-gray-900 max-w-[200px] truncate inline-block" title={doc.filename}>{doc.filename}</p>
                           <p className="text-xs text-gray-500">
                             {doc.documentType.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                           </p>

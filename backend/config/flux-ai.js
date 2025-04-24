@@ -5,7 +5,7 @@ require('dotenv').config();
 const config = {
   baseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com',
   apiKey: process.env.FLUX_AI_API_KEY,
-  model: process.env.FLUX_AI_MODEL || 'DeepSeek R1 Distill Qwen 32B',
+  model: process.env.FLUX_AI_MODEL || 'DeepSeek 32B',
   maxUploadSize: parseInt(process.env.MAX_UPLOAD_SIZE || '10485760', 10), // 10MB default
   forceAiInDevelopment: process.env.FORCE_AI_IN_DEV === 'true' || false,
 
@@ -56,6 +56,17 @@ const config = {
     }
     
     return `${cleanBaseUrl}${path}`;
+  },
+
+  // Make sure we explicitly set the model in API calls
+  getChatRequestBody: function(messages, options = {}) {
+    return {
+      model: this.model, // Ensure correct model is used
+      messages: messages,
+      temperature: options.temperature || 0.3,
+      max_tokens: options.max_tokens || 2048,
+      ...options
+    };
   },
 
   getSystemPrompt: function(task) {

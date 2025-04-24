@@ -237,7 +237,7 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
                 
                 {!uploadStatus.success && (
                   <div className="mt-2 text-sm text-red-700">
-                    <p>Note: In development mode, the system will generate mock questions without using the Flux AI API.</p>
+                    <p>{uploadStatus.message}</p>
                   </div>
                 )}
               </div>
