@@ -1,29 +1,49 @@
 // backend/services/prompt-helper.service.js
 
 /**
- * Sanitizes question text to remove department references
+ * Sanitizes question text to remove template artifacts
  * @param {string} text - The original question text
- * @param {string} departmentName - The department name to sanitize
+ * @param {string} departmentName - The department name
  * @returns {string} - The sanitized question text
  */
-function sanitizeQuestionText(text, departmentName) {
-    if (!text) return text;
+function sanitizeQuestionText(text, departmentName = '') {
+    if (!text) return '';
     
-    // Create a regex pattern that matches the department name in various contexts
-    const pattern = new RegExp(`(in|for|of|to|within) the ${departmentName} Department`, 'gi');
-    text = text.replace(pattern, (match) => {
-      if (match.toLowerCase().startsWith('in the')) return 'in this role';
-      if (match.toLowerCase().startsWith('for the')) return 'for this role';
-      if (match.toLowerCase().startsWith('of the')) return 'of the team';
-      if (match.toLowerCase().startsWith('to the')) return 'to the team';
-      if (match.toLowerCase().startsWith('within the')) return 'within the organization';
-      return match; // Fallback
-    });
+    // First, handle department references
+    let sanitized = text;
     
-    // Handle possessive form
-    text = text.replace(new RegExp(`the ${departmentName} Department's`, 'gi'), 'this role\'s');
+    // Replace variations of "the leader in the [Department] Department"
+    sanitized = sanitized.replace(
+      /the leader in the (.*?) Department/gi, 
+      'this person'
+    );
     
-    return text;
+    // Replace "General Department" references
+    sanitized = sanitized.replace(
+      /General Department/gi, 
+      departmentName !== 'General' ? departmentName : 'the organization'
+    );
+    
+    // Replace template references
+    sanitized = sanitized.replace(
+      /for the General purpose template/gi, 
+      ''
+    );
+    
+    sanitized = sanitized.replace(
+      /the General purpose template('s)?/gi, 
+      'their'
+    );
+    
+    sanitized = sanitized.replace(
+      /General purpose template/gi, 
+      'overall'
+    );
+    
+    // Clean up any double spaces created by our replacements
+    sanitized = sanitized.replace(/\s{2,}/g, ' ').trim();
+    
+    return sanitized;
   }
   
   /**

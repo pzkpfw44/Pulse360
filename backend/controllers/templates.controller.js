@@ -1743,7 +1743,7 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
     // Create a prompt that doesn't use department names
     const promptContent = createAnalysisPrompt(documentType, templateInfo);
 
-    // Make the AI analysis request
+    // Make the AI analysis request - ensuring we use the correct model and file attachments
     const analysisRequest = {
       model: fluxAiConfig.model, // Explicitly set the model here
       messages: [
@@ -1757,28 +1757,21 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
         }
       ],
       temperature: 0.3,
-      // IMPORTANT: This attachments field is critical
       attachments: {
         files: fileIds // Use the fileIds obtained earlier
       },
-      // Enable RAG mode for document processing
+      // Enable RAG mode for document processing - crucial for file analysis
       mode: 'rag'
     };
 
     // Log which model and attachments we're sending
     console.log('Requesting analysis with model:', analysisRequest.model, 'and attachments:', JSON.stringify(analysisRequest.attachments));
 
-    // Log the actual request being sent
-    console.log('DEBUG: Sending this to AI:', JSON.stringify(analysisRequest, null, 2));
-
     // Make ONLY ONE request that includes the attachments
     const analysisResponse = await makeAiChatRequest(analysisRequest);
 
     // Log the model from the actual response to verify
-    console.log('Analysis response model:', analysisResponse.model);
-
-    // Log the model from the actual response
-    console.log('Analysis response model:', analysisResponse.model);
+    console.log('Analysis response model:', analysisResponse.model || analysisResponse.model_name || 'unknown model');
 
     // Get the text content from the AI response
     if (!analysisResponse || !analysisResponse.choices || analysisResponse.choices.length === 0) {

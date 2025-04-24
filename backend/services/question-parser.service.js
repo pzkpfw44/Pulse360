@@ -11,6 +11,10 @@ function sanitizeQuestionText(text, departmentName = 'General') {
     
     let cleanedText = text.trim();
     
+    // Handle leader references first - these occur frequently
+    cleanedText = cleanedText.replace(/the leader in the (.*?) Department/gi, 'this person');
+    cleanedText = cleanedText.replace(/this person's/gi, 'this person\'s');
+    
     // Create dynamic regex patterns based on the actual department name
     const patterns = [
       { regex: new RegExp(`\\s+in the ${departmentName} Department`, 'gi'), replacement: ' in this role' },
@@ -21,6 +25,12 @@ function sanitizeQuestionText(text, departmentName = 'General') {
       { regex: new RegExp(`the ${departmentName} Department's`, 'gi'), replacement: 'this role\'s' },
       { regex: new RegExp(`the ${departmentName} department`, 'gi'), replacement: 'this role' },
       { regex: new RegExp(`${departmentName} department`, 'gi'), replacement: 'team' },
+      
+      // Handle "General purpose template" references - new patterns
+      { regex: new RegExp(`for the ${departmentName} purpose template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`the ${departmentName} purpose template's`, 'gi'), replacement: 'their' },
+      { regex: new RegExp(`the ${departmentName} purpose template`, 'gi'), replacement: '' },
+      { regex: new RegExp(`${departmentName} purpose template`, 'gi'), replacement: '' },
       
       // Handle "use template" references
       { regex: new RegExp(`\\s+in the ${departmentName} use template`, 'gi'), replacement: '' },
@@ -49,37 +59,52 @@ function sanitizeQuestionText(text, departmentName = 'General') {
       cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
     });
     
-    // Also apply standard cleanup for "General" references for backward compatibility
-    if (departmentName.toLowerCase() !== 'general') {
-      const generalPatterns = [
-        { regex: /\s+in the General Department/gi, replacement: ' in this role' },
-        { regex: /\s+for the General Department/gi, replacement: ' for this role' },
-        { regex: /\s+of the General Department/gi, replacement: ' of the team' },
-        { regex: /\s+to the General Department/gi, replacement: ' to the team' },
-        { regex: /\s+within the General Department/gi, replacement: ' within the organization' },
-        { regex: /the General Department's/gi, replacement: 'this role\'s' },
-        { regex: /the General department/gi, replacement: 'this role' },
-        { regex: /General department/gi, replacement: 'team' },
-        { regex: /\s+in the General use template/gi, replacement: '' },
-        { regex: /\s+for the General use template/gi, replacement: '' },
-        { regex: /\s+of the General use template/gi, replacement: '' },
-        { regex: /\s+to the General use template/gi, replacement: '' },
-        { regex: /\s+within the General use template/gi, replacement: '' },
-        { regex: /the General use template's/gi, replacement: 'your' },
-        { regex: /the General use template/gi, replacement: '' },
-        { regex: /General use template/gi, replacement: '' },
-        { regex: /\s+in the general department/g, replacement: ' in this role' },
-        { regex: /\s+for the general department/g, replacement: ' for this role' },
-        { regex: /\s+in the general use template/g, replacement: '' },
-        { regex: /\s+for the general use template/g, replacement: '' },
-        { regex: /\s+in general\b/gi, replacement: '' },
-        { regex: /\s+for general\b/gi, replacement: '' }
-      ];
+    // Also apply standard cleanup for "General" references
+    // These are crucial for the "General purpose template" mentions we're seeing
+    const generalPatterns = [
+      // Handle "General purpose template" references
+      { regex: /for the General purpose template/gi, replacement: '' },
+      { regex: /the General purpose template's/gi, replacement: 'their' },
+      { regex: /the General purpose template/gi, replacement: '' },
+      { regex: /General purpose template/gi, replacement: '' },
       
-      generalPatterns.forEach(pattern => {
-        cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
-      });
-    }
+      // Standard department patterns
+      { regex: /\s+in the General Department/gi, replacement: ' in this role' },
+      { regex: /\s+for the General Department/gi, replacement: ' for this role' },
+      { regex: /\s+of the General Department/gi, replacement: ' of the team' },
+      { regex: /\s+to the General Department/gi, replacement: ' to the team' },
+      { regex: /\s+within the General Department/gi, replacement: ' within the organization' },
+      { regex: /the General Department's/gi, replacement: 'this role\'s' },
+      { regex: /the General department/gi, replacement: 'this role' },
+      { regex: /General department/gi, replacement: 'team' },
+      { regex: /\s+in the General use template/gi, replacement: '' },
+      { regex: /\s+for the General use template/gi, replacement: '' },
+      { regex: /\s+of the General use template/gi, replacement: '' },
+      { regex: /\s+to the General use template/gi, replacement: '' },
+      { regex: /\s+within the General use template/gi, replacement: '' },
+      { regex: /the General use template's/gi, replacement: 'your' },
+      { regex: /the General use template/gi, replacement: '' },
+      { regex: /General use template/gi, replacement: '' },
+      { regex: /\s+in the general department/g, replacement: ' in this role' },
+      { regex: /\s+for the general department/g, replacement: ' for this role' },
+      { regex: /\s+in the general use template/g, replacement: '' },
+      { regex: /\s+for the general use template/g, replacement: '' },
+      { regex: /\s+in general\b/gi, replacement: '' },
+      { regex: /\s+for general\b/gi, replacement: '' }
+    ];
+    
+    generalPatterns.forEach(pattern => {
+      cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
+    });
+    
+    // One more cleanup pass for leader references and common phrases
+    cleanedText = cleanedText
+      .replace(/the leader in the/gi, 'this person')
+      .replace(/the leader's/gi, 'this person\'s')
+      .replace(/the leader/gi, 'this person')
+      .replace(/achieve the goals\?/gi, 'achieve goals?')
+      .replace(/\s{2,}/g, ' ') // Remove double spaces
+      .trim();
     
     return cleanedText;
   }
@@ -110,7 +135,6 @@ function sanitizeQuestionText(text, departmentName = 'General') {
     
     // Process each section
     let currentPerspective = null;
-    let currentText = "";
     
     for (let i = 0; i < sections.length; i++) {
       const section = sections[i].trim();
@@ -127,36 +151,29 @@ function sanitizeQuestionText(text, departmentName = 'General') {
       
       // If we have a valid perspective, process the questions in this section
       if (currentPerspective) {
-        const questions = section.split(/\n\s*Question\s*:\s*/i).filter(Boolean);
+        // Try to match question blocks with their type and category
+        const questionPattern = /Question:\s*(.*?)(?:\n|$)(?:Type:\s*(.*?)(?:\n|$))?(?:Category:\s*(.*?)(?:\n\n|\n$|$))?/gs;
+        let match;
         
-        for (let j = 0; j < questions.length; j++) {
-          let question = questions[j].trim();
-          let questionText = question;
-          let questionType = 'rating'; // Default
-          let category = '';
+        while ((match = questionPattern.exec(section)) !== null) {
+          const questionText = match[1]?.trim() || '';
+          const questionType = (match[2]?.trim() || 'rating').toLowerCase();
+          const category = match[3]?.trim() || '';
           
-          // Extract type if present
-          const typeMatch = question.match(/\nType\s*:\s*([^\n]+)/i);
-          if (typeMatch) {
-            questionType = typeMatch[1].trim().toLowerCase();
-            questionText = questionText.replace(typeMatch[0], '');
-          }
-          
-          // Extract category if present
-          const categoryMatch = question.match(/\nCategory\s*:\s*([^\n]+)/i);
-          if (categoryMatch) {
-            category = categoryMatch[1].trim();
-            questionText = questionText.replace(categoryMatch[0], '');
-          }
-          
-          // Just trim the text - sanitizeQuestionText will be applied later
-          questionText = questionText.trim();
-          
-          // Add the question with basic trimming
+          // Only add questions that have text
           if (questionText) {
+            // Pre-sanitize to strip out template-specific mentions
+            // sanitizeQuestionText will be fully applied later by the caller
+            const preSanitized = questionText
+              .replace(/for the General purpose template/gi, '')
+              .replace(/the General purpose template's/gi, 'their')
+              .replace(/the General purpose template/gi, '')
+              .replace(/General purpose template/gi, '');
+            
             result[currentPerspective].push({
-              text: questionText,
-              type: questionType,
+              text: preSanitized,
+              type: questionType === 'open_ended' ? 'open_ended' : 
+                   (questionType === 'multiple_choice' ? 'multiple_choice' : 'rating'),
               category: category,
               perspective: currentPerspective,
               required: true,
@@ -164,10 +181,60 @@ function sanitizeQuestionText(text, departmentName = 'General') {
             });
           }
         }
+        
+        // If no questions were matched with the regex above, fall back to the original method
+        if (result[currentPerspective].length === 0) {
+          const questions = section.split(/\n\s*Question\s*:\s*/i).filter(Boolean);
+          
+          for (let j = 0; j < questions.length; j++) {
+            let question = questions[j].trim();
+            let questionText = question;
+            let questionType = 'rating'; // Default
+            let category = '';
+            
+            // Extract type if present
+            const typeMatch = question.match(/\nType\s*:\s*([^\n]+)/i);
+            if (typeMatch) {
+              questionType = typeMatch[1].trim().toLowerCase();
+              questionText = questionText.replace(typeMatch[0], '');
+            }
+            
+            // Extract category if present
+            const categoryMatch = question.match(/\nCategory\s*:\s*([^\n]+)/i);
+            if (categoryMatch) {
+              category = categoryMatch[1].trim();
+              questionText = questionText.replace(categoryMatch[0], '');
+            }
+            
+            // Apply immediate sanitization for template references
+            questionText = questionText
+              .replace(/for the General purpose template/gi, '')
+              .replace(/the General purpose template's/gi, 'their')
+              .replace(/the General purpose template/gi, '')
+              .replace(/General purpose template/gi, '');
+            
+            questionText = questionText.trim();
+            
+            // Add the question
+            if (questionText) {
+              result[currentPerspective].push({
+                text: questionText,
+                type: questionType === 'open_ended' ? 'open_ended' : 
+                     (questionType === 'multiple_choice' ? 'multiple_choice' : 'rating'),
+                category: category,
+                perspective: currentPerspective,
+                required: true,
+                order: result[currentPerspective].length + 1
+              });
+            }
+          }
+        }
       }
     }
     
-    console.log(`Successfully parsed ${Object.values(result).reduce((sum, arr) => sum + arr.length, 0)} questions`);
+    // Log success
+    const totalQuestions = Object.values(result).reduce((sum, arr) => sum + arr.length, 0);
+    console.log(`Successfully parsed ${totalQuestions} questions from AI response`);
     
     return result;
   }

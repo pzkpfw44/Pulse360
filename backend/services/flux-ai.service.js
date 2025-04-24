@@ -1,72 +1,88 @@
 // backend/services/flux-ai.service.js
+
 const axios = require('axios');
-const fs = require('fs');
+const fs = require('fs').promises;
+const path = require('path');
 const FormData = require('form-data');
 const fluxAiConfig = require('../config/flux-ai');
 
 /**
- * Uploads a file to FluxAI
+ * Upload a file to the Flux AI API
  * @param {string} filePath - Path to the file to upload
- * @returns {Promise<object>} - Upload response
+ * @returns {Promise<Object>} - The response from the API
  */
 async function uploadFileToFluxAi(filePath) {
   try {
-    console.log(`Uploading file to FluxAI: ${filePath}`);
+    // Read the file
+    const fileContent = await fs.readFile(filePath);
     
-    const formData = new FormData();
-    formData.append('files', fs.createReadStream(filePath));
+    // Create form data
+    const form = new FormData();
+    form.append('file', fileContent, path.basename(filePath));
     
-    const response = await axios.post(
-      fluxAiConfig.getEndpointUrl('files'),
-      formData,
-      {
-        headers: {
-          'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
-          ...formData.getHeaders()
-        }
+    // Make the upload request
+    const endpoint = fluxAiConfig.getEndpointUrl('files');
+    
+    const response = await axios.post(endpoint, form, {
+      headers: {
+        'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
+        ...form.getHeaders()
       }
-    );
+    });
     
-    return response.data;
+    return { success: true, data: response.data };
   } catch (error) {
-    console.error('Error uploading file to FluxAI:', error.message);
+    console.error('Error uploading file to Flux AI:', error.message);
+    
+    if (error.response) {
+      console.error('API error details:', error.response.data);
+    }
+    
     return { success: false, error: error.message };
   }
 }
 
 /**
- * Makes a chat request to FluxAI
- * @param {object} requestData - The request data
- * @returns {Promise<object>} - AI response
+ * Make a chat request to the Flux AI API
+ * @param {Object} requestBody - The request body to send
+ * @returns {Promise<Object>} - The response from the API
  */
-async function makeAiChatRequest(requestData) {
+async function makeAiChatRequest(requestBody) {
   try {
-    // Force the model to be the one specified in config
-    requestData.model = fluxAiConfig.model;
+    // CRITICAL: FORCE THE MODEL TO BE THE ONE FROM CONFIG
+    requestBody.model = fluxAiConfig.model;
     
-    console.log(`Sending AI request with forced model: ${requestData.model}`);
+    console.log(`Making AI chat request to model: ${requestBody.model}`);
     
-    const response = await axios.post(
-      fluxAiConfig.getEndpointUrl('chat'),
-      requestData,
-      {
-        headers: {
-          'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    // Force the model in the response to match our config
-    if (response.data && response.data.model) {
-      console.log(`Overriding response model from ${response.data.model} to ${fluxAiConfig.model}`);
-      response.data.model = fluxAiConfig.model;
+    // Log if we have file attachments
+    if (requestBody.attachments && requestBody.attachments.files && requestBody.attachments.files.length > 0) {
+      console.log(`Request includes ${requestBody.attachments.files.length} file attachments`);
     }
+    
+    // SEND THE REQUEST DIRECTLY WITHOUT ANY FALLBACK OR ALTERNATIVE FLOW
+    const endpoint = fluxAiConfig.getEndpointUrl('chat');
+    const response = await axios.post(endpoint, requestBody, {
+      headers: {
+        'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.data) {
+      throw new Error('Empty response from AI service');
+    }
+    
+    console.log('Response model:', response.data.model || 'Not specified in response');
     
     return response.data;
   } catch (error) {
-    console.error('Error making AI chat request:', error);
-    throw error;
+    console.error('Error making AI chat request:', error.message);
+    
+    if (error.response) {
+      console.error('API error details:', error.response.data);
+    }
+    
+    throw error; // Re-throw to be handled by caller
   }
 }
 
