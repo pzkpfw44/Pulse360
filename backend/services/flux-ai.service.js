@@ -9,7 +9,6 @@ const fluxAiConfig = require('../config/flux-ai');
 /**
  * Uploads a file to Flux AI
  * @param {string} filePath - Path to the file to upload
- * @param {string} model - The AI model to use for analysis
  * @returns {Promise<Object>} - Upload response
  */
 async function uploadFileToFluxAi(filePath) {
@@ -20,65 +19,79 @@ async function uploadFileToFluxAi(filePath) {
         
         const form = new FormData();
         form.append('file', fs.createReadStream(filePath), {
-        filename: path.basename(filePath),
-        contentType: 'application/octet-stream'
+            filename: path.basename(filePath),
+            contentType: 'application/octet-stream'
         });
         
-        // Add model parameter explicitly
-        form.append('model', fluxAiConfig.model);
+        // Try ALL known header combinations to ensure we authenticate properly
+        const headers = {
+            ...form.getHeaders(),
+            'X-API-KEY': fluxAiConfig.apiKey,
+            'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+        };
+        
+        console.log(`Uploading file with explicit model: ${fluxAiConfig.model}`);
         
         const response = await axios.post(
-        fluxAiConfig.getEndpointUrl('files'),
-        form,
-        {
-            headers: {
-            ...form.getHeaders(),
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-            }
-        }
+            fluxAiConfig.getEndpointUrl('files'),
+            form,
+            { headers }
         );
         
         return {
-        success: true,
-        data: response.data
+            success: true,
+            data: response.data
         };
     } catch (error) {
         console.error('Error uploading file to Flux AI:', error);
         return {
-        success: false,
-        error: error.message
+            success: false,
+            error: error.message
         };
     }
-    }
+}
 
-    /**
-     * Makes a chat request to Flux AI
-     * @param {Object} requestBody - The request body
-     * @returns {Promise<Object>} - AI response
-     */
-    async function makeAiChatRequest(requestBody) {
+/**
+ * Makes a chat request to Flux AI with aggressive model enforcement
+ * @param {Object} requestBody - The request body
+ * @returns {Promise<Object>} - AI response
+ */
+async function makeAiChatRequest(requestBody) {
     try {
-        // Ensure model is always set
-        if (!requestBody.model) {
-        requestBody.model = fluxAiConfig.model;
-        }
+        // FORCE the model parameter in EVERY request
+        const finalRequestBody = {
+            ...requestBody,
+            model: fluxAiConfig.model,
+            // Add additional parameters to explicitly override model selection
+            override_model: fluxAiConfig.model,
+            use_model: fluxAiConfig.model
+        };
         
-        console.log(`Making AI request with model: ${requestBody.model}`);
+        console.log(`Making AI request with FORCED model: ${finalRequestBody.model}`);
+        console.log('Request body:', JSON.stringify(finalRequestBody, null, 2));
+        
+        // Try BOTH header formats to ensure one works
+        const headers = {
+            'Content-Type': 'application/json',
+            'X-API-KEY': fluxAiConfig.apiKey,
+            'Authorization': `Bearer ${fluxAiConfig.apiKey}`
+        };
         
         const response = await axios.post(
-        fluxAiConfig.getEndpointUrl('chat'),
-        requestBody,
-        {
-            headers: {
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`,
-            'Content-Type': 'application/json'
-            }
-        }
+            fluxAiConfig.getEndpointUrl('chat'),
+            finalRequestBody,
+            { headers }
         );
+        
+        console.log(`AI response received. Claimed model: ${response.data.model || 'unknown'}`);
         
         return response.data;
     } catch (error) {
         console.error('Error making AI chat request:', error);
+        if (error.response) {
+            console.error('Response status:', error.response.status);
+            console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        }
         throw error;
     }
 }
