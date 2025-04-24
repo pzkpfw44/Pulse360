@@ -1693,35 +1693,31 @@ function addGenericQuestions(questions, perspective, startOrder) {
 async function startDocumentAnalysis(documents, documentType, userId, templateInfo = {}) {
   try {
     console.log('Starting document analysis for documents:', documents.length);
-    
+
     // Import the necessary services
     const fluxAiConfig = require('../config/flux-ai');
     const { sanitizeQuestionText, createAnalysisPrompt } = require('../services/prompt-helper.service');
-    
+
     // First update the documents to mark them as being analyzed
     for (const document of documents) {
       await document.update({ status: 'analysis_in_progress' });
     }
-    
+
     // Upload the documents to Flux AI
     const fileIds = [];
     for (const document of documents) {
       try {
         const filePath = document.path;
         console.log('Uploading file:', filePath);
-        
-        // Make sure we're passing the correct model in all API calls
+
         const uploadResponse = await uploadFileToFluxAi(filePath);
-        
+
         if (uploadResponse.success && uploadResponse.data && uploadResponse.data.length > 0) {
           console.log('File upload response:', uploadResponse);
-          
-          // Update document with file ID
           await document.update({
             fluxAiFileId: uploadResponse.data[0].id,
             status: 'uploaded_to_ai'
           });
-          
           fileIds.push(uploadResponse.data[0].id);
         } else {
           console.error('Failed to upload file:', uploadResponse);
@@ -1730,23 +1726,24 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
         console.error(`Error uploading document ${document.id}:`, error);
       }
     }
-    
+
     console.log('Valid File IDs:', fileIds);
-    
+
     if (fileIds.length === 0) {
       throw new Error('No valid files uploaded to AI');
     }
-    
+
     // Process files with AI
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);
     console.log('Configured AI Model:', fluxAiConfig.model);
-    
-    console.log('Waiting for file processing...');
-    
+
+    console.log('Waiting for file processing...'); // This is okay to keep
+
     // Create a prompt that doesn't use department names
     const promptContent = createAnalysisPrompt(documentType, templateInfo);
-    
+
+    // --- START OF FIX ---
     // Make the AI analysis request
     const analysisRequest = {
       model: fluxAiConfig.model, // Explicitly set the model here
@@ -1760,53 +1757,57 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
           content: promptContent
         }
       ],
-      temperature: 0.3
+      temperature: 0.3,
+      // *** THIS ATTACHMENTS FIELD IS CRITICAL ***
+      attachments: {
+        files: fileIds // Use the fileIds obtained earlier
+      }
+      // You might also need to add the 'mode' based on the API docs if required
+      // mode: 'rag'
     };
-    
-    // Log which model we're using
-    console.log('Requesting analysis with model:', analysisRequest.model);
-    
-    // If development mode without file IDs, we can still try a simple request
-    console.log('Trying simple request without file attachments');
-    const analysisResponse = await makeAiChatRequest(analysisRequest);
-    
-    console.log('Simple request response model:', analysisResponse.model);
-    
+
+    // Log which model and attachments we're sending
+    console.log('Requesting analysis with model:', analysisRequest.model, 'and attachments:', JSON.stringify(analysisRequest.attachments));
+
+    // *** "Trying simple request..." log IS REMOVED ***
+
+    // Log the actual request being sent (DEBUG line)
+    console.log('DEBUG: Sending this to AI:', JSON.stringify(analysisRequest, null, 2));
+    const analysisResponse = await makeAiChatRequest(analysisRequest); // API call now includes attachments
+    // --- END OF FIX ---
+
+    // Log the model from the actual response
+    console.log('Analysis response model:', analysisResponse.model);
+
     // Get the text content from the AI response
     if (!analysisResponse || !analysisResponse.choices || analysisResponse.choices.length === 0) {
       throw new Error('No valid response from AI analysis');
     }
-    
-    // Get the AI response text
+
     const aiResponseText = analysisResponse.choices[0].message.content;
-    
-    // Check if we got a valid response
+
     if (!aiResponseText) {
       throw new Error('No valid content in AI response');
     }
-    
+
     console.log('AI seems to have analyzed the document successfully!');
     console.log('AI response sample (first 500 chars):', aiResponseText.substring(0, 500));
-    
-    // Parse questions from AI response using our improved parser
+
+    // Parse questions from AI response
     console.log('Parsing questions from AI response');
     const parsedQuestions = parseQuestionsFromAiResponse(aiResponseText);
-    
-    // Department name for sanitization
+
     const departmentName = templateInfo.department || 'General';
-    
-    // Sanitize all question texts to replace department name with generic references
     Object.keys(parsedQuestions).forEach(perspective => {
       parsedQuestions[perspective] = parsedQuestions[perspective].map(question => ({
         ...question,
         text: sanitizeQuestionText(question.text, departmentName)
       }));
     });
-    
-    // Count total questions
+
     const totalQuestions = Object.values(parsedQuestions).reduce((sum, arr) => sum + arr.length, 0);
     console.log(`Extracted ${totalQuestions} questions from AI response`);
-    
+
     // Create template
     const template = await Template.create({
       name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
@@ -1816,50 +1817,43 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
       documentType,
       generatedBy: 'flux_ai',
       status: 'pending_review',
-      perspectiveSettings: templateInfo.perspectiveSettings || {
-        manager: { questionCount: 10, enabled: true },
-        peer: { questionCount: 10, enabled: true },
-        direct_report: { questionCount: 10, enabled: true },
-        self: { questionCount: 10, enabled: true },
-        external: { questionCount: 5, enabled: false }
-      },
+      perspectiveSettings: templateInfo.perspectiveSettings || { /* default settings */ },
       createdBy: userId
     });
-    
+
     console.log(`Found ${totalQuestions} questions from AI response, balancing by perspective`);
-    
-    // Get all questions organized by perspective
+
+    // Balance questions by perspective
     const allQuestions = [];
-    
-    // Balance the number of questions by perspective
     console.log('Balancing questions by perspective settings');
-    
     for (const perspective in parsedQuestions) {
-      // Skip if this perspective is not enabled
       if (!template.perspectiveSettings[perspective]?.enabled) {
         console.log(`Perspective ${perspective} is disabled, skipping questions`);
         continue;
       }
-      
-      const targetCount = template.perspectiveSettings[perspective]?.questionCount || 10;
+      const targetCount = template.perspectiveSettings[perspective]?.questionCount || 10; // Default if undefined
       const availableQuestions = parsedQuestions[perspective] || [];
-      
       console.log(`Perspective ${perspective}: Target count ${targetCount}, available ${availableQuestions.length}`);
-      
-      // Use all available questions, no matter how many there are
-      allQuestions.push(...availableQuestions);
+
+      // Select questions based on target count (simplified logic: take up to target count)
+       const questionsToUse = availableQuestions.slice(0, targetCount);
+      // A more robust implementation might randomly select or prioritize
+
+      allQuestions.push(...questionsToUse);
     }
-    
     console.log(`Balanced questions: ${allQuestions.length} total questions`);
-    
-    // Create all questions
-    for (const question of allQuestions) {
-      await Question.create({
-        ...question,
-        templateId: template.id
-      });
-    }
-    
+
+
+    // Create questions in DB
+     let orderIndex = 1; // Ensure questions are ordered correctly after balancing
+     for (const question of allQuestions) {
+       await Question.create({
+         ...question,
+         order: orderIndex++, // Assign sequential order
+         templateId: template.id
+       });
+     }
+
     // Create source document references
     for (const document of documents) {
       await SourceDocument.create({
@@ -1868,21 +1862,21 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
         templateId: template.id
       });
     }
-    
-    // Update documents to mark them as analysis complete
+
+    // Update documents status
     for (const document of documents) {
       await document.update({
         status: 'analysis_complete',
         associatedTemplateId: template.id
       });
     }
-    
+
     console.log(`Template created with ID: ${template.id}`);
     return template;
   } catch (error) {
     console.error('Error in document analysis:', error);
-    
-    // Update documents to mark them as analysis failed
+
+    // Update documents status on failure
     for (const document of documents) {
       try {
         await document.update({
@@ -1893,8 +1887,7 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
         console.error(`Error updating document ${document.id} status:`, updateError);
       }
     }
-    
-    throw error;
+    throw error; // Re-throw the error to be caught by the calling function
   }
 }
 

@@ -1,107 +1,76 @@
 // backend/services/prompt-helper.service.js
 
 /**
- * Creates a prompt that explicitly instructs the AI to use generic references
- * @param {string} documentType - Type of document being analyzed
- * @param {object} templateInfo - Template information including department, name, etc.
- * @returns {string} - AI prompt
+ * Sanitizes question text to remove department references
+ * @param {string} text - The original question text
+ * @param {string} departmentName - The department name to sanitize
+ * @returns {string} - The sanitized question text
  */
-function createAnalysisPrompt(documentType, templateInfo = {}) {
-    // Get information about the template for context
-    const department = templateInfo.department || 'General';
-    const purpose = templateInfo.purpose || 'General Purpose Assessment';
+function sanitizeQuestionText(text, departmentName) {
+    if (!text) return text;
     
-    return `Generate 360-degree feedback assessment questions based on the uploaded ${documentType.replace(/_/g, ' ')} document.
-      
-      ⚠️ CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE EXACTLY:
-      1. NEVER mention "${purpose}" anywhere in any question
-      2. NEVER use phrases like "General Purpose Assessment team" or similar
-      3. ALWAYS refer to the person being evaluated as "this person" ONLY
-      4. NEVER use the department name "${department}" in any form
-      5. When referring to teams or roles, use "their team" or "their role" ONLY
-      6. Avoid all specific references to departments, purposes, or assessment names
-      7. For self-assessment, use "I" and "my" instead of "this person"
-      
-      Create questions for each perspective:
-      - Manager Assessment (refer to person as "this person")
-      - Peer Assessment (refer to person as "this person")
-      - Direct Report Assessment (refer to manager as "your manager")
-      - Self Assessment (use "I" and "my" instead of "this person")
-      - External Stakeholder Assessment (refer to person as "this person")
-      
-      For each question include:
-      - Question text (with NO references to specific teams/purposes)
-      - Type (rating or open_ended)
-      - Category (specific skill/competency area)
-      
-      Each perspective should have a mix of rating scale and open-ended questions.`;
+    // Create a regex pattern that matches the department name in various contexts
+    const pattern = new RegExp(`(in|for|of|to|within) the ${departmentName} Department`, 'gi');
+    text = text.replace(pattern, (match) => {
+      if (match.toLowerCase().startsWith('in the')) return 'in this role';
+      if (match.toLowerCase().startsWith('for the')) return 'for this role';
+      if (match.toLowerCase().startsWith('of the')) return 'of the team';
+      if (match.toLowerCase().startsWith('to the')) return 'to the team';
+      if (match.toLowerCase().startsWith('within the')) return 'within the organization';
+      return match; // Fallback
+    });
+    
+    // Handle possessive form
+    text = text.replace(new RegExp(`the ${departmentName} Department's`, 'gi'), 'this role\'s');
+    
+    return text;
   }
   
   /**
-   * Sanitizes AI-generated questions to replace department references with generic ones
-   * @param {string} questionText - Original question text
-   * @param {string} departmentName - Department name to remove
-   * @returns {string} - Sanitized question text
+   * Creates a prompt for analyzing documents and generating questions
+   * @param {string} documentType - Type of document
+   * @param {object} templateInfo - Template information
+   * @returns {string} - Formatted prompt
    */
-  function sanitizeQuestionText(questionText, departmentName = 'General') {
-    if (!questionText) return questionText;
+  function createAnalysisPrompt(documentType, templateInfo = {}) {
+    const departmentName = templateInfo.department || 'General';
     
-    // Extract purpose phrase if it exists in the question
-    let purpose = 'General Purpose Assessment';
-    if (questionText.includes('General Purpose Assessment')) {
-      purpose = 'General Purpose Assessment';
-    }
-    
-    // Comprehensive list of patterns to replace
-    const replacements = [
-      // Fix manager references
-      { pattern: /the manager/gi, replacement: "this person" },
-      { pattern: /your manager/gi, replacement: "your manager" }, // Keep for direct reports
-      
-      // Replace template purpose references - most specific first
-      { pattern: new RegExp(`${purpose} team`, 'gi'), replacement: "their team" },
-      { pattern: new RegExp(`the ${purpose} team`, 'gi'), replacement: "their team" },
-      { pattern: new RegExp(`for the ${purpose}`, 'gi'), replacement: "for their role" },
-      { pattern: new RegExp(`${purpose}`, 'gi'), replacement: "their responsibilities" },
-      
-      // Department specific references
-      { pattern: new RegExp(`${departmentName}'s`, 'gi'), replacement: "this person's" },
-      { pattern: new RegExp(`does ${departmentName}`, 'gi'), replacement: "does this person" },
-      { pattern: new RegExp(`rate ${departmentName}`, 'gi'), replacement: "rate this person" },
-      { pattern: /for the General department/gi, replacement: "in their role" },
-      { pattern: /in the General department/gi, replacement: "in their team" },
-      { pattern: /General department/gi, replacement: "their team" },
-      
-      // Team references
-      { pattern: /the team's/gi, replacement: "their team's" },
-      
-      // Replace specific category references
-      { pattern: /Vision-setting and strategic thinking/gi, replacement: "Strategic thinking" },
-      { pattern: /Communication and influence skills needed for General/gi, replacement: "Communication skills" },
-      { pattern: /Team development and empowerment for Template/gi, replacement: "Team development" },
-      
-      // Fix "the individual" references
-      { pattern: /the individual/gi, replacement: "this person" },
-      
-      // Clean up any remaining department references
-      { pattern: new RegExp(`\\b${departmentName}\\b`, 'g'), replacement: "this person" },
-      
-      // Final cleanup for any phrases that might have been missed
-      { pattern: /General Purpose/gi, replacement: "their responsibilities" },
-      { pattern: /Assessment team/gi, replacement: "team" },
-    ];
-    
-    let sanitizedText = questionText;
-    
-    // Apply all replacements
-    replacements.forEach(({ pattern, replacement }) => {
-      sanitizedText = sanitizedText.replace(pattern, replacement);
-    });
-    
-    return sanitizedText;
+    // Create a prompt that abstracts away specific department names
+    const prompt = `
+  I need you to analyze documents and generate questions for a 360-degree feedback assessment for a leadership role.
+  
+  Document Type: ${documentType.replace(/_/g, ' ')}
+  Purpose: ${templateInfo.purpose || 'Leadership assessment'}
+  
+  For each perspective below, generate specific, actionable 360-degree feedback questions:
+  
+  1. MANAGER ASSESSMENT (questions that a manager would answer about the person)
+  2. PEER ASSESSMENT (questions that peers would answer)
+  3. DIRECT REPORT ASSESSMENT (questions that direct reports would answer)
+  4. SELF ASSESSMENT (questions for self-evaluation)
+  5. EXTERNAL ASSESSMENT (questions for external stakeholders)
+  
+  For each question, specify:
+  - Question: [The question text]
+  - Type: [rating or open_ended]
+  - Category: [A relevant category like "Communication", "Leadership", etc.]
+  
+  Don't mention specific department names in your responses - use generic terms like "in this role" instead of "in the ${departmentName} department".
+  
+  Focus on leadership competencies such as:
+  - Vision-setting and strategic thinking
+  - Team development and empowerment
+  - Communication and influence skills
+  - Decision-making processes and effectiveness
+  - Change management and adaptability
+  
+  Generate questions that will help assess these competencies effectively.
+  `;
+  
+    return prompt;
   }
   
   module.exports = {
-    createAnalysisPrompt,
-    sanitizeQuestionText
+    sanitizeQuestionText,
+    createAnalysisPrompt
   };
