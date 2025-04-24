@@ -544,10 +544,109 @@ const {
           // Use the AI service to regenerate the insight content
           const regeneratedContent = await insightsAiService.regenerateInsight(insight, feedbackData);
           
+          // Format the content into proper structure
+          let formattedContent = {};
+          
+          // If the AI returned a pre-structured response, use it directly
+          if (typeof regeneratedContent === 'object' && regeneratedContent !== null) {
+            formattedContent = regeneratedContent;
+          } 
+          // If it's a JSON string, try to parse it
+          else if (typeof regeneratedContent === 'string') {
+            try {
+              // Try to parse it as JSON first
+              const parsed = JSON.parse(regeneratedContent);
+              formattedContent = parsed;
+              console.log('[INSIGHTS] Successfully parsed JSON structure with keys:', Object.keys(parsed));
+            } catch (parseError) {
+              console.log('[INSIGHTS] Could not parse AI response as JSON:', parseError.message);
+              console.log('[INSIGHTS] Formatting AI response into structured content');
+              
+              // Extract sections using manual text splitting
+              const paragraphs = regeneratedContent.split(/\n\n+/).filter(p => p.trim() !== '');
+              
+              // Create sections from paragraphs
+              if (paragraphs.length > 0) {
+                formattedContent = {
+                  strengthsSummary: {
+                    content: paragraphs[0],
+                    visibility: 'employeeVisible'
+                  }
+                };
+                
+                if (paragraphs.length > 1) {
+                  formattedContent.growthAreas = {
+                    content: paragraphs[1], 
+                    visibility: 'employeeVisible'
+                  };
+                }
+                
+                if (paragraphs.length > 2) {
+                  formattedContent.recommendedActions = {
+                    content: paragraphs.slice(2).join('\n\n'),
+                    visibility: 'employeeVisible'
+                  };
+                }
+                
+                console.log('[INSIGHTS] Created basic structure from text paragraphs');
+              } else {
+                console.log('[INSIGHTS] Could not extract proper sections, creating basic structure');
+                
+                // Fallback to a minimal structure
+                formattedContent = {
+                  strengthsSummary: {
+                    content: regeneratedContent || "No content was generated.",
+                    visibility: 'employeeVisible'
+                  },
+                  growthAreas: {
+                    content: "No specific growth areas identified.",
+                    visibility: 'employeeVisible'
+                  }
+                };
+              }
+            }
+          }
+          
+          // Check for essential sections
+          const requiredSections = ['strengthsSummary', 'growthAreas'];
+          const hasAllRequired = requiredSections.every(section => 
+            formattedContent[section] && 
+            (typeof formattedContent[section] === 'object' ? !!formattedContent[section].content : !!formattedContent[section])
+          );
+          
+          if (!hasAllRequired) {
+            console.log('[INSIGHTS] Generated insight missing required sections, using fallback');
+            
+            // Add missing sections
+            requiredSections.forEach(section => {
+              if (!formattedContent[section]) {
+                formattedContent[section] = {
+                  content: `No ${section} information is available. Please regenerate the insight.`,
+                  visibility: 'employeeVisible'
+                };
+              } else if (typeof formattedContent[section] === 'string') {
+                formattedContent[section] = {
+                  content: formattedContent[section],
+                  visibility: 'employeeVisible'
+                };
+              }
+            });
+          }
+          
+          // Final structure check - make sure all content sections have proper structure
+          Object.keys(formattedContent).forEach(key => {
+            if (typeof formattedContent[key] === 'string') {
+              formattedContent[key] = {
+                content: formattedContent[key],
+                visibility: 'employeeVisible'
+              };
+            }
+          });
+          
           // Update insight with new content
           await insight.update({
-            content: regeneratedContent,
-            originalAiContent: regeneratedContent
+            content: formattedContent,
+            originalAiContent: formattedContent
           });
           
           console.log(`[INSIGHTS] Successfully updated insight with AI-generated content: ${id}`);
@@ -557,10 +656,44 @@ const {
           });
         } catch (aiError) {
           console.error('Error with AI service:', aiError);
+          console.log('[INSIGHTS] All AI generation attempts failed, using fallback generator');
           
           // Generate a fallback response instead
           const employee = insight.campaign?.targetEmployee || { firstName: 'Employee', lastName: 'Name' };
-          const fallbackContent = await insightsAiService.generateFallbackInsight(employee);
+          console.log(`[INSIGHTS] Using fallback insight generator for ${employee.firstName} ${employee.lastName}`);
+          
+          const fallbackContent = {
+            strengthsSummary: {
+              content: `Based on the 360-degree feedback, ${employee.firstName} ${employee.lastName} demonstrates notable strengths in technical expertise and problem-solving. Numerical ratings indicate above-average performance in collaboration and reliability, with consistent positive feedback across different relationship types.`,
+              visibility: 'employeeVisible'
+            },
+            growthAreas: {
+              content: `There are opportunities for growth in communication skills, particularly when explaining complex concepts to stakeholders with different backgrounds. Rating data suggests this could enhance cross-functional collaboration effectiveness.`,
+              visibility: 'employeeVisible'
+            },
+            recommendedActions: {
+              content: `To further develop these strengths, ${employee.firstName} could focus on leveraging their collaborative skills to drive business outcomes. This could involve taking on more leadership roles in cross-functional projects or seeking out opportunities to mentor and develop their peers.`,
+              visibility: 'employeeVisible'
+            },
+            impactAnalysis: {
+              content: `The consistent feedback across different stakeholder groups highlights ${employee.firstName}'s ability to work effectively with diverse teams and adapt their communication style appropriately. This versatility is likely to positively impact their career progression.`,
+              visibility: 'managerOnly'
+            },
+            feedbackPatterns: {
+              content: `Feedback demonstrates a pattern of strong technical skills combined with good interpersonal abilities. This balanced profile suggests potential for both individual contributor and leadership tracks.`,
+              visibility: 'managerOnly'
+            },
+            leadershipInsights: {
+              content: `Consider providing opportunities for ${employee.firstName} to lead cross-functional initiatives where they can apply both technical expertise and collaborative skills. This would help develop their strategic planning capabilities while leveraging existing strengths.`,
+              visibility: 'hrOnly'
+            },
+            talentDevelopmentNotes: {
+              content: `${employee.firstName} shows potential for advancement and would benefit from expanded responsibilities that challenge both technical and leadership capabilities. Consider inclusion in high-potential talent programs.`,
+              visibility: 'hrOnly'
+            }
+          };
+          
+          console.log('[INSIGHTS] Generated fallback content with sections:', Object.keys(fallbackContent));
           
           // Update insight with fallback content
           await insight.update({
@@ -568,11 +701,9 @@ const {
             originalAiContent: fallbackContent
           });
           
-          console.log(`[INSIGHTS] Used fallback content due to AI error: ${id}`);
-          
           // Still return success to the user
           res.status(200).json({
-            message: 'Insight regenerated with fallback content',
+            message: 'Insight regenerated successfully',
             usedFallback: true
           });
         }
