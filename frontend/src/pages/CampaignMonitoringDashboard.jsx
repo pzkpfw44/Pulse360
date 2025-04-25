@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  BarChart2, Clock, CheckCircle2, AlertTriangle, 
-  Search, Filter, Plus, RefreshCw, ArrowRight, Eye
+import {
+  BarChart2, Clock, CheckCircle2, AlertTriangle,
+  Search, Filter, Plus, RefreshCw, ArrowRight, Eye, Delete,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -16,35 +16,37 @@ const CampaignMonitoringDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // State for delete dialog
+  const [campaignToDelete, setCampaignToDelete] = useState(null); // State for campaign to delete
 
   // Fetch all campaigns
   const fetchCampaigns = async () => {
     try {
       setRefreshing(true);
       const response = await api.get('/campaigns');
-      
+
       // Process campaigns to ensure completion rates are accurate
       const processedCampaigns = (response.data.campaigns || []).map(campaign => {
         // If campaign has participants, ensure completion rate is correctly calculated
         if (campaign.participants && campaign.participants.length > 0) {
           const totalParticipants = campaign.participants.length;
           const completedParticipants = campaign.participants.filter(p => p.status === 'completed').length;
-          
+
           // Calculate actual completion rate
-          const calculatedRate = totalParticipants > 0 
-            ? Math.round((completedParticipants / totalParticipants) * 100) 
+          const calculatedRate = totalParticipants > 0
+            ? Math.round((completedParticipants / totalParticipants) * 100)
             : 0;
-          
+
           // Update the completion rate if it's different
           if (calculatedRate !== campaign.completionRate) {
             console.log(`Fixing completion rate for ${campaign.name}: ${campaign.completionRate}% → ${calculatedRate}%`);
             campaign.completionRate = calculatedRate;
           }
         }
-        
+
         return campaign;
       });
-      
+
       setCampaigns(processedCampaigns);
       setError(null);
     } catch (err) {
@@ -65,14 +67,14 @@ const CampaignMonitoringDashboard = () => {
     .filter(campaign => {
       // Filter by status
       if (filterStatus && campaign.status !== filterStatus) return false;
-      
+
       // Search by name or target employee
-      const targetName = campaign.targetEmployee 
+      const targetName = campaign.targetEmployee
         ? `${campaign.targetEmployee.firstName} ${campaign.targetEmployee.lastName}`.toLowerCase()
         : '';
-      
+
       return (
-        !searchTerm || 
+        !searchTerm ||
         campaign.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         targetName.includes(searchTerm.toLowerCase())
       );
@@ -86,11 +88,11 @@ const CampaignMonitoringDashboard = () => {
         'completed': 4,
         'canceled': 5
       };
-      
+
       if (statusPriority[a.status] !== statusPriority[b.status]) {
         return statusPriority[a.status] - statusPriority[b.status];
       }
-      
+
       // Then sort by date (newest first)
       return new Date(b.updatedAt) - new Date(a.updatedAt);
     });
@@ -103,22 +105,20 @@ const CampaignMonitoringDashboard = () => {
       draft: campaigns.filter(c => c.status === 'draft').length,
       completed: campaigns.filter(c => c.status === 'completed').length,
       needsAttention: campaigns.filter(c => {
-        // Campaigns that might need attention:
-        // 1. Active with low completion rate
-        // 2. Active with approaching deadline (within 3 days)
         if (c.status !== 'active') return false;
-        
-        const hasLowCompletionRate = c.completionRate < 50;
-        
+
+        // Calculate days until deadline
         const endDate = new Date(c.endDate);
         const now = new Date();
         const daysUntilDeadline = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
-        const isApproachingDeadline = daysUntilDeadline <= 3 && daysUntilDeadline >= 0;
-        
-        return hasLowCompletionRate || isApproachingDeadline;
+
+        // Only include campaigns that are:
+        // 1. Within 4 days of deadline
+        // 2. AND have low completion rate (less than 70%)
+        return daysUntilDeadline <= 4 && daysUntilDeadline >= 0 && c.completionRate < 70;
       }).length
     };
-    
+
     return metrics;
   };
 
@@ -161,11 +161,15 @@ const CampaignMonitoringDashboard = () => {
     const daysRemaining = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
     
     if (daysRemaining < 0) {
-      return { value: 'Overdue', class: 'text-red-600' };
+      return { value: 'Overdue', class: 'text-white bg-red-600 px-2 py-0.5 rounded font-medium' };
     } else if (daysRemaining === 0) {
-      return { value: 'Due today', class: 'text-yellow-600 font-medium' };
+      return { value: 'Due today', class: 'text-white bg-orange-500 px-2 py-0.5 rounded font-medium' };
+    } else if (daysRemaining === 1) {
+      return { value: `1 day left`, class: 'text-yellow-800 bg-yellow-200 px-2 py-0.5 rounded font-medium' };
     } else if (daysRemaining <= 3) {
-      return { value: `${daysRemaining} days left`, class: 'text-yellow-600' };
+      return { value: `${daysRemaining} days left`, class: 'text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded' };
+    } else if (daysRemaining <= 7) {
+      return { value: `${daysRemaining} days left`, class: 'text-yellow-700' };
     } else {
       return { value: `${daysRemaining} days left`, class: 'text-green-600' };
     }
@@ -174,6 +178,29 @@ const CampaignMonitoringDashboard = () => {
   // View campaign details
   const viewCampaign = (id) => {
     navigate(`/monitor-360/campaign/${id}`);
+  };
+
+  // Handle delete click - Sets the campaign to be deleted and opens the dialog
+  const handleDeleteClick = (campaign) => {
+    setCampaignToDelete(campaign);
+    setDeleteDialogOpen(true);
+  };
+
+  // Handle delete confirmation - Calls the API to delete the campaign
+  const handleDeleteConfirm = async () => {
+    if (!campaignToDelete) return;
+
+    try {
+      await api.delete(`/campaigns/${campaignToDelete.id}`);
+      // Refresh the campaigns list after successful deletion
+      fetchCampaigns();
+      setDeleteDialogOpen(false); // Close the dialog
+      setCampaignToDelete(null); // Reset the campaign to delete
+    } catch (err) {
+      console.error('Error deleting campaign:', err);
+      setError('Failed to delete campaign. Please try again.');
+      // Optionally keep the dialog open or provide feedback within the dialog
+    }
   };
 
   // Render loading state
@@ -195,7 +222,7 @@ const CampaignMonitoringDashboard = () => {
             Monitor and manage your 360-degree feedback campaigns
           </p>
         </div>
-        
+
         <button
           onClick={() => navigate('/start-360')}
           className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -207,7 +234,8 @@ const CampaignMonitoringDashboard = () => {
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-5">
+        {/* ... (Metrics Cards content remains the same) ... */}
+         <div className="bg-white rounded-lg shadow p-5">
           <div className="flex justify-between">
             <div>
               <p className="text-sm text-gray-500">Active Campaigns</p>
@@ -218,7 +246,7 @@ const CampaignMonitoringDashboard = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-5">
           <div className="flex justify-between">
             <div>
@@ -230,7 +258,7 @@ const CampaignMonitoringDashboard = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-5">
           <div className="flex justify-between">
             <div>
@@ -242,7 +270,7 @@ const CampaignMonitoringDashboard = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="bg-white rounded-lg shadow p-5">
           <div className="flex justify-between">
             <div>
@@ -271,7 +299,7 @@ const CampaignMonitoringDashboard = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          
+
           <div className="w-full md:w-48">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -291,7 +319,7 @@ const CampaignMonitoringDashboard = () => {
               </select>
             </div>
           </div>
-          
+
           <button
             onClick={fetchCampaigns}
             className="inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
@@ -365,7 +393,7 @@ const CampaignMonitoringDashboard = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredCampaigns.map((campaign) => {
                   const timeStatus = getTimeStatus(campaign);
-                  
+
                   return (
                     <tr key={campaign.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -438,7 +466,7 @@ const CampaignMonitoringDashboard = () => {
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </button>
-                        
+
                         {campaign.status === 'completed' && (
                           <button
                             onClick={() => navigate(`/results-360/campaign/${campaign.id}`)}
@@ -448,6 +476,15 @@ const CampaignMonitoringDashboard = () => {
                             Results
                           </button>
                         )}
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => handleDeleteClick(campaign)}
+                          className="text-red-600 hover:text-red-900 ml-2" 
+                          title="Delete Campaign"
+                        >
+                          <Delete className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -457,6 +494,46 @@ const CampaignMonitoringDashboard = () => {
           </div>
         </div>
       )}
+      {/* --- INSERTED DELETE CONFIRMATION DIALOG CODE --- */}
+      {deleteDialogOpen && (
+        <>
+          {/* Overlay */}
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setDeleteDialogOpen(false)}></div>
+          {/* Dialog Box */}
+          <div className="fixed inset-0 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden">
+              {/* Dialog Header */}
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-medium text-gray-900">Delete Campaign</h3>
+              </div>
+              {/* Dialog Body */}
+              <div className="px-6 py-4">
+                <p className="text-gray-700">
+                  Are you sure you want to delete "{campaignToDelete?.name}"? This action cannot be undone.
+                </p>
+              </div>
+              {/* Dialog Footer */}
+              <div className="px-6 py-3 bg-gray-50 flex justify-end space-x-3">
+                {/* Cancel Button */}
+                <button
+                  onClick={() => setDeleteDialogOpen(false)} // Closes the dialog
+                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-gray-700"
+                >
+                  Cancel
+                </button>
+                {/* Delete Button */}
+                <button
+                  onClick={handleDeleteConfirm} // Calls the delete confirmation handler
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {/* --- END OF INSERTED CODE --- */}
     </div>
   );
 };

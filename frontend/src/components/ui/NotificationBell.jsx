@@ -12,12 +12,19 @@ const NotificationBell = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const dropdownRef = useRef(null);
-
+  const intervalRef = useRef(null);
+  
   useEffect(() => {
+    // Initial fetch
     fetchNotifications();
     
-    // Set up polling for new notifications - every 2 minutes
-    const intervalId = setInterval(fetchNotifications, 120000);
+    // Set up refresh based on settings
+    setupRefreshInterval();
+    
+    // Listen for settings changes
+    window.addEventListener('notificationSettingsChanged', handleSettingsChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('resetNotificationTimer', setupRefreshInterval);
     
     // Click outside listener
     const handleClickOutside = (event) => {
@@ -28,11 +35,65 @@ const NotificationBell = () => {
     
     document.addEventListener("mousedown", handleClickOutside);
     
+    // Cleanup function
     return () => {
-      clearInterval(intervalId);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      window.removeEventListener('notificationSettingsChanged', handleSettingsChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('resetNotificationTimer', setupRefreshInterval);
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+  
+  // Handle settings changes from custom event
+  const handleSettingsChange = (event) => {
+    console.log('Notification settings changed:', event.detail);
+    setupRefreshInterval();
+  };
+  
+  // Handle localStorage changes
+  const handleStorageChange = (event) => {
+    if (event.key === 'notificationSettings') {
+      console.log('Notification settings changed in localStorage');
+      setupRefreshInterval();
+    }
+  };
+  
+  // Setup refresh interval based on current settings
+  const setupRefreshInterval = () => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    // Check localStorage for settings
+    try {
+      const settingsStr = localStorage.getItem('notificationSettings');
+      let settings = { refreshEnabled: true, refreshInterval: 120000 }; // Default settings
+      
+      if (settingsStr) {
+        settings = JSON.parse(settingsStr);
+      } else {
+        // Save default settings if none exist
+        localStorage.setItem('notificationSettings', JSON.stringify(settings));
+      }
+      
+      console.log('Current notification settings:', settings);
+      
+      // Only set up interval if refresh is enabled
+      if (settings.refreshEnabled) {
+        console.log(`Setting up notification refresh every ${settings.refreshInterval}ms`);
+        intervalRef.current = setInterval(fetchNotifications, settings.refreshInterval);
+      } else {
+        console.log('Notification auto-refresh is disabled');
+      }
+    } catch (err) {
+      console.error('Error setting up notification refresh:', err);
+    }
+  };
 
   // Function to fetch notifications from server
   const fetchNotifications = async () => {
@@ -43,11 +104,16 @@ const NotificationBell = () => {
       const response = await axios.get(`${API_URL}/notifications`);
       
       if (response.data && Array.isArray(response.data.notifications)) {
+        // Get previously read notifications from localStorage
+        const readIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
+        
         // Process the notifications
         const notificationsData = response.data.notifications.map(notification => ({
           ...notification,
+          // Mark as read if it was previously read
+          read: notification.read || readIds.includes(notification.id),
           // Format the time if it's not already in a human-readable format
-          timeAgo: notification.timeAgo || formatTimeAgo(notification.time)
+          timeAgo: notification.timeAgo || formatTimeAgo(notification.time || notification.createdAt)
         }));
         
         setNotifications(notificationsData);
@@ -77,10 +143,7 @@ const NotificationBell = () => {
 
   const handleMarkAsRead = async (id) => {
     try {
-      // Call API to mark notification as read
-      await axios.put(`${API_URL}/notifications/${id}/read`);
-      
-      // Update local state
+      // Mark read locally first
       setNotifications(prev => 
         prev.map(notification => 
           notification.id === id ? { ...notification, read: true } : notification
@@ -89,6 +152,16 @@ const NotificationBell = () => {
       
       // Update unread count
       setUnreadCount(prev => Math.max(0, prev - 1));
+      
+      // Call API to mark notification as read
+      await axios.put(`${API_URL}/notifications/${id}/mark-read`);
+      
+      // Add to local storage to remember it was read
+      const readIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
+      if (!readIds.includes(id)) {
+        readIds.push(id);
+        localStorage.setItem('readNotificationIds', JSON.stringify(readIds));
+      }
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -96,16 +169,22 @@ const NotificationBell = () => {
 
   const handleMarkAllAsRead = async () => {
     try {
-      // Call API to mark all notifications as read
-      await axios.put(`${API_URL}/notifications/read-all`);
-      
-      // Update local state
+      // Mark all read locally first
       setNotifications(prev => 
         prev.map(notification => ({ ...notification, read: true }))
       );
       
       // Reset unread count
       setUnreadCount(0);
+      
+      // Then call API to mark all notifications as read
+      await axios.put(`${API_URL}/notifications/mark-all-read`);
+      
+      // Add all IDs to local storage
+      const allIds = notifications.map(n => n.id);
+      const readIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
+      const uniqueIds = [...new Set([...readIds, ...allIds])];
+      localStorage.setItem('readNotificationIds', JSON.stringify(uniqueIds));
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
     }

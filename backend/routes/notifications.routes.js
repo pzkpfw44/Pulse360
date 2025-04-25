@@ -1,6 +1,7 @@
 // backend/routes/notifications.routes.js
 const express = require('express');
 const router = express.Router();
+const notificationsController = require('../controllers/notifications.controller');
 const { authMiddleware } = require('../middleware/auth.middleware');
 const { 
   Response, 
@@ -172,5 +173,17 @@ function getTimeAgo(date) {
   if (diffInSeconds < 172800) return 'Yesterday';
   return `${Math.floor(diffInSeconds / 86400)}d ago`;
 }
+
+// Apply auth middleware to all routes
+router.use(authMiddleware);
+
+// Get notifications
+router.get('/', notificationsController.getNotifications);
+
+// Mark a notification as read
+router.put('/:id/mark-read', notificationsController.markAsRead);
+
+// Mark all notifications as read
+router.put('/mark-all-read', notificationsController.markAllAsRead);
 
 module.exports = router;

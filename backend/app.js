@@ -49,6 +49,7 @@ app.use('/api/insights', require('./routes/insights.routes'));
 app.use('/api/insights', insightsRoutes);
 app.use('/api/notifications', require('./routes/notifications.routes'));
 app.use('/api/dashboard', require('./routes/dashboard.routes'));
+app.use('/api/notifications', require('./routes/notifications.routes'));
 
 const testRoutes = require('./routes/test.routes');
 app.use('/api/flux-test', testRoutes);  // Using a different path to avoid conflicts

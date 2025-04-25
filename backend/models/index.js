@@ -14,6 +14,7 @@ const CommunicationLog = require('./communication-log.model');
 const { Template, Question, SourceDocument, RatingScale } = require('./template.model');
 const BrandingSettings = require('./branding-settings.model');
 const Insight = require('./insight.model');
+const Notification = require('./notification.model');
 
 // Define associations between models
 User.hasMany(Document, { foreignKey: 'uploadedBy' });
@@ -31,6 +32,9 @@ Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
 
 User.hasMany(CommunicationTemplate, { foreignKey: 'createdBy' });
 CommunicationTemplate.belongsTo(User, { foreignKey: 'createdBy' });
+
+User.hasMany(Notification, { foreignKey: 'userId' });
+Notification.belongsTo(User, { foreignKey: 'userId' });
 
 // Updated: Add onDelete: 'SET NULL' to Template-Campaign association
 Template.hasMany(Campaign, { 
@@ -128,5 +132,6 @@ module.exports = {
   CommunicationLog,
   BrandingSettings,
   Insight,
+  Notification,
   Op 
 };
