@@ -24,4 +24,6 @@ router.get('/test-flux-api', documentsController.testFluxAiApi);
 // Mark documents as ready for template creation (development shortcut)
 router.post('/mark-ready', documentsController.markDocumentsReady);
 
+router.post('/sanitize-questions', documentsController.sanitizeAllQuestions);
+
 module.exports = router;

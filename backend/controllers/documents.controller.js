@@ -7,6 +7,8 @@ const FormData = require('form-data');
 const { v4: uuidv4 } = require('uuid');
 const { Document, Template, Question, SourceDocument } = require('../models');
 const fluxAiConfig = require('../config/flux-ai');
+const { parseQuestionsFromAiResponse, sanitizeQuestionText } = require('../services/question-parser.service');
+const { makeAiChatRequest, uploadFileToFluxAi } = require('../services/flux-ai.service');
 
 // Upload document(s)
 exports.uploadDocuments = async (req, res) => {
@@ -870,60 +872,75 @@ Category: [Category]
 
 DO NOT INCLUDE any explanation, summary, or other content. ONLY INCLUDE QUESTIONS IN THE FORMAT ABOVE.
 
-This is for a 360-degree feedback assessment${purpose ? ` FOR ${purpose.toUpperCase()}` : ''}${department ? ` IN THE ${department.toUpperCase()} DEPARTMENT` : ''}.
+This is for a 360-degree feedback assessment${purpose ? ` FOR ${purpose.toUpperCase()}` : ''}${department ? ` IN THE ${department.toUpperCase()}` : ''}.
 
 ${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''}`;
 
-  // Contextual information from the template settings - Enhanced with more specific wording
+  // Contextual information with explicit instructions about avoiding department references
   let contextPrompt = '';
   if (purpose || department || name) {
     contextPrompt = `\n\nIMPORTANT CONTEXT TO INCORPORATE INTO QUESTIONS:`;
     if (name) contextPrompt += `\n- Assessment Name: ${name}`;
-    if (department) contextPrompt += `\n- Department/Function: ${department} (Make questions specific to this department)`;
-    if (purpose) contextPrompt += `\n- Purpose: ${purpose} (Tailor questions to assess this role/purpose)`;
+    if (department) {
+      contextPrompt += `\n- Department/Function: ${department}`;
+      contextPrompt += `\n  ⚠️ CRITICAL: NEVER use phrases like "in the ${department} Department", "for the ${department} Department", etc.`;
+      contextPrompt += `\n  ✓ INSTEAD: Use generic phrases like "in this role" or "in their position"`;
+    }
+    if (purpose) contextPrompt += `\n- Purpose: ${purpose} (Tailor questions to assess this role without mentioning department)`;
     if (description) contextPrompt += `\n- Focus Areas: ${description} (Questions should assess these specific areas)`;
   }
 
-  // Perspective-specific instructions - more detailed about question counts
+  // Always add explicit warning about department references
+  contextPrompt += `\n\nAVOID DEPARTMENT REFERENCES:
+- ❌ DON'T use: "in the General Department", "for the General Department", etc.
+- ❌ DON'T use: "General purpose template" or similar phrases
+- ✓ DO use: "in this role", "in their position", "for this role", etc.
+- ✓ Questions should sound natural and not refer to departments or templates`;
+
+  // Perspective-specific instructions with detailed question counts
   let perspectivePrompt = '';
   if (perspectiveSettings) {
     perspectivePrompt = '\n\nGENERATE EXACTLY THIS MANY QUESTIONS FOR EACH PERSPECTIVE:';
     Object.entries(perspectiveSettings).forEach(([perspective, settings]) => {
       if (settings.enabled) {
         const count = settings.questionCount || 10;
-        perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: ${count} questions (${Math.ceil(count * 0.7)} rating questions and ${Math.floor(count * 0.3)} open-ended questions)`;
+        const ratingCount = Math.ceil(count * 0.7);
+        const openEndedCount = count - ratingCount;
+        
+        perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: ${count} questions total`;
+        perspectivePrompt += `\n  • ${ratingCount} rating questions and ${openEndedCount} open-ended questions`;
       } else {
         perspectivePrompt += `\n- ${perspective.charAt(0).toUpperCase() + perspective.slice(1).replace('_', ' ')} Assessment: SKIP (not required)`;
       }
     });
   }
 
-  // Document type specific instructions - enhanced with more guidance
+  // Document type specific instructions with more context
   let typeSpecificPrompt = '';
   switch (documentType) {
     case 'leadership_model':
-      typeSpecificPrompt = `\n\nFOCUS AREAS FOR ${department || 'LEADERSHIP'} MODEL QUESTIONS:
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR ${department || ''} LEADERSHIP MODEL QUESTIONS:
 - Leadership qualities and behaviors described in the model
-- Vision-setting and strategic thinking for ${department || 'the organization'}
+- Vision-setting and strategic thinking
 - Team development and empowerment${purpose ? ` for ${purpose}` : ''}
-- Communication and influence skills needed for ${department || 'leadership roles'}
+- Communication and influence skills
 - Decision-making processes and effectiveness
 - Change management and adaptability`;
       break;
     
     case 'job_description':
-      typeSpecificPrompt = `\n\nFOCUS AREAS FOR ${purpose || 'JOB DESCRIPTION'} QUESTIONS:
-- Key responsibilities and job functions specific to ${department || 'this role'}
+      typeSpecificPrompt = `\n\nFOCUS AREAS FOR ${purpose || ''} JOB DESCRIPTION QUESTIONS:
+- Key responsibilities and job functions specific to this role
 - Required skills and competencies for success${purpose ? ` as ${purpose}` : ''}
 - Performance expectations and deliverables
 - Collaboration requirements with other roles/teams
-- Technical expertise relevant to ${department || 'the role'}
+- Technical expertise relevant to the role
 - Problem-solving and decision-making within role scope`;
       break;
     
     case 'competency_framework':
       typeSpecificPrompt = `\n\nFOCUS AREAS FOR COMPETENCY FRAMEWORK QUESTIONS:
-- Core competencies from the framework specific to ${department || 'this organization'}
+- Core competencies from the framework
 - Observable behaviors for each competency${purpose ? ` relevant to ${purpose}` : ''}
 - Skills application in different contexts and situations
 - Development opportunities for each competency area
@@ -934,7 +951,7 @@ ${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''
     case 'company_values':
       typeSpecificPrompt = `\n\nFOCUS AREAS FOR COMPANY VALUES QUESTIONS:
 - Alignment with company values in daily work
-- Demonstration of values in interactions with ${department ? `the ${department} team` : 'teams'}
+- Demonstration of values in interactions with team members
 - Value-based decision making${purpose ? ` for ${purpose}` : ''}
 - Promotion of values within teams and across the organization
 - Ethical considerations related to values
@@ -943,7 +960,7 @@ ${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''
     
     case 'performance_criteria':
       typeSpecificPrompt = `\n\nFOCUS AREAS FOR PERFORMANCE CRITERIA QUESTIONS:
-- Achievement against key performance indicators for ${department || 'this role'}
+- Achievement against key performance indicators for this role
 - Quality and consistency of work output${purpose ? ` as ${purpose}` : ''}
 - Efficiency and productivity metrics
 - Goal attainment and objective completion
@@ -953,7 +970,7 @@ ${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''
     
     default:
       typeSpecificPrompt = `\n\nFOCUS AREAS FOR QUESTIONS:
-- Key professional competencies for ${department || 'this role'}
+- Key professional competencies for this role
 - Interpersonal and communication skills${purpose ? ` needed for ${purpose}` : ''}
 - Task and project management effectiveness
 - Teamwork and collaboration capabilities
@@ -961,13 +978,14 @@ ${description ? `THE ASSESSMENT FOCUS IS: ${description.toUpperCase()}\n\n` : ''
 - Overall performance and contribution`;
   }
 
-  // Final reminder to focus on questions - more specific about quality
-  const finalReminder = `\n\nIMPORTANT REMINDER: Your response should ONLY contain assessment questions organized by perspective. DO NOT include explanations, summaries, or general information. DO NOT introduce each section with explanations.
-
-REMINDER ON FORMAT: For each perspective (MANAGER ASSESSMENT, PEER ASSESSMENT, etc.), provide questions in this exact format:
-Question: [Your question text here]
-Type: [rating or open_ended]
-Category: [The category/theme of the question]`;
+  // Final reminder with explicit do's and don'ts
+  const finalReminder = `\n\nFINAL REMINDERS:
+1. ✓ ONLY include questions in the specified format for enabled perspectives
+2. ✓ Make questions clear, specific, and actionable
+3. ✓ Use appropriate wording for each perspective (e.g., "this person" vs "you")
+4. ❌ DO NOT include any explanations, summaries, introductions, or text outside the question format
+5. ❌ DO NOT include any department references like "General Department" or "${department || ''} Department"
+6. ❌ DO NOT mention templates or use phrases like "General purpose template"`;
 
   // Combine all prompt components
   return `${basePrompt}${typeSpecificPrompt}${contextPrompt}${perspectivePrompt}${finalReminder}`;
@@ -1906,10 +1924,18 @@ async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo 
 }
 
 // Analyze documents with Flux AI (updated version)
+// analyzeDocumentsWithFluxAI function in documents.controller.js
+// Replace the existing function with this updated version
+
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
   try {
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);
+    console.log('Template Info:', JSON.stringify({
+      name: templateInfo?.name,
+      department: templateInfo?.department,
+      purpose: templateInfo?.purpose
+    }));
     
     // Validate file IDs
     if (!fileIds || fileIds.length === 0) {
@@ -1936,112 +1962,73 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     console.log('Waiting for file processing...');
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    console.log('Trying simple request without file attachments');
+    console.log('Making AI request with files attached and explicit model');
     let response = null;
     
+    // *** CRITICAL FIX: NEVER try a simple request without file attachments ***
+    // Instead, always use attachments and specify the model explicitly
+    const requestPayload = {
+      model: fluxAiConfig.model.trim(), // Ensure exact model name from config
+      messages: messages,
+      stream: false,
+      temperature: 0.3,
+      attachments: {
+        tags: [documentType],
+        files: fileIds
+      },
+      mode: 'rag' // Use RAG mode for document processing
+    };
+    
+    console.log('Using model:', requestPayload.model);
+    console.log('Request includes file attachments:', requestPayload.attachments.files.length);
+    
+    // Use our flux-ai.service for consistent handling
     try {
-      // First try a simple request to see if we can get a response
-      const simpleResponse = await axios.post(
-        `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`,
-        {
-          messages: messages,
-          stream: false
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': fluxAiConfig.apiKey
-          }
-        }
-      );
+      // This ensures model is set correctly through the service
+      response = await makeAiChatRequest(requestPayload);
+      console.log('AI response received using model:', response.model || 'Not specified');
+    } catch (error) {
+      console.error('Error from AI service:', error.message);
       
-      console.log('Simple request response:', simpleResponse.data);
-      response = simpleResponse;
-    } catch (simpleError) {
-      console.log('Simple request failed, trying with file attachments');
+      // If service call fails, try direct axios as fallback with model explicitly set
+      console.log('Trying direct axios call with headers');
       
-      // MATCH EXACTLY THE FORMAT FROM THE FLUX EXAMPLE
-      const requestPayload = {
-        messages: messages,
-        stream: false,
-        attachments: {
-          tags: [documentType],
-          files: fileIds
-        }
-      };
-      
-      console.log('Using exact example format:', JSON.stringify(requestPayload, null, 2));
-      
-      // Try all possible authentication methods
-      let authMethods = [
-        // Method 1: X-API-KEY
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': fluxAiConfig.apiKey
+      try {
+        const axiosResponse = await axios.post(
+          `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
+          requestPayload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-KEY': fluxAiConfig.apiKey
+            }
           }
-        },
-        // Method 2: Bearer token
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${fluxAiConfig.apiKey}`
-          }
-        },
-        // Method 3: No API-KEY prefix
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': fluxAiConfig.apiKey.replace('SHqQ4nah.', '')  // Remove potential prefix
-          }
-        }
-      ];
-      
-      // Try each auth method
-      for (let i = 0; i < authMethods.length; i++) {
-        try {
-          console.log(`Trying auth method ${i+1}`);
-          response = await axios.post(
-            `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.chat}`, 
-            requestPayload, 
-            authMethods[i]
-          );
-          console.log(`Auth method ${i+1} succeeded!`);
-          break;  // Stop if successful
-        } catch (error) {
-          console.log(`Auth method ${i+1} failed:`, error.message);
-          if (i === authMethods.length - 1) {
-            // If all methods fail, return fallback
-            console.error('All authentication methods failed');
-            return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-          }
-        }
+        );
+        console.log('Direct axios call succeeded with model:', axiosResponse.data?.model || 'Not specified');
+        response = axiosResponse.data;
+      } catch (err) {
+        console.error('Direct axios call failed:', err.message);
+        return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
       }
     }
     
-    // Process the response
-    console.log('Analysis response:', response.data);
-
     // Extract the AI response text
     let aiResponseText = "";
-    if (response.data && 
-        response.data.choices && 
-        response.data.choices.length > 0) {
+    if (response && 
+        response.choices && 
+        response.choices.length > 0) {
       
-      const message = response.data.choices[0].message;
+      const message = response.choices[0].message;
       
       // Handle different response formats
       if (typeof message === 'object' && message.content) {
         aiResponseText = message.content;
       } else if (typeof message === 'string') {
         aiResponseText = message;
-      } else if (typeof response.data.choices[0].message === 'string') {
-        aiResponseText = response.data.choices[0].message;
+      } else if (typeof response.choices[0].message === 'string') {
+        aiResponseText = response.choices[0].message;
       }
     }
-
-    // Default generation method
-    let generationMethod = 'flux_ai';
 
     // No response text means we'll need to use fallback
     if (!aiResponseText) {
@@ -2060,7 +2047,7 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
 
-    console.log('AI seems to have analyzed the document successfully!');
+    console.log('AI successfully analyzed the document!');
     console.log('AI response sample (first 500 chars):', aiResponseText.substring(0, 500));
 
     // Extract perspectiveSettings from templateInfo
@@ -2072,9 +2059,27 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       external: { questionCount: 5, enabled: false }
     };
 
-    // Use the improved parsing logic to extract questions
-    const questions = parseQuestionsFromAIResponse(aiResponseText, perspectiveSettings);
-    console.log(`Extracted ${questions.length} questions from AI response`);
+    // Extract department name from templateInfo for sanitization
+    const departmentName = templateInfo?.department || 'General';
+    console.log('Using department for sanitization:', departmentName);
+
+    // Parse questions from AI response
+    const rawQuestions = parseQuestionsFromAiResponse(aiResponseText, perspectiveSettings);
+    console.log(`Extracted ${rawQuestions.length} raw questions from AI response`);
+    
+    // Sanitize questions to remove department references
+    const questions = rawQuestions.map(q => ({
+      ...q,
+      text: sanitizeQuestionText(q.text, departmentName)
+    }));
+    
+    console.log(`Sanitized ${questions.length} questions with department: ${departmentName}`);
+    if (questions.length > 0) {
+      console.log('Sample questions after sanitization:');
+      questions.slice(0, 2).forEach((q, i) => {
+        console.log(`  ${i+1}. ${q.text}`);
+      });
+    }
 
     // Only use fallback if we couldn't extract any questions at all
     if (questions.length === 0) {
@@ -2090,19 +2095,18 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
       name: name,
       description: description,
       purpose: templateInfo?.purpose || '',
-      department: templateInfo?.department || '',
+      department: departmentName,
       documentType,
-      generatedBy: generationMethod,
+      generatedBy: 'flux_ai',
       createdBy: userId,
       status: 'pending_review',
-      perspectiveSettings: perspectiveSettings
+      perspectiveSettings: perspectiveSettings,
+      lastAnalysisDate: new Date()
     });
-    
-    // If we have enough questions, balance and create them
-    console.log(`Found ${questions.length} questions from AI response, balancing by perspective`);
     
     // Balance questions according to perspective settings
     const balancedQuestions = balanceQuestionsByPerspective(questions, perspectiveSettings);
+    console.log(`Creating ${balancedQuestions.length} balanced questions for template`);
     
     // Create questions for the template
     await Promise.all(
@@ -2359,11 +2363,11 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
   // Extract template information
   const { name, description, purpose, department } = templateInfo || {};
   
-  // Create context strings for questions
-  const purposeContext = purpose ? ` for a ${purpose}` : '';
-  const departmentContext = department ? ` in the ${department} department` : '';
+  // Create context strings for questions but SANITIZE them first
+  const purposeContext = purpose ? ` for ${purpose}` : '';
+  const departmentContext = ''; // Intentionally blank to avoid department references!
   const strategyContext = description && description.toLowerCase().includes('strategy') ? 
-    ' related to long-term strategy development' : '';
+    ' related to strategic initiatives' : '';
   
   console.log(`Using context: purpose=${purposeContext}, department=${departmentContext}, strategy=${strategyContext}`);
   
@@ -2503,6 +2507,44 @@ function generateFallbackQuestions(documentType = '', perspectiveSettings = null
   console.log(`Generated ${fallbackQuestions.length} total fallback questions`);
   return fallbackQuestions;
 }
+
+// Add this function to documents.controller.js
+exports.sanitizeAllQuestions = async (req, res) => {
+  try {
+    const { Question } = require('../models');
+    const { sanitizeQuestionText } = require('../services/question-parser.service');
+    
+    // Get all questions that contain department references
+    const questions = await Question.findAll({
+      where: {
+        text: {
+          [Op.like]: '%department%'
+        }
+      }
+    });
+    
+    console.log(`Found ${questions.length} questions with department references`);
+    
+    // Update each question
+    for (const question of questions) {
+      const sanitizedText = sanitizeQuestionText(question.text, 'General');
+      await question.update({ text: sanitizedText });
+    }
+    
+    res.status(200).json({ 
+      success: true, 
+      message: `Sanitized ${questions.length} questions` 
+    });
+  } catch (error) {
+    console.error('Error sanitizing questions:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to sanitize questions', 
+      error: error.message 
+    });
+  }
+};
+
 
 // Modified helper functions that respect question count
 function addLeadershipModelFallbackQuestions(questions, perspective, startOrder, count, templateInfo = {}) {
