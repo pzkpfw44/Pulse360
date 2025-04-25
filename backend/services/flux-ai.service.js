@@ -49,17 +49,27 @@ async function uploadFileToFluxAi(filePath) {
  */
 async function makeAiChatRequest(requestBody) {
   try {
-    // CRITICAL: FORCE THE MODEL TO BE THE ONE FROM CONFIG
-    requestBody.model = fluxAiConfig.model;
+    // Force the model exactly as specified in config
+    const configuredModel = fluxAiConfig.model.trim();
+    console.log(`Using configured model: ${configuredModel}`);
+    requestBody.model = configuredModel;
     
-    console.log(`Making AI chat request to model: ${requestBody.model}`);
+    // Remove any undefined parameters to avoid API issues
+    Object.keys(requestBody).forEach(key => {
+      if (requestBody[key] === undefined) {
+        delete requestBody[key];
+      }
+    });
     
-    // Log if we have file attachments
-    if (requestBody.attachments && requestBody.attachments.files && requestBody.attachments.files.length > 0) {
-      console.log(`Request includes ${requestBody.attachments.files.length} file attachments`);
-    }
+    // Log complete request for debugging
+    console.log(`AI request payload:`, JSON.stringify({
+      model: requestBody.model,
+      temperature: requestBody.temperature,
+      hasAttachments: !!requestBody.attachments,
+      mode: requestBody.mode
+    }));
     
-    // SEND THE REQUEST DIRECTLY WITHOUT ANY FALLBACK OR ALTERNATIVE FLOW
+    // Make direct API request - NO FALLBACKS
     const endpoint = fluxAiConfig.getEndpointUrl('chat');
     const response = await axios.post(endpoint, requestBody, {
       headers: {
@@ -68,21 +78,11 @@ async function makeAiChatRequest(requestBody) {
       }
     });
     
-    if (!response.data) {
-      throw new Error('Empty response from AI service');
-    }
-    
-    console.log('Response model:', response.data.model || 'Not specified in response');
-    
+    console.log('Response received, model used:', response.data?.model || 'Not specified');
     return response.data;
   } catch (error) {
     console.error('Error making AI chat request:', error.message);
-    
-    if (error.response) {
-      console.error('API error details:', error.response.data);
-    }
-    
-    throw error; // Re-throw to be handled by caller
+    throw error; // Always throw to let caller handle
   }
 }
 

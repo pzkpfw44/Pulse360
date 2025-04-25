@@ -12,33 +12,33 @@ function sanitizeQuestionText(text, departmentName = '') {
     // First, handle department references
     let sanitized = text;
     
-    // Replace variations of "the leader in the [Department] Department"
-    sanitized = sanitized.replace(
-      /the leader in the (.*?) Department/gi, 
-      'this person'
-    );
+    // More comprehensive pattern matching
+    const departmentPatterns = [
+      /the leader in the (.*?) Department/gi,
+      /in the General Department/gi,
+      /for the General Department/gi,
+      /within the General Department/gi,
+      /at the General Department/gi,
+      /General Department/gi,
+      /the General department/gi,
+      /general department/gi,
+      /in general/gi
+    ];
     
-    // Replace "General Department" references
-    sanitized = sanitized.replace(
-      /General Department/gi, 
-      departmentName !== 'General' ? departmentName : 'the organization'
-    );
+    const replacements = departmentName && departmentName !== 'General' 
+      ? [`in ${departmentName}`, `at ${departmentName}`, `within ${departmentName}`]
+      : ['in their role', 'in the organization', 'within the organization'];
+    
+    // Apply all pattern replacements
+    departmentPatterns.forEach((pattern, i) => {
+      sanitized = sanitized.replace(pattern, 
+        i < replacements.length ? replacements[i] : replacements[0]);
+    });
     
     // Replace template references
-    sanitized = sanitized.replace(
-      /for the General purpose template/gi, 
-      ''
-    );
-    
-    sanitized = sanitized.replace(
-      /the General purpose template('s)?/gi, 
-      'their'
-    );
-    
-    sanitized = sanitized.replace(
-      /General purpose template/gi, 
-      'overall'
-    );
+    sanitized = sanitized.replace(/for the General purpose template/gi, '');
+    sanitized = sanitized.replace(/the General purpose template('s)?/gi, 'their');
+    sanitized = sanitized.replace(/General purpose template/gi, 'overall');
     
     // Clean up any double spaces created by our replacements
     sanitized = sanitized.replace(/\s{2,}/g, ' ').trim();
@@ -55,12 +55,14 @@ function sanitizeQuestionText(text, departmentName = '') {
   function createAnalysisPrompt(documentType, templateInfo = {}) {
     const departmentName = templateInfo.department || 'General';
     
-    // Create a prompt that abstracts away specific department names
     const prompt = `
   I need you to analyze documents and generate questions for a 360-degree feedback assessment for a leadership role.
   
   Document Type: ${documentType.replace(/_/g, ' ')}
   Purpose: ${templateInfo.purpose || 'Leadership assessment'}
+  Department: ${departmentName}
+  
+  IMPORTANT: DO NOT mention departments in your questions. Do not include phrases like "in the General department" or any department name. Instead, use phrases like "in this role" or "in their position".
   
   For each perspective below, generate specific, actionable 360-degree feedback questions:
   
@@ -74,8 +76,6 @@ function sanitizeQuestionText(text, departmentName = '') {
   - Question: [The question text]
   - Type: [rating or open_ended]
   - Category: [A relevant category like "Communication", "Leadership", etc.]
-  
-  Don't mention specific department names in your responses - use generic terms like "in this role" instead of "in the ${departmentName} department".
   
   Focus on leadership competencies such as:
   - Vision-setting and strategic thinking

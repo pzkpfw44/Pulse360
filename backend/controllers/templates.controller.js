@@ -1742,14 +1742,18 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
 
     // Create a prompt that doesn't use department names
     const promptContent = createAnalysisPrompt(documentType, templateInfo);
+    console.log("Prompt content (first 100 chars):", promptContent.substring(0, 100));
 
-    // Make the AI analysis request - ensuring we use the correct model and file attachments
+     
+    // Make the AI analysis request with enhanced settings
     const analysisRequest = {
-      model: fluxAiConfig.model, // Explicitly set the model here
+      model: fluxAiConfig.model.trim(),
       messages: [
         {
           role: 'system',
-          content: fluxAiConfig.getSystemPrompt('document_analysis')
+          content: fluxAiConfig.getSystemPrompt('document_analysis') + 
+            "\n\nIMPORTANT: DO NOT mention departments like 'General Department' in your questions. " + 
+            "Use phrases like 'in this role' or 'in their position' instead. NEVER use phrases like 'General Use Template' or 'General Department'."
         },
         {
           role: 'user',
@@ -1758,11 +1762,14 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
       ],
       temperature: 0.3,
       attachments: {
-        files: fileIds // Use the fileIds obtained earlier
+        files: fileIds,
+        tags: ["leadership", "feedback", "assessment"]
       },
-      // Enable RAG mode for document processing - crucial for file analysis
       mode: 'rag'
     };
+    
+    // Log which model we're using
+    console.log('Using model:', analysisRequest.model);
 
     // Log which model and attachments we're sending
     console.log('Requesting analysis with model:', analysisRequest.model, 'and attachments:', JSON.stringify(analysisRequest.attachments));
