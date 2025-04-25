@@ -18,11 +18,18 @@ exports.getBrandingSettings = async (req, res) => {
         keyValues: '',
         tone: 'professional',
         formality: 'formal',
-        personality: 'helpful'
+        personality: 'helpful',
+        primaryColor: '#3B82F6',
+        secondaryColor: '#2563EB'
       });
     }
     
-    res.status(200).json(settings);
+    // Ensure color properties exist (handles legacy records)
+    const response = settings.toJSON();
+    response.primaryColor = response.primaryColor || '#3B82F6';
+    response.secondaryColor = response.secondaryColor || '#2563EB';
+    
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching branding settings:', error);
     res.status(500).json({ message: 'Failed to fetch branding settings', error: error.message });
@@ -32,7 +39,16 @@ exports.getBrandingSettings = async (req, res) => {
 // Update branding settings
 exports.updateBrandingSettings = async (req, res) => {
   try {
-    const { companyName, industry, keyValues, tone, formality, personality } = req.body;
+    const { 
+      companyName, 
+      industry, 
+      keyValues, 
+      tone, 
+      formality, 
+      personality,
+      primaryColor,
+      secondaryColor
+    } = req.body;
     
     // Try to find existing settings for this user
     let settings = await BrandingSettings.findOne({
@@ -47,7 +63,9 @@ exports.updateBrandingSettings = async (req, res) => {
         keyValues,
         tone,
         formality,
-        personality
+        personality,
+        primaryColor: primaryColor || '#3B82F6',
+        secondaryColor: secondaryColor || '#2563EB'
       });
     } else {
       // Create new settings
@@ -58,6 +76,8 @@ exports.updateBrandingSettings = async (req, res) => {
         tone,
         formality,
         personality,
+        primaryColor: primaryColor || '#3B82F6',
+        secondaryColor: secondaryColor || '#2563EB',
         userId: req.user.id
       });
     }

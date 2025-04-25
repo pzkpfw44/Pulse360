@@ -36,6 +36,16 @@ const BrandingSettings = sequelize.define('BrandingSettings', {
     defaultValue: 'helpful',
     allowNull: false
   },
+  primaryColor: {
+    type: DataTypes.STRING,
+    defaultValue: '#3B82F6', // Default blue color (matches current theme)
+    allowNull: false
+  },
+  secondaryColor: {
+    type: DataTypes.STRING,
+    defaultValue: '#2563EB', // Slightly darker blue for gradient effects
+    allowNull: true
+  },
   userId: {
     type: DataTypes.UUID,
     allowNull: false,

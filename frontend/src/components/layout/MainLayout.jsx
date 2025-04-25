@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import fluxLogo from "../../../assets/Flux_white_symbol.png";
 import NotificationBell from '../ui/NotificationBell';
+import api from "../../services/api";
 
 // Sidebar navigation item component
 const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
@@ -37,6 +38,42 @@ const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
 
 export function MainLayout({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [brandingSettings, setBrandingSettings] = useState(null);
+  
+  // Fetch branding settings on component mount
+  useEffect(() => {
+    const fetchBrandingSettings = async () => {
+      try {
+        // First try to get from localStorage for faster initial load
+        const cachedSettings = localStorage.getItem('brandingSettings');
+        if (cachedSettings) {
+          const parsed = JSON.parse(cachedSettings);
+          setBrandingSettings(parsed);
+          
+          // Apply colors
+          document.documentElement.style.setProperty('--primary-color', parsed.primaryColor || '#3B82F6');
+          document.documentElement.style.setProperty('--secondary-color', parsed.secondaryColor || '#2563EB');
+        }
+        
+        // Then fetch from API to ensure we have latest data
+        const response = await api.get('/settings/branding');
+        if (response.data) {
+          setBrandingSettings(response.data);
+          
+          // Apply colors
+          document.documentElement.style.setProperty('--primary-color', response.data.primaryColor || '#3B82F6');
+          document.documentElement.style.setProperty('--secondary-color', response.data.secondaryColor || '#2563EB');
+          
+          // Update cache
+          localStorage.setItem('brandingSettings', JSON.stringify(response.data));
+        }
+      } catch (error) {
+        console.error('Error fetching branding settings:', error);
+      }
+    };
+    
+    fetchBrandingSettings();
+  }, []);
   
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -56,6 +93,9 @@ export function MainLayout({ children }) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Get company name for display
+  const companyName = brandingSettings?.companyName || '';
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -138,7 +178,7 @@ export function MainLayout({ children }) {
                 <span className="text-lg font-bold">P</span>
               </div>
               <span className="text-xl font-bold bg-gradient-to-r from-blue-500 to-blue-600 bg-clip-text text-transparent">
-                Pulse360
+                {companyName}
               </span>
             </div>
 
@@ -149,11 +189,15 @@ export function MainLayout({ children }) {
 
         {/* Desktop header */}
         <header className="hidden md:flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
-          <h1 className="text-lg font-semibold text-gray-800">
-            {/* This would be dynamic based on current page */}
-          </h1>
-          <div className="flex items-center gap-4">
-            {/* Replace notification button with NotificationBell component for desktop */}
+          <div className="w-1/3">
+            {/* Empty space for balance */}
+          </div>
+          <div className="w-1/3 flex justify-center">
+            <h1 className="text-lg font-semibold text-gray-800">
+              {companyName}
+            </h1>
+          </div>
+          <div className="w-1/3 flex items-center justify-end gap-4">
             <NotificationBell />
             <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
               <User className="h-5 w-5" />

@@ -11,7 +11,6 @@ const GeneralSettings = () => {
   const [error, setError] = useState(null);
   
   const [settings, setSettings] = useState({
-    companyName: '',
     primaryLanguage: 'en',
     dateFormat: 'MM/DD/YYYY',
     timeFormat: '12h',
@@ -39,7 +38,6 @@ const GeneralSettings = () => {
       const notificationSettings = getNotificationSettings();
       
       setSettings({
-        companyName: 'Your Company Name',
         primaryLanguage: 'en',
         dateFormat: 'MM/DD/YYYY',
         timeFormat: '12h',
@@ -174,20 +172,6 @@ const GeneralSettings = () => {
       {/* Settings Form */}
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">
-              Company Name
-            </label>
-            <input
-              type="text"
-              id="companyName"
-              name="companyName"
-              value={settings.companyName}
-              onChange={handleChange}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            />
-          </div>
-          
           <div>
             <label htmlFor="primaryLanguage" className="block text-sm font-medium text-gray-700 mb-1">
               Primary Language
