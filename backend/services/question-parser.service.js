@@ -7,135 +7,135 @@
  * @returns {string} - Sanitized question text
  */
 function sanitizeQuestionText(text, departmentName = 'General') {
-  // (Original sanitizeQuestionText function remains unchanged)
-  if (!text) return text;
+    // Function to sanitize text - remains the same as provided previously
+    if (!text) return text;
 
-  console.log(`Sanitizing question text with department: "${departmentName}"`);
+    console.log(`Sanitizing question text with department: "${departmentName}"`);
 
-  let cleanedText = text.trim();
+    let cleanedText = text.trim();
 
-  // Handle leader references first - these occur frequently
-  cleanedText = cleanedText.replace(/the leader in the (.*?) Department/gi, 'this person');
-  cleanedText = cleanedText.replace(/this person's/gi, 'this person\'s');
+    // Handle leader references first - these occur frequently
+    cleanedText = cleanedText.replace(/the leader in the (.*?) Department/gi, 'this person');
+    cleanedText = cleanedText.replace(/this person's/gi, 'this person\'s');
 
-  // Handle "General Department" references explicitly first
-  const generalPatterns = [
-    { regex: /for the General Department/gi, replacement: ' for this role' },
-    { regex: /in the General Department/gi, replacement: ' in this role' },
-    { regex: /of the General Department/gi, replacement: ' of the team' },
-    { regex: /to the General Department/gi, replacement: ' to the team' },
-    { regex: /within the General Department/gi, replacement: ' within the organization' },
-    { regex: /the General Department's/gi, replacement: 'this role\'s' },
-    { regex: /the General department/gi, replacement: 'this role' },
-    { regex: /General department/gi, replacement: 'team' },
+    // Handle "General Department" references explicitly first
+    const generalPatterns = [
+        { regex: /for the General Department/gi, replacement: ' for this role' },
+        { regex: /in the General Department/gi, replacement: ' in this role' },
+        { regex: /of the General Department/gi, replacement: ' of the team' },
+        { regex: /to the General Department/gi, replacement: ' to the team' },
+        { regex: /within the General Department/gi, replacement: ' within the organization' },
+        { regex: /the General Department's/gi, replacement: 'this role\'s' },
+        { regex: /the General department/gi, replacement: 'this role' },
+        { regex: /General department/gi, replacement: 'team' },
 
-    // Handle lowercase version too
-    { regex: /for the general department/gi, replacement: ' for this role' },
-    { regex: /in the general department/gi, replacement: ' in this role' },
-    { regex: /of the general department/gi, replacement: ' of the team' },
-    { regex: /to the general department/gi, replacement: ' to the team' },
-    { regex: /within the general department/gi, replacement: ' within the organization' },
-    { regex: /the general department's/gi, replacement: 'this role\'s' },
-    { regex: /the general department/gi, replacement: 'this role' },
-    { regex: /general department/gi, replacement: 'team' },
-  ];
-
-  // Apply General Department patterns first
-  generalPatterns.forEach(pattern => {
-    cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
-  });
-
-  // Now create dynamic regex patterns based on the actual department name
-  // Skip if the department name is "General" since we already handled that
-  if (departmentName && departmentName.toLowerCase() !== 'general') {
-    const departmentPatterns = [
-      { regex: new RegExp(`for the ${departmentName} Department`, 'gi'), replacement: ' for this role' },
-      { regex: new RegExp(`in the ${departmentName} Department`, 'gi'), replacement: ' in this role' },
-      { regex: new RegExp(`of the ${departmentName} Department`, 'gi'), replacement: ' of the team' },
-      { regex: new RegExp(`to the ${departmentName} Department`, 'gi'), replacement: ' to the team' },
-      { regex: new RegExp(`within the ${departmentName} Department`, 'gi'), replacement: ' within the organization' },
-      { regex: new RegExp(`the ${departmentName} Department's`, 'gi'), replacement: 'this role\'s' },
-      { regex: new RegExp(`the ${departmentName} department`, 'gi'), replacement: 'this role' },
-      { regex: new RegExp(`${departmentName} department`, 'gi'), replacement: 'team' },
-
-      // Also handle lowercase versions
-      { regex: new RegExp(`for the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' for this role' },
-      { regex: new RegExp(`in the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' in this role' },
-      { regex: new RegExp(`of the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' of the team' },
-      { regex: new RegExp(`to the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' to the team' },
-      { regex: new RegExp(`within the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' within the organization' },
-      { regex: new RegExp(`the ${departmentName.toLowerCase()} department's`, 'gi'), replacement: 'this role\'s' },
-      { regex: new RegExp(`the ${departmentName.toLowerCase()} department`, 'gi'), replacement: 'this role' },
-      { regex: new RegExp(`${departmentName.toLowerCase()} department`, 'gi'), replacement: 'team' },
-
-      // General purpose references without "Department"
-      { regex: new RegExp(`\\s+in the ${departmentName}\\b`, 'gi'), replacement: ' in this role' },
-      { regex: new RegExp(`\\s+for the ${departmentName}\\b`, 'gi'), replacement: ' for this role' },
-      { regex: new RegExp(`\\s+of the ${departmentName}\\b`, 'gi'), replacement: ' of the team' },
-      { regex: new RegExp(`\\s+to the ${departmentName}\\b`, 'gi'), replacement: ' to the team' },
-      { regex: new RegExp(`\\s+within the ${departmentName}\\b`, 'gi'), replacement: ' within the organization' },
-
-      // Final cleanup for any remaining references
-      { regex: new RegExp(`\\s+in ${departmentName}\\b`, 'gi'), replacement: '' },
-      { regex: new RegExp(`\\s+for ${departmentName}\\b`, 'gi'), replacement: '' }
+        // Handle lowercase version too
+        { regex: /for the general department/gi, replacement: ' for this role' },
+        { regex: /in the general department/gi, replacement: ' in this role' },
+        { regex: /of the general department/gi, replacement: ' of the team' },
+        { regex: /to the general department/gi, replacement: ' to the team' },
+        { regex: /within the general department/gi, replacement: ' within the organization' },
+        { regex: /the general department's/gi, replacement: 'this role\'s' },
+        { regex: /the general department/gi, replacement: 'this role' },
+        { regex: /general department/gi, replacement: 'team' },
     ];
 
-    // Apply department-specific patterns
-    departmentPatterns.forEach(pattern => {
-      cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
+    // Apply General Department patterns first
+    generalPatterns.forEach(pattern => {
+        cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
     });
-  }
 
-  // Handle template-specific references
-  const templatePatterns = [
-    // Handle "General purpose template" references
-    { regex: /for the General purpose template/gi, replacement: '' },
-    { regex: /the General purpose template's/gi, replacement: 'their' },
-    { regex: /the General purpose template/gi, replacement: '' },
-    { regex: /General purpose template/gi, replacement: '' },
+    // Now create dynamic regex patterns based on the actual department name
+    // Skip if the department name is "General" since we already handled that
+    if (departmentName && departmentName.toLowerCase() !== 'general') {
+        const departmentPatterns = [
+        { regex: new RegExp(`for the ${departmentName} Department`, 'gi'), replacement: ' for this role' },
+        { regex: new RegExp(`in the ${departmentName} Department`, 'gi'), replacement: ' in this role' },
+        { regex: new RegExp(`of the ${departmentName} Department`, 'gi'), replacement: ' of the team' },
+        { regex: new RegExp(`to the ${departmentName} Department`, 'gi'), replacement: ' to the team' },
+        { regex: new RegExp(`within the ${departmentName} Department`, 'gi'), replacement: ' within the organization' },
+        { regex: new RegExp(`the ${departmentName} Department's`, 'gi'), replacement: 'this role\'s' },
+        { regex: new RegExp(`the ${departmentName} department`, 'gi'), replacement: 'this role' },
+        { regex: new RegExp(`${departmentName} department`, 'gi'), replacement: 'team' },
 
-    // Handle "General use template" references
-    { regex: /for the General use template/gi, replacement: '' },
-    { regex: /the General use template's/gi, replacement: 'your' },
-    { regex: /the General use template/gi, replacement: '' },
-    { regex: /General use template/gi, replacement: '' },
-    { regex: /\s+in the general use template/g, replacement: '' },
-    { regex: /\s+for the general use template/g, replacement: '' },
+        // Also handle lowercase versions
+        { regex: new RegExp(`for the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' for this role' },
+        { regex: new RegExp(`in the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' in this role' },
+        { regex: new RegExp(`of the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' of the team' },
+        { regex: new RegExp(`to the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' to the team' },
+        { regex: new RegExp(`within the ${departmentName.toLowerCase()} department`, 'gi'), replacement: ' within the organization' },
+        { regex: new RegExp(`the ${departmentName.toLowerCase()} department's`, 'gi'), replacement: 'this role\'s' },
+        { regex: new RegExp(`the ${departmentName.toLowerCase()} department`, 'gi'), replacement: 'this role' },
+        { regex: new RegExp(`${departmentName.toLowerCase()} department`, 'gi'), replacement: 'team' },
 
-    // Handle general purpose references
-    { regex: /\s+in general\b/gi, replacement: '' },
-    { regex: /\s+for general\b/gi, replacement: '' }
-  ];
+        // General purpose references without "Department"
+        { regex: new RegExp(`\\s+in the ${departmentName}\\b`, 'gi'), replacement: ' in this role' },
+        { regex: new RegExp(`\\s+for the ${departmentName}\\b`, 'gi'), replacement: ' for this role' },
+        { regex: new RegExp(`\\s+of the ${departmentName}\\b`, 'gi'), replacement: ' of the team' },
+        { regex: new RegExp(`\\s+to the ${departmentName}\\b`, 'gi'), replacement: ' to the team' },
+        { regex: new RegExp(`\\s+within the ${departmentName}\\b`, 'gi'), replacement: ' within the organization' },
 
-  // Add department-specific templates if department provided and not General
-  if (departmentName && departmentName.toLowerCase() !== 'general') {
-    templatePatterns.push(
-      { regex: new RegExp(`for the ${departmentName} purpose template`, 'gi'), replacement: '' },
-      { regex: new RegExp(`the ${departmentName} purpose template's`, 'gi'), replacement: 'their' },
-      { regex: new RegExp(`the ${departmentName} purpose template`, 'gi'), replacement: '' },
-      { regex: new RegExp(`${departmentName} purpose template`, 'gi'), replacement: '' },
-      { regex: new RegExp(`for the ${departmentName} use template`, 'gi'), replacement: '' },
-      { regex: new RegExp(`the ${departmentName} use template's`, 'gi'), replacement: 'your' },
-      { regex: new RegExp(`the ${departmentName} use template`, 'gi'), replacement: '' },
-      { regex: new RegExp(`${departmentName} use template`, 'gi'), replacement: '' }
-    );
-  }
+        // Final cleanup for any remaining references
+        { regex: new RegExp(`\\s+in ${departmentName}\\b`, 'gi'), replacement: '' },
+        { regex: new RegExp(`\\s+for ${departmentName}\\b`, 'gi'), replacement: '' }
+        ];
 
-  // Apply template patterns
-  templatePatterns.forEach(pattern => {
-    cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
-  });
+        // Apply department-specific patterns
+        departmentPatterns.forEach(pattern => {
+        cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
+        });
+    }
 
-  // Final cleanup
-  cleanedText = cleanedText
-    .replace(/the leader in the/gi, 'this person')
-    .replace(/the leader's/gi, 'this person\'s')
-    .replace(/the leader/gi, 'this person')
-    .replace(/achieve the goals\?/gi, 'achieve goals?')
-    .replace(/\s{2,}/g, ' ') // Remove double spaces
-    .trim();
+    // Handle template-specific references
+    const templatePatterns = [
+        // Handle "General purpose template" references
+        { regex: /for the General purpose template/gi, replacement: '' },
+        { regex: /the General purpose template's/gi, replacement: 'their' },
+        { regex: /the General purpose template/gi, replacement: '' },
+        { regex: /General purpose template/gi, replacement: '' },
 
-  return cleanedText;
+        // Handle "General use template" references
+        { regex: /for the General use template/gi, replacement: '' },
+        { regex: /the General use template's/gi, replacement: 'your' },
+        { regex: /the General use template/gi, replacement: '' },
+        { regex: /General use template/gi, replacement: '' },
+        { regex: /\s+in the general use template/g, replacement: '' },
+        { regex: /\s+for the general use template/g, replacement: '' },
+
+        // Handle general purpose references
+        { regex: /\s+in general\b/gi, replacement: '' },
+        { regex: /\s+for general\b/gi, replacement: '' }
+    ];
+
+    // Add department-specific templates if department provided and not General
+    if (departmentName && departmentName.toLowerCase() !== 'general') {
+        templatePatterns.push(
+        { regex: new RegExp(`for the ${departmentName} purpose template`, 'gi'), replacement: '' },
+        { regex: new RegExp(`the ${departmentName} purpose template's`, 'gi'), replacement: 'their' },
+        { regex: new RegExp(`the ${departmentName} purpose template`, 'gi'), replacement: '' },
+        { regex: new RegExp(`${departmentName} purpose template`, 'gi'), replacement: '' },
+        { regex: new RegExp(`for the ${departmentName} use template`, 'gi'), replacement: '' },
+        { regex: new RegExp(`the ${departmentName} use template's`, 'gi'), replacement: 'your' },
+        { regex: new RegExp(`the ${departmentName} use template`, 'gi'), replacement: '' },
+        { regex: new RegExp(`${departmentName} use template`, 'gi'), replacement: '' }
+        );
+    }
+
+    // Apply template patterns
+    templatePatterns.forEach(pattern => {
+        cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
+    });
+
+    // Final cleanup
+    cleanedText = cleanedText
+        .replace(/the leader in the/gi, 'this person')
+        .replace(/the leader's/gi, 'this person\'s')
+        .replace(/the leader/gi, 'this person')
+        .replace(/achieve the goals\?/gi, 'achieve goals?')
+        .replace(/\s{2,}/g, ' ') // Remove double spaces
+        .trim();
+
+    return cleanedText;
 }
 
 
@@ -146,230 +146,129 @@ function sanitizeQuestionText(text, departmentName = 'General') {
  * @returns {Array} - Flat array of questions with perspective property
  */
 function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
-  // Initialize result by perspective
-  const questionsByPerspective = {
-    manager: [],
-    peer: [],
-    direct_report: [],
-    self: [],
-    external: [] // Use 'external' to match perspectiveSettings keys
-  };
-
-  // Check for invalid input
-  if (!aiResponse || typeof aiResponse !== 'string') {
-      console.error('Invalid AI response provided to parser.');
-      return [];
-  }
-
-  // Try multiple section divider patterns, ordered from most specific to least
-  const sectionPatterns = [
-    /===\s*(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*===/gi, // Exact format requested
-    /\n\s*(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*:\s*\n/gi, // Format with colon
-    /\n\s*(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*\n/gi // Format without colon
-  ];
-
-  // Find the first pattern that successfully divides the text
-  let sections = [];
-  let currentPattern = null;
-  let perspectiveMap = {}; // To store mapping from regex capture group index to perspective
-
-  for (const pattern of sectionPatterns) {
-    // Use regex.exec in a loop to capture both the delimiter and the text after it
-    let lastIndex = 0;
-    let match;
-    const tempSections = [];
-    const tempPerspectiveMap = {};
-    let matchFound = false;
-
-    // Reset regex state
-    pattern.lastIndex = 0;
-
-    while ((match = pattern.exec(aiResponse)) !== null) {
-        matchFound = true;
-        // The perspective name is in match[1]
-        const perspectiveHeader = match[1].toUpperCase();
-        // Map perspective names consistently
-        let perspectiveKey;
-        if (perspectiveHeader === 'DIRECT REPORT') perspectiveKey = 'direct_report';
-        else if (perspectiveHeader === 'EXTERNAL STAKEHOLDER') perspectiveKey = 'external';
-        else perspectiveKey = perspectiveHeader.toLowerCase();
-
-        // Add the perspective key itself as a marker
-        tempSections.push(perspectiveKey);
-        // Add the text content between this header and the previous one (or start)
-        const content = aiResponse.substring(lastIndex, match.index).trim();
-        if (content) {
-          tempSections.push(content);
-        }
-        // Store mapping (useful if splitting later)
-        tempPerspectiveMap[tempSections.length -1] = perspectiveKey; // Map content index to perspective
-
-        lastIndex = pattern.lastIndex;
-    }
-
-     // Add the remaining text after the last match
-    if (matchFound) {
-        const remainingContent = aiResponse.substring(lastIndex).trim();
-        if (remainingContent) {
-          tempSections.push(remainingContent);
-        }
-        // If the last section needs mapping (assuming it belongs to the last matched perspective)
-        if (tempSections.length > 0 && typeof tempSections[tempSections.length-1] === 'string' && tempSections.length-2 >= 0) {
-            const lastPerspectiveMarkerIndex = Math.floor((tempSections.length - 2) / 2) * 2 ; // Find index of last perspective marker
-            if (tempSections[lastPerspectiveMarkerIndex]){
-                tempPerspectiveMap[tempSections.length - 1] = tempSections[lastPerspectiveMarkerIndex];
-            }
-        }
-    }
-
-
-    // If this pattern successfully split the text into multiple parts (header + content)
-    if (tempSections.length > 1) {
-      console.log(`Found pattern match: ${pattern}`);
-      sections = tempSections; // Use these sections
-      perspectiveMap = tempPerspectiveMap;
-      currentPattern = pattern; // Store the successful pattern
-      break; // Stop searching for patterns
-    }
-  }
-
-
-  // --- Processing Logic ---
-
-  // Case 1: Sections were successfully identified using patterns
-  if (sections.length > 1) {
-    console.log(`Processing ${sections.length / 2} potential sections based on headers.`); // Each section has a header and content
-    let currentPerspective = null;
-
-    for (let i = 0; i < sections.length; i++) {
-      const item = sections[i];
-
-      // If it's a perspective key (string marker we added)
-      if (typeof item === 'string' && ['manager', 'peer', 'direct_report', 'self', 'external'].includes(item)) {
-        currentPerspective = item;
-        console.log(`Identified section for: ${currentPerspective}`);
-        continue; // Move to the next item which should be the content
-      }
-
-      // If it's content (string) and we have a current perspective
-      if (typeof item === 'string' && currentPerspective && questionsByPerspective[currentPerspective]) {
-        const sectionContent = item.trim();
-        const questionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
-        let qMatch;
-
-        console.log(`Parsing content for ${currentPerspective}...`);
-        while ((qMatch = questionRegex.exec(sectionContent)) !== null) {
-          const questionText = qMatch[1]?.trim() || '';
-          const questionType = (qMatch[2]?.trim() || 'rating').toLowerCase();
-          const category = qMatch[3]?.trim() || 'General';
-
-          if (questionText) {
-            questionsByPerspective[currentPerspective].push({
-              text: questionText,
-              type: questionType === 'open_ended' ? 'open_ended' : 'rating',
-              category: category,
-              perspective: currentPerspective,
-              required: true, // Assuming required unless specified otherwise
-              order: questionsByPerspective[currentPerspective].length + 1
-            });
-            console.log(`  -> Added question: "${questionText.substring(0, 30)}..."`);
-          }
-        }
-      } else if (typeof item === 'string' && !currentPerspective) {
-          console.log("Skipping content block found before the first perspective header:", item.substring(0, 50) + "...");
-      }
-    }
-  }
-  // Case 2: No section patterns matched, try fallback keyword-based approach
-  else {
-    console.log("No section patterns matched reliably, searching for key markers as fallback.");
-
-    // Keywords to associate text context with perspectives
-    const perspectiveKeywords = {
-      "manager": ["manager", "supervisor", "leadership role"],
-      "peer": ["peer", "colleague", "coworker", "team member", "teamwork"],
-      "direct_report": ["direct report", "subordinate", "team member", "manages", "reports"],
-      "self": ["self", "yourself", "own", "personal"],
-      "external": ["external", "stakeholder", "client", "partner", "customer", "vendor"]
+    const questionsByPerspective = {
+        manager: [],
+        peer: [],
+        direct_report: [],
+        self: [],
+        external: []
     };
 
-    // Regex to find potential question blocks
-    const questionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
-    let match;
-
-    while ((match = questionRegex.exec(aiResponse)) !== null) {
-      const questionText = match[1]?.trim() || '';
-      const questionType = (match[2]?.trim() || 'rating').toLowerCase();
-      const category = match[3]?.trim() || 'General';
-
-      if (questionText) {
-        let assignedPerspective = null;
-        // Look for perspective markers immediately before the question
-        const contextBefore = aiResponse.substring(Math.max(0, match.index - 150), match.index).toLowerCase(); // Check 150 chars before
-
-        // Check for explicit headers first
-        if (/===\s*MANAGER\s*ASSESSMENT\s*===/.test(contextBefore)) assignedPerspective = 'manager';
-        else if (/===\s*PEER\s*ASSESSMENT\s*===/.test(contextBefore)) assignedPerspective = 'peer';
-        else if (/===\s*DIRECT REPORT\s*ASSESSMENT\s*===/.test(contextBefore)) assignedPerspective = 'direct_report';
-        else if (/===\s*SELF\s*ASSESSMENT\s*===/.test(contextBefore)) assignedPerspective = 'self';
-        else if (/===\s*EXTERNAL STAKEHOLDER\s*ASSESSMENT\s*===/.test(contextBefore)) assignedPerspective = 'external';
-
-        // If no explicit header found, check for keywords
-        if (!assignedPerspective) {
-          for (const [perspective, keywords] of Object.entries(perspectiveKeywords)) {
-            for (const keyword of keywords) {
-              if (contextBefore.includes(keyword)) {
-                assignedPerspective = perspective;
-                console.log(`Assigned perspective '${perspective}' based on keyword '${keyword}' near: "${questionText.substring(0, 30)}..."`);
-                break;
-              }
-            }
-            if (assignedPerspective) break;
-          }
-        }
-
-        // Default to "peer" if no perspective can be determined (or maybe skip?)
-        // Let's default to peer as per the original fallback logic
-        assignedPerspective = assignedPerspective || "peer";
-        console.log(`Assigning perspective '${assignedPerspective}' to question: "${questionText.substring(0, 30)}..." (Defaulted: ${assignedPerspective === 'peer' && !contextBefore.includes('peer')})`);
-
-
-        // Add the question to the appropriate perspective if the key exists
-        if (questionsByPerspective[assignedPerspective]) {
-             questionsByPerspective[assignedPerspective].push({
-                text: questionText,
-                type: questionType === 'open_ended' ? 'open_ended' : 'rating',
-                category: category,
-                perspective: assignedPerspective,
-                required: true,
-                order: questionsByPerspective[assignedPerspective].length + 1
-            });
-        } else {
-            console.warn(`Could not assign question to unknown perspective key: ${assignedPerspective}`)
-        }
-
-      }
+    if (!aiResponse || typeof aiResponse !== 'string') {
+        console.error('Invalid AI response provided to parser.');
+        return [];
     }
-  }
+    console.log('Starting AI Response Parsing...');
 
-  // Calculate total questions found
-  const totalQuestions = Object.values(questionsByPerspective)
-    .reduce((sum, questions) => sum + questions.length, 0);
-  console.log(`Successfully parsed ${totalQuestions} questions from AI response`);
+    // Define the patterns for splitting, including capturing the perspective name
+    // Using a single, more robust pattern covering variations.
+    // It captures the perspective name (GROUP 1) right after the separator (=== or newline)
+    // It looks for MANAGER, PEER, DIRECT REPORT, SELF, or EXTERNAL STAKEHOLDER followed by ASSESSMENT
+    const sectionSplitPattern =
+        /(?:^|\n)\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i;
 
-  // Check for empty perspectives and log warnings
-  const emptyPerspectives = Object.entries(perspectiveSettings)
-    .filter(([perspective, settings]) => settings?.enabled && (!questionsByPerspective[perspective] || questionsByPerspective[perspective].length === 0))
-    .map(([perspective]) => perspective);
+    // Split the response by the pattern. The pattern captures the delimiter,
+    // so the resulting array will interleave content and perspective names.
+    // Example: [ content_before_first_header, header1, content_after_header1, header2, content_after_header2, ...]
+    const parts = aiResponse.split(sectionSplitPattern);
 
-  if (emptyPerspectives.length > 0) {
-    console.log(`WARNING: No questions found for enabled perspectives: ${emptyPerspectives.join(', ')}`);
-    console.log(`Consider a second AI call specifically targeting these perspectives, or review the AI response structure.`);
-  }
+    console.log(`Split AI response into ${parts.length} parts.`);
 
-  // Return the result as a flat array for backward compatibility
-  return Object.values(questionsByPerspective).flat();
-} //
+    let currentPerspective = null;
+
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i]?.trim();
+        if (!part) continue; // Skip empty parts resulting from split
+
+        // Check if the part matches one of the perspective names (captured by the regex)
+        const perspectiveMatch = /^(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)$/i.exec(part);
+
+        if (perspectiveMatch) {
+            // This part is a perspective header captured by the split regex
+            const perspectiveHeader = perspectiveMatch[1].toUpperCase();
+            if (perspectiveHeader === 'DIRECT REPORT') currentPerspective = 'direct_report';
+            else if (perspectiveHeader === 'EXTERNAL STAKEHOLDER') currentPerspective = 'external';
+            else currentPerspective = perspectiveHeader.toLowerCase();
+            console.log(`Identified Perspective Header: ${currentPerspective}`);
+        } else if (currentPerspective) {
+            // This part is content following a known perspective header
+            console.log(`Processing content for perspective: ${currentPerspective}`);
+            const sectionContent = part;
+            // Regex to find Question:, Type:, Category: blocks within the content
+            const questionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
+            let qMatch;
+
+            while ((qMatch = questionRegex.exec(sectionContent)) !== null) {
+                const questionText = qMatch[1]?.trim();
+                const questionType = (qMatch[2]?.trim() || 'rating').toLowerCase();
+                const category = qMatch[3]?.trim() || 'General';
+
+                if (questionText && questionsByPerspective[currentPerspective]) {
+                    questionsByPerspective[currentPerspective].push({
+                        text: questionText,
+                        type: questionType === 'open_ended' ? 'open_ended' : 'rating',
+                        category: category,
+                        perspective: currentPerspective,
+                        required: true, // Assuming required unless specified otherwise
+                        order: questionsByPerspective[currentPerspective].length + 1 // Temporary order within perspective
+                    });
+                    console.log(`  -> Added question [${currentPerspective}]: "${questionText.substring(0, 40)}..."`);
+                }
+            }
+             // Optional: Reset perspective if content was processed, reduces risk of misattribution on messy formats
+             // currentPerspective = null;
+        } else {
+             console.log(`Skipping content part found before first recognized header or with unknown perspective: "${part.substring(0, 60)}..."`);
+             // This part might be intro text or content before the first valid header matched by the split
+        }
+    }
+
+    // --- Fallback (Optional - if the split logic fails entirely) ---
+    const totalQuestionsFound = Object.values(questionsByPerspective).reduce((sum, qArr) => sum + qArr.length, 0);
+    if (totalQuestionsFound === 0 && aiResponse.length > 0) {
+        console.warn("Primary parsing failed to find any questions via section headers. Attempting global fallback search (if implemented)...");
+        // Implement keyword-based fallback here if needed, but the improved split should be preferred.
+    }
+
+    // --- Post-processing and Logging ---
+    console.log(`Successfully parsed ${totalQuestionsFound} questions from AI response via primary section method.`);
+
+    // Deduplication step BEFORE adding fallbacks (and before returning)
+    const allParsedQuestions = Object.values(questionsByPerspective).flat();
+    const uniqueParsedQuestions = deduplicateQuestions(allParsedQuestions); // Assumes deduplicateQuestions exists in this file
+    console.log(` -> ${uniqueParsedQuestions.length} questions remain after deduplication.`);
+
+    // Re-structure back into map for logging final counts before returning flat array
+    const uniqueQuestionsByPerspective = { manager: [], peer: [], direct_report: [], self: [], external: [] };
+    uniqueParsedQuestions.forEach(q => {
+        if (uniqueQuestionsByPerspective[q.perspective]) {
+            uniqueQuestionsByPerspective[q.perspective].push(q);
+        }
+    });
+
+    // Check for empty perspectives AND log warning
+    const finalQuestionCounts = {};
+    Object.keys(questionsByPerspective).forEach(p => {
+        // Use the counts *after* deduplication
+        finalQuestionCounts[p] = uniqueQuestionsByPerspective[p] ? uniqueQuestionsByPerspective[p].length : 0;
+    });
+    console.log("Final counts per perspective after parsing and deduplication:", finalQuestionCounts);
+
+
+    const emptyPerspectives = Object.entries(perspectiveSettings || {}) // Add null check for safety
+        .filter(([perspective, settings]) => settings?.enabled && finalQuestionCounts[perspective] === 0)
+        .map(([perspective]) => perspective);
+
+    if (emptyPerspectives.length > 0) {
+        console.error(`CRITICAL WARNING: No AI questions parsed for enabled perspectives: ${emptyPerspectives.join(', ')}. Fallback questions will be used by ensurePerspectiveQuestionCounts unless a second AI call is implemented.`);
+        // **IMPORTANT**: The calling service should check for this situation (e.g., by checking counts)
+        // *after* this function returns and potentially trigger a second AI call.
+    }
+
+    // Return the unique questions as a flat array, re-assigning order based on flat array index
+    // The balancing function will handle final ordering after potential fallbacks are added.
+    return uniqueParsedQuestions.map((q, index) => ({ ...q, order: index + 1 }));
+}
 
 
 /**
@@ -378,146 +277,164 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
  * @returns {Array} - Deduplicated array of questions
  */
 function deduplicateQuestions(questions) {
-  // (Original deduplicateQuestions function remains unchanged)
-  const uniqueQuestions = [];
-  const textMap = new Map(); // Maps perspective to set of question texts
+    // Function to deduplicate questions - remains the same as provided previously
+    const uniqueQuestions = [];
+    const textMap = new Map(); // Maps perspective to set of question texts
 
-  for (const question of questions) {
-    const perspective = question.perspective || 'unknown';
+    for (const question of questions) {
+        const perspective = question.perspective || 'unknown';
 
-    // Initialize set for this perspective if it doesn't exist
-    if (!textMap.has(perspective)) {
-      textMap.set(perspective, new Set());
+        // Initialize set for this perspective if it doesn't exist
+        if (!textMap.has(perspective)) {
+            textMap.set(perspective, new Set());
+        }
+
+        // Normalize the question text for comparison (lowercase, no punctuation, trimmed)
+        const normalizedText = question.text
+            .toLowerCase()
+            .replace(/[.,?!;:]/g, '') // Remove common punctuation
+            .replace(/\s+/g, ' ') // Normalize whitespace
+            .trim();
+
+        // Check if this question is unique for its perspective
+        const perspectiveSet = textMap.get(perspective);
+
+        let isDuplicate = false;
+
+        // Check for exact match first
+        if (perspectiveSet.has(normalizedText)) {
+            isDuplicate = true;
+            // console.log(`Dedupe: Exact match found for perspective ${perspective}: "${question.text}"`);
+        } else {
+             // If not exact match, check for high similarity with existing questions in this perspective
+             for (const existingText of perspectiveSet) {
+                // Use the calculateSimilarity function (assumed to be defined in this file)
+                if (calculateSimilarity(normalizedText, existingText) > 0.85) { // Using stricter threshold
+                    isDuplicate = true;
+                    // console.log(`Dedupe: Similar match found for perspective ${perspective} (${calculateSimilarity(normalizedText, existingText).toFixed(2)}):\n  "${question.text}"\n  "${existingText}"`);
+                    break;
+                }
+            }
+        }
+
+        if (!isDuplicate) {
+            perspectiveSet.add(normalizedText); // Add normalized text to prevent future duplicates
+            uniqueQuestions.push(question); // Add the original question object
+        }
     }
-
-    // Normalize the question text for comparison
-    const normalizedText = question.text
-      .toLowerCase()
-      .replace(/\s+/g, ' ')
-      .replace(/[.,?!;:]/g, '')
-      .trim();
-
-    // Check if this question is unique for its perspective
-    const perspectiveSet = textMap.get(perspective);
-
-    // Also check for high similarity with existing questions
-    let isDuplicate = false;
-
-    for (const existingText of perspectiveSet) {
-      // Use Levenshtein distance or a simpler similarity metric
-      if (calculateSimilarity(normalizedText, existingText) > 0.8) {
-        isDuplicate = true;
-        break;
-      }
-    }
-
-    if (!isDuplicate) {
-      perspectiveSet.add(normalizedText);
-      uniqueQuestions.push(question);
-    }
-  }
-
-  return uniqueQuestions;
+    // console.log(`Deduplication: Input ${questions.length}, Output ${uniqueQuestions.length}`);
+    return uniqueQuestions;
 }
 
 /**
- * Calculate similarity between two strings (0-1 scale)
- * @param {string} str1 - First string
- * @param {string} str2 - Second string
+ * Calculate similarity between two strings (0-1 scale) - Simple word overlap
+ * @param {string} str1 - First string (normalized, no punctuation)
+ * @param {string} str2 - Second string (normalized, no punctuation)
  * @returns {number} - Similarity score between 0 and 1
  */
 function calculateSimilarity(str1, str2) {
-  // (Original calculateSimilarity function remains unchanged)
-  if (str1 === str2) return 1.0;
-  if (str1.length === 0 || str2.length === 0) return 0.0;
+    // Function to calculate similarity - remains the same as provided previously
+    if (!str1 || !str2) return 0.0; // Handle null/empty strings
+    if (str1 === str2) return 1.0;
 
-  // Simple word overlap coefficient
-  const words1 = new Set(str1.split(' '));
-  const words2 = new Set(str2.split(' '));
+    const words1 = new Set(str1.split(' '));
+    const words2 = new Set(str2.split(' '));
 
-  const intersection = new Set([...words1].filter(word => words2.has(word)));
-  const smaller = Math.min(words1.size, words2.size);
+    const intersection = new Set([...words1].filter(word => words2.has(word)));
+    const smallerSize = Math.min(words1.size, words2.size);
 
-  // Avoid division by zero
-  return smaller === 0 ? 0.0 : intersection.size / smaller;
+    // Avoid division by zero if one string has no words after normalization
+    return smallerSize === 0 ? 0.0 : intersection.size / smallerSize;
 }
 
 
 /**
  * Ensures we have the exact requested number of questions for each perspective
- * @param {Object} questionsMap - Questions grouped by perspective
+ * NOTE: This function calls the fallback generation if AI questions are insufficient.
+ * @param {Object} questionsMap - Questions grouped by perspective (SHOULD contain UNIQUE AI questions from parser)
  * @param {Object} perspectiveSettings - Settings with question counts
  * @param {string} documentType - Type of document
  * @returns {Object} - Balanced questions (grouped by perspective)
  */
 function ensurePerspectiveQuestionCounts(questionsMap, perspectiveSettings, documentType) {
-  // (Original ensurePerspectiveQuestionCounts function remains unchanged, but added require statement check)
-  let generateFallbackQuestions;
-  try {
-    // Assuming fallback-questions.service is in the same directory or accessible path
-    generateFallbackQuestions = require('./fallback-questions.service').generateFallbackQuestions;
-  } catch (error) {
-    console.error("Failed to load fallback-questions.service. Fallback questions will not be generated.", error);
-    // Provide a dummy function to avoid errors later if the service is missing
-    generateFallbackQuestions = () => [];
-  }
-
-  const result = {}; // Result will be a map grouped by perspective
-
-  // Process each perspective defined in the settings
-  for (const perspective in perspectiveSettings) {
-    // Skip disabled perspectives
-    if (!perspectiveSettings[perspective]?.enabled) {
-      console.log(`Skipping disabled perspective: ${perspective}`);
-      continue;
+    // Function to balance questions and call fallbacks - remains the same as provided previously
+    let generateFallbackQuestions;
+    try {
+        // Assuming fallback-questions.service is in the same directory or accessible path
+        generateFallbackQuestions = require('./fallback-questions.service').generateFallbackQuestions;
+         console.log("Balancer: Fallback question generator loaded.");
+    } catch (error) {
+        console.error("Balancer CRITICAL: Failed to load fallback-questions.service. Fallback questions cannot be generated.", error);
+        generateFallbackQuestions = (p, n, dt, existing) => { // Provide dummy function
+            console.error(`Balancer: Cannot generate ${n} fallback questions for ${p} - service missing.`);
+            return []; // Return empty array if service fails to load
+        };
     }
 
-    const targetCount = perspectiveSettings[perspective]?.questionCount || 5; // Default to 5 if not specified
-    const availableQuestions = questionsMap[perspective] || [];
-    console.log(`Ensuring question count for ${perspective}: Target=${targetCount}, Found=${availableQuestions.length}`);
+    const result = {}; // Result will be a map grouped by perspective
 
+    // Process each perspective defined in the settings
+    for (const perspective in perspectiveSettings) {
+        // Skip disabled perspectives
+        if (!perspectiveSettings[perspective]?.enabled) {
+            continue;
+        }
 
-    if (availableQuestions.length < targetCount) {
-      // Need to generate more questions
-      const neededCount = targetCount - availableQuestions.length;
-      console.log(`Generating ${neededCount} fallback questions for ${perspective}.`);
-      const fallbackQuestions = generateFallbackQuestions(
-        perspective,
-        neededCount,
-        documentType,
-        availableQuestions // Pass existing questions to avoid duplicates
-      );
+        const targetCount = perspectiveSettings[perspective]?.questionCount || 5; // Default target
+        // Ensure we are working with an array, even if the key was missing from the input map
+        const availableAiQuestions = questionsMap[perspective] || [];
+        console.log(`Balancer: Balancing questions for ${perspective}: Target=${targetCount}, AI Found=${availableAiQuestions.length}`);
 
-      // Combine existing and new questions
-      result[perspective] = [...availableQuestions, ...fallbackQuestions];
-       console.log(` -> Total questions for ${perspective} after fallback: ${result[perspective].length}`);
-    } else if (availableQuestions.length > targetCount) {
-      // Need to select a subset of questions (simple slice for now)
-      console.log(`Trimming questions for ${perspective} from ${availableQuestions.length} to ${targetCount}.`);
-      result[perspective] = availableQuestions.slice(0, targetCount);
-    } else {
-      // We have exactly the right number
-      console.log(`Exact number of questions (${targetCount}) found for ${perspective}.`);
-      result[perspective] = availableQuestions;
+        if (availableAiQuestions.length < targetCount) {
+            // Need to generate more questions using fallbacks
+            const neededCount = targetCount - availableAiQuestions.length;
+            console.warn(`Balancer: Generating ${neededCount} GENERIC fallback questions for ${perspective}. (AI questions were insufficient)`);
+            // Call the fallback generator, passing existing AI questions for this perspective
+            const fallbackQuestions = generateFallbackQuestions(
+                perspective,
+                neededCount,
+                documentType,
+                availableAiQuestions // Pass existing AI questions to fallback service
+            );
+
+            // Combine existing AI and new fallback questions
+            result[perspective] = [...availableAiQuestions, ...fallbackQuestions];
+            console.log(`Balancer -> Total questions for ${perspective} after fallback: ${result[perspective].length}`);
+        } else if (availableAiQuestions.length > targetCount) {
+            // Need to select a subset of AI questions (simple slice for now)
+            console.log(`Balancer: Trimming AI questions for ${perspective} from ${availableAiQuestions.length} to ${targetCount}.`);
+            result[perspective] = availableAiQuestions.slice(0, targetCount);
+        } else {
+            // We have exactly the right number of AI questions
+            console.log(`Balancer: Exact number of AI questions (${targetCount}) found and used for ${perspective}.`);
+            result[perspective] = availableAiQuestions;
+        }
     }
-  }
 
-  // Ensure all expected perspective keys exist in the result, even if empty
-   for (const perspective in perspectiveSettings) {
-       if (perspectiveSettings[perspective]?.enabled && !result[perspective]) {
-           result[perspective] = [];
-       }
-   }
+    // Ensure all enabled perspective keys exist in the result, even if empty (though fallbacks should fill them)
+    for (const perspective in perspectiveSettings) {
+        if (perspectiveSettings[perspective]?.enabled && !result[perspective]) {
+            result[perspective] = [];
+        }
+    }
+
+    // Re-assign final order across all questions within each perspective
+    Object.keys(result).forEach(perspective => {
+        result[perspective] = result[perspective].map((q, index) => ({
+            ...q,
+            order: index + 1
+        }));
+    });
 
 
-  return result; // Return the map
+    return result; // Return the map
 }
 
 
 module.exports = {
   parseQuestionsFromAiResponse, // Updated function
   sanitizeQuestionText,
-  deduplicateQuestions,
-  ensurePerspectiveQuestionCounts // Keep existing exports
-  // calculateSimilarity is a helper, might not need export unless used elsewhere
+  deduplicateQuestions, // Make sure it's defined or imported if used
+  ensurePerspectiveQuestionCounts, // Make sure it's defined or imported if used
+  calculateSimilarity // Make sure it's defined or imported if used by deduplicateQuestions
 };
