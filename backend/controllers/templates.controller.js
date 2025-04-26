@@ -1697,18 +1697,48 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
     // Import the necessary services
     const fluxAiConfig = require('../config/flux-ai');
     const { sanitizeQuestionText, createAnalysisPrompt } = require('../services/prompt-helper.service');
+    const { checkStorageBeforeUpload } = require('../services/flux-ai.service');
 
     // First update the documents to mark them as being analyzed
     for (const document of documents) {
       await document.update({ status: 'analysis_in_progress' });
     }
 
-    // Upload the documents to Flux AI
+    // Upload the documents to Flux AI but first check for existing fluxAiFileId
     const fileIds = [];
     for (const document of documents) {
       try {
+        // If the document already has a fluxAiFileId, reuse it
+        if (document.fluxAiFileId) {
+          console.log(`Reusing existing Flux AI file ID for document ${document.id}: ${document.fluxAiFileId}`);
+          fileIds.push(document.fluxAiFileId);
+          continue;
+        }
+
         const filePath = document.path;
         console.log('Uploading file:', filePath);
+
+        // Check available storage space before uploading
+        const spaceCheck = await checkStorageBeforeUpload(filePath);
+        if (!spaceCheck.success) {
+          console.error(`Storage check failed for document ${document.id}:`, spaceCheck);
+          
+          if (spaceCheck.errorType === 'insufficient_space') {
+            // Update document status to reflect storage error
+            await document.update({
+              status: 'analysis_failed',
+              analysisError: `Insufficient storage space in Flux AI account. Available: ${
+                Math.round(spaceCheck.details.availableStorage / 1024)
+              } KB, Required: ${Math.round(spaceCheck.details.fileSize / 1024)} KB`
+            });
+            
+            throw new Error(`Insufficient storage space in Flux AI account. Available: ${
+              Math.round(spaceCheck.details.availableStorage / 1024)
+            } KB, Required: ${Math.round(spaceCheck.details.fileSize / 1024)} KB`);
+          }
+          
+          throw new Error(spaceCheck.error || 'Storage check failed');
+        }
 
         const uploadResponse = await uploadFileToFluxAi(filePath);
 
@@ -1721,9 +1751,34 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
           fileIds.push(uploadResponse.data[0].id);
         } else {
           console.error('Failed to upload file:', uploadResponse);
+          
+          // Check if the failure is due to storage limit
+          if (uploadResponse.errorType === 'storage_limit') {
+            await document.update({
+              status: 'analysis_failed',
+              analysisError: 'Insufficient storage space in Flux AI account'
+            });
+            
+            throw new Error('Insufficient storage space in Flux AI account');
+          }
         }
       } catch (error) {
         console.error(`Error uploading document ${document.id}:`, error);
+        
+        // Update the document status to reflect the error
+        await document.update({
+          status: 'analysis_failed',
+          analysisError: error.message
+        });
+        
+        // If error contains storage-related terms, provide a more specific error
+        if (error.message && 
+            (error.message.includes('storage') || 
+             error.message.includes('space'))) {
+          throw new Error(`Storage limit exceeded: ${error.message}`);
+        }
+        
+        throw error;
       }
     }
 
@@ -1733,6 +1788,7 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
       throw new Error('No valid files uploaded to AI');
     }
 
+    // REST OF THE FUNCTION REMAINS THE SAME
     // Process files with AI
     console.log('File IDs:', fileIds);
     console.log('Document Type:', documentType);

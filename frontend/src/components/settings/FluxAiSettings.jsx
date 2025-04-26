@@ -27,6 +27,13 @@ const FluxAiSettings = () => {
   const [refreshingBalance, setRefreshingBalance] = useState(false);
   const [lastEnteredKey, setLastEnteredKey] = useState('');
 
+  // New storage management state variables
+  const [storageInfo, setStorageInfo] = useState(null);
+  const [loadingStorage, setLoadingStorage] = useState(false);
+  const [deletingFile, setDeletingFile] = useState(null);
+  const [cleaningUpFiles, setCleaningUpFiles] = useState(false);
+  const [storageUsagePercent, setStorageUsagePercent] = useState(0);
+
   const [aiSettings, setAiSettings] = useState({
     analysisDepth: 'medium',
     enableBiasDetection: true,
@@ -35,7 +42,6 @@ const FluxAiSettings = () => {
     feedbackAnalysis: true
   });
 
-  // --- useEffect, fetchApiBalance, handleSaveSettings, etc. remain the same ---
   useEffect(() => {
     const fetchSettings = async () => {
       setLoading(true);
@@ -70,7 +76,10 @@ const FluxAiSettings = () => {
           ]);
         }
 
+        // Fetch both API balance and storage info
         await fetchApiBalance();
+        await handleRefreshStorage();
+        
         setError(null);
       } catch (err) {
         console.error('Error fetching settings:', err);
@@ -93,6 +102,69 @@ const FluxAiSettings = () => {
     } finally {
       setRefreshingBalance(false);
     }
+  };
+  
+  // Storage management functions
+  const handleRefreshStorage = async () => {
+    setLoadingStorage(true);
+    try {
+      const response = await api.get('/settings/flux/storage');
+      setStorageInfo(response.data);
+      
+      // Calculate percentage
+      if (response.data && response.data.totalStorage) {
+        const percent = Math.round((response.data.usedStorage / response.data.totalStorage) * 100);
+        setStorageUsagePercent(percent);
+      }
+    } catch (err) {
+      console.error('Error fetching storage info:', err);
+      setError('Failed to load storage information');
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  const handleDeleteFile = async (fileId) => {
+    setDeletingFile(fileId);
+    try {
+      await api.delete(`/settings/flux/files/${fileId}`);
+      // Refresh storage info
+      handleRefreshStorage();
+      setSuccess('File deleted successfully');
+    } catch (err) {
+      console.error('Error deleting file:', err);
+      setError('Failed to delete file');
+    } finally {
+      setDeletingFile(null);
+    }
+  };
+
+  const handleCleanupAllFiles = async () => {
+    if (!window.confirm('Are you sure you want to delete all files from Flux AI storage? This cannot be undone.')) {
+      return;
+    }
+    
+    setCleaningUpFiles(true);
+    try {
+      await api.post('/settings/flux/cleanup');
+      await handleRefreshStorage();
+      setSuccess('All files have been deleted');
+    } catch (err) {
+      console.error('Error cleaning up files:', err);
+      setError('Failed to clean up files');
+    } finally {
+      setCleaningUpFiles(false);
+    }
+  };
+
+  // Format bytes to human-readable format
+  const formatBytes = (bytes, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
   const handleSaveSettings = async () => {
@@ -392,6 +464,130 @@ const FluxAiSettings = () => {
                 Refresh
               </button>
             </div>
+        </section>
+
+        {/* Storage Management Section - NEW SECTION */}
+        <section>
+          <h3 className="text-md font-semibold mb-3 text-gray-800">Storage Management</h3>
+          <div className="p-6 rounded-md border border-gray-200">
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">Storage Usage</span>
+                <button
+                  type="button"
+                  onClick={handleRefreshStorage}
+                  disabled={loadingStorage || saveLoading}
+                  className="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Refresh
+                </button>
+              </div>
+              
+              {/* Storage Progress Bar */}
+              <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden">
+                {storageInfo ? (
+                  <div 
+                    className={`h-full ${storageUsagePercent > 90 ? 'bg-red-500' : storageUsagePercent > 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                    style={{ width: `${storageUsagePercent}%` }}
+                  ></div>
+                ) : (
+                  <div className="h-full bg-gray-300 animate-pulse" style={{ width: '100%' }}></div>
+                )}
+              </div>
+              
+              {/* Storage Stats */}
+              <div className="mt-2 flex justify-between text-xs text-gray-500">
+                <span>
+                  {storageInfo ? (
+                    `${formatBytes(storageInfo.usedStorage)} used of ${formatBytes(storageInfo.totalStorage)}`
+                  ) : (
+                    'Storage information not available'
+                  )}
+                </span>
+                <span>
+                  {storageInfo && (
+                    `${formatBytes(storageInfo.availableStorage)} available`
+                  )}
+                </span>
+              </div>
+            </div>
+            
+            {/* File List */}
+            <div className="mt-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Stored Files</h4>
+              {loadingStorage ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : storageInfo && storageInfo.files && storageInfo.files.length > 0 ? (
+                <div className="overflow-x-auto border rounded-md">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
+                        <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                        <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Uploaded</th>
+                        <th scope="col" className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {storageInfo.files.map((file) => (
+                        <tr key={file.id}>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{file.filename || 'Unknown'}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{formatBytes(file.bytes)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                            {new Date(file.created_at * 1000).toLocaleDateString()}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-right text-sm">
+                            <button
+                              onClick={() => handleDeleteFile(file.id)}
+                              disabled={deletingFile === file.id}
+                              className="text-red-600 hover:text-red-900 disabled:text-gray-400"
+                              title="Delete file"
+                            >
+                              {deletingFile === file.id ? (
+                                <span className="inline-block w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"></span>
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-6 bg-gray-50 rounded-md">
+                  <p className="text-gray-500">No files found in storage</p>
+                </div>
+              )}
+              
+              {/* Clean Up All Button */}
+              {storageInfo && storageInfo.files && storageInfo.files.length > 0 && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={handleCleanupAllFiles}
+                    disabled={cleaningUpFiles || storageInfo.files.length === 0}
+                    className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                  >
+                    {cleaningUpFiles ? (
+                      <>
+                        <span className="inline-block w-3 h-3 mr-1 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"></span>
+                        Cleaning...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Clean Up All Files
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* Why We Chose Flux AI Section */}
