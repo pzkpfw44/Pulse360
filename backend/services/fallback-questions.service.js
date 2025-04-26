@@ -11,40 +11,44 @@
 function generateFallbackQuestions(perspective, count, documentType, existingQuestions = []) {
     console.log(`Generating ${count} diverse fallback questions for ${perspective} perspective`);
     
-    // Extract existing question texts for comparison
-    const existingTexts = new Set(existingQuestions.map(q => 
-      q.text.toLowerCase().replace(/\s+/g, ' ').trim())
-    );
-    
-    // First, get category-specific questions based on document type
+    // Get questions from different sources
     const typeQuestions = getQuestionsForDocumentType(documentType, perspective);
-    
-    // Then get generic perspective questions
     const genericQuestions = getGenericQuestionsForPerspective(perspective);
+    const additionalQuestions = getAdditionalGenericQuestions(perspective, count * 3); // Get more options
     
-    // Get additional generic questions as backup
-    const additionalQuestions = getAdditionalGenericQuestions(perspective, count * 2);
+    // Combine all options
+    let allCandidateQuestions = [...typeQuestions, ...genericQuestions, ...additionalQuestions];
     
-    // Combine and filter for uniqueness
-    const allCandidateQuestions = [...typeQuestions, ...genericQuestions, ...additionalQuestions];
-    
-    // Filter out any questions that match existing ones
-    const uniqueCandidates = allCandidateQuestions.filter(q => {
-      const normalizedText = q.text.toLowerCase().replace(/\s+/g, ' ').trim();
-      return !existingTexts.has(normalizedText);
+    // Create a clean text version of each question for comparison
+    const normalizedTexts = new Map();
+    allCandidateQuestions.forEach(q => {
+      normalizedTexts.set(q, q.text.toLowerCase().replace(/\s+/g, ' ').trim());
     });
     
-    // Ensure each question is different from all others by comparing similarity
-    const selectedQuestions = [];
-    const selectedTexts = new Set();
+    // Filter out duplicates within the candidates
+    const uniqueCandidates = [];
+    const usedTexts = new Set();
     
-    for (const question of uniqueCandidates) {
-      const normalizedText = question.text.toLowerCase().replace(/\s+/g, ' ').trim();
+    // First pass - exact match deduplication
+    for (const question of allCandidateQuestions) {
+      const normalizedText = normalizedTexts.get(question);
+      if (!usedTexts.has(normalizedText)) {
+        uniqueCandidates.push(question);
+        usedTexts.add(normalizedText);
+      }
+    }
+    
+    // Second pass - similarity-based deduplication
+    const selectedQuestions = [];
+    for (let i = 0; i < uniqueCandidates.length && selectedQuestions.length < count; i++) {
+      const question = uniqueCandidates[i];
+      const normalizedText = normalizedTexts.get(question);
       
       // Check if this question is too similar to any already selected
       let tooSimilar = false;
-      for (const existingText of selectedTexts) {
-        if (calculateSimilarity(normalizedText, existingText) > 0.7) {
+      for (const selected of selectedQuestions) {
+        const selectedText = normalizedTexts.get(selected);
+        if (calculateSimilarity(normalizedText, selectedText) > 0.6) {
           tooSimilar = true;
           break;
         }
@@ -52,25 +56,19 @@ function generateFallbackQuestions(perspective, count, documentType, existingQue
       
       if (!tooSimilar) {
         selectedQuestions.push(question);
-        selectedTexts.add(normalizedText);
-        
-        // If we have enough questions, stop
-        if (selectedQuestions.length >= count) {
-          break;
-        }
       }
     }
     
-    // If we don't have enough questions after filtering, create some with sequential numbers
+    // If we still don't have enough, create truly unique questions with serial numbers
     if (selectedQuestions.length < count) {
-      const remaining = count - selectedQuestions.length;
-      console.log(`Need ${remaining} more unique questions for ${perspective}`);
+      const areas = ["communication", "teamwork", "leadership", "problem-solving", "decision-making", "customer focus"];
       
-      for (let i = 0; i < remaining; i++) {
+      for (let i = selectedQuestions.length; i < count; i++) {
+        const area = areas[i % areas.length];
         selectedQuestions.push({
-          text: `How would you rate this person's overall effectiveness in area ${i+1}?`,
+          text: `How effectively does this person demonstrate ${area} skills with external stakeholders? (#${i+1})`,
           type: 'rating',
-          category: 'Overall Effectiveness',
+          category: area.charAt(0).toUpperCase() + area.slice(1),
           perspective,
           required: true
         });
