@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  Home, Upload, FileText, 
+import {
+  Home, Upload, FileText,
   BarChart2, MessageSquare, Database, Settings,
-  Menu, X, Bell, User, BookOpen, PieChart, 
+  Menu, X, Bell, User, BookOpen, PieChart,
   PlayCircle, Activity, ChartBar, Briefcase
 } from 'lucide-react';
 import fluxLogo from "../../../assets/Flux_white_symbol.png";
@@ -13,15 +13,15 @@ import api from "../../services/api";
 // Sidebar navigation item component
 const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
   const location = useLocation();
-  const isActive = location.pathname === href || 
+  const isActive = location.pathname === href ||
     (href !== '/' && location.pathname.includes(href));
 
   return (
     <Link
       to={href}
       className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-        isActive 
-          ? 'bg-white/20 text-white' 
+        isActive
+          ? 'bg-white/20 text-white'
           : 'text-white/90 hover:bg-white/10 hover:text-white'
       }`}
     >
@@ -39,7 +39,7 @@ const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
 export function MainLayout({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [brandingSettings, setBrandingSettings] = useState(null);
-  
+
   // Fetch branding settings on component mount
   useEffect(() => {
     const fetchBrandingSettings = async () => {
@@ -49,21 +49,21 @@ export function MainLayout({ children }) {
         if (cachedSettings) {
           const parsed = JSON.parse(cachedSettings);
           setBrandingSettings(parsed);
-          
+
           // Apply colors
           document.documentElement.style.setProperty('--primary-color', parsed.primaryColor || '#3B82F6');
           document.documentElement.style.setProperty('--secondary-color', parsed.secondaryColor || '#2563EB');
         }
-        
+
         // Then fetch from API to ensure we have latest data
         const response = await api.get('/settings/branding');
         if (response.data) {
           setBrandingSettings(response.data);
-          
+
           // Apply colors
           document.documentElement.style.setProperty('--primary-color', response.data.primaryColor || '#3B82F6');
           document.documentElement.style.setProperty('--secondary-color', response.data.secondaryColor || '#2563EB');
-          
+
           // Update cache
           localStorage.setItem('brandingSettings', JSON.stringify(response.data));
         }
@@ -71,10 +71,10 @@ export function MainLayout({ children }) {
         console.error('Error fetching branding settings:', error);
       }
     };
-    
+
     fetchBrandingSettings();
   }, []);
-  
+
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
@@ -100,7 +100,7 @@ export function MainLayout({ children }) {
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <aside 
+      <aside
         id="sidebar-container"
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gradient-to-b from-blue-500 to-blue-600 transition-transform duration-300 ease-in-out ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -114,30 +114,30 @@ export function MainLayout({ children }) {
             <span className="text-xl font-bold text-white">Pulse360</span>
           </Link>
         </div>
-        
+
         <div className="flex-1 overflow-auto py-6 px-4">
           <nav className="flex flex-col gap-1">
             <SidebarNavItem href="/" icon={Home} title="Dashboard" />
-            
+
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               ContextHub
             </div>
             <SidebarNavItem href="/contexthub" icon={BookOpen} title="Company Knowledge" />
             <SidebarNavItem href="/templates" icon={FileText} title="Questionnaire Templates" />
             <SidebarNavItem href="/communication-templates" icon={MessageSquare} title="Communication Templates" />
-            
+
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               ControlHub
             </div>
             <SidebarNavItem href="/start-360" icon={PlayCircle} title="Start 360 Feedback" />
             <SidebarNavItem href="/monitor-360" icon={Activity} title="Monitor 360 Feedback" badge={2} />
-            
+
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               FeedbackHub
             </div>
             <SidebarNavItem href="/results-360" icon={BarChart2} title="Results 360" />
             <SidebarNavItem href="/insights-360" icon={ChartBar} title="Insights 360" />
-            
+
             <div className="mt-6 mb-2 px-3 text-xs uppercase tracking-wider text-white/60">
               System
             </div>
@@ -145,7 +145,7 @@ export function MainLayout({ children }) {
             <SidebarNavItem href="/settings" icon={Settings} title="Settings" />
           </nav>
         </div>
-        
+
         {/* Flux AI branding footer */}
         <div className="mt-auto border-t border-white/10 p-4 flex justify-center items-center">
           <div className="text-white/80 text-sm flex items-center">
@@ -172,7 +172,7 @@ export function MainLayout({ children }) {
                 <Menu className="h-6 w-6" />
               )}
             </button>
-            
+
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-blue-600 text-white">
                 <span className="text-lg font-bold">P</span>
@@ -204,15 +204,15 @@ export function MainLayout({ children }) {
             </div>
           </div>
         </header>
-        
+
         <main className="flex-1 px-4 py-6 md:px-6">
           {children}
         </main>
       </div>
-      
+
       {/* Mobile sidebar backdrop */}
       {isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />

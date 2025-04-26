@@ -1865,6 +1865,181 @@ try {
    });
    console.log(`Sanitized questions using department: ${departmentName}`);
 
+  // Check if we need secondary AI calls for any perspectives with insufficient questions
+  const enabledPerspectives = Object.keys(perspectiveSettings)
+    .filter(p => perspectiveSettings[p]?.enabled);
+
+  // Identify perspectives with missing or insufficient questions
+  const missingPerspectives = [];
+  const insufficientPerspectives = [];
+
+  enabledPerspectives.forEach(perspective => {
+    const targetCount = perspectiveSettings[perspective].questionCount || 5;
+    const availableCount = sanitizedQuestionsMap[perspective]?.length || 0;
+    
+    if (availableCount === 0) {
+      missingPerspectives.push(perspective);
+    } else if (availableCount < targetCount) {
+      insufficientPerspectives.push({
+        perspective, 
+        available: availableCount,
+        needed: targetCount - availableCount
+      });
+    }
+  });
+
+  // Handle completely missing perspectives first (like external stakeholder)
+  if (missingPerspectives.length > 0) {
+    console.log(`Making secondary AI call for completely missing perspectives: ${missingPerspectives.join(', ')}`);
+    
+    // Create a focused prompt specifically for missing perspectives
+    const secondaryPrompt = `
+  I need 360-degree feedback assessment questions ONLY for these specific perspectives:
+  ${missingPerspectives.map(p => `- ${p.replace('_', ' ')}: ${perspectiveSettings[p].questionCount} questions`).join('\n')}
+
+  Based on the document which is a ${documentType.replace('_', ' ')}, please generate appropriate questions.
+
+  Format each question as:
+  Question: [Question text]
+  Type: [rating or open_ended]
+  Category: [relevant category]
+
+  IMPORTANT: Please ONLY create questions for these specific perspectives:
+  ${missingPerspectives.join(', ')}
+  `;
+
+    try {
+      // Make a secondary AI request
+      const secondaryRequest = {
+        model: fluxAiConfig.model.trim(),
+        messages: [
+          { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
+          { role: 'user', content: secondaryPrompt }
+        ],
+        temperature: 0.3,
+        attachments: { files: fileIds, tags: [documentType, "feedback"] },
+        mode: 'rag'
+      };
+      
+      const secondaryResponse = await makeAiChatRequest(secondaryRequest);
+      
+      if (secondaryResponse && secondaryResponse.choices && secondaryResponse.choices.length > 0) {
+        const secondaryAiText = secondaryResponse.choices[0].message?.content;
+        
+        if (secondaryAiText) {
+          console.log('Secondary AI response received for missing perspectives');
+          
+          // Parse the secondary response
+          const secondaryQuestionsMap = parseQuestionsFromAiResponse(secondaryAiText, perspectiveSettings);
+          
+          // Add the new questions to our sanitizedQuestionsMap
+          for (const perspective of missingPerspectives) {
+            if (secondaryQuestionsMap[perspective] && secondaryQuestionsMap[perspective].length > 0) {
+              console.log(`Found ${secondaryQuestionsMap[perspective].length} questions for ${perspective} in secondary AI response`);
+              
+              // Initialize the array if needed
+              if (!sanitizedQuestionsMap[perspective]) {
+                sanitizedQuestionsMap[perspective] = [];
+              }
+              
+              // Add sanitized questions
+              const departmentName = templateInfo.department || 'General';
+              const newQuestions = secondaryQuestionsMap[perspective].map(question => ({
+                ...question,
+                text: sanitizeQuestionText(question.text, departmentName)
+              }));
+              
+              sanitizedQuestionsMap[perspective].push(...newQuestions);
+            }
+          }
+        }
+      }
+    } catch (secondaryError) {
+      console.warn('Error in secondary AI call for missing perspectives:', secondaryError.message);
+      console.log('Will proceed with fallback questions for missing perspectives');
+    }
+  }
+
+  // Handle perspectives with insufficient questions
+  if (insufficientPerspectives.length > 0) {
+    console.log(`Making tertiary AI call for perspectives with insufficient questions: 
+      ${insufficientPerspectives.map(p => `${p.perspective} (${p.available}/${perspectiveSettings[p.perspective].questionCount})`).join(', ')}`);
+    
+    // Create a focused prompt specifically for additional questions
+    const tertiaryPrompt = `
+  I need ADDITIONAL 360-degree feedback assessment questions for these perspectives:
+  ${insufficientPerspectives.map(p => `- ${p.perspective.replace('_', ' ')}: ${p.needed} more questions`).join('\n')}
+
+  Based on the document which is a ${documentType.replace('_', ' ')}, please generate more questions.
+  These questions should be DIFFERENT from existing questions and complement them.
+
+  Format each question as:
+  Question: [Question text]
+  Type: [rating or open_ended]
+  Category: [relevant category]
+
+  IMPORTANT: Please generate ONLY the specified number of NEW questions for each perspective.
+  `;
+
+    try {
+      // Make a tertiary AI request
+      const tertiaryRequest = {
+        model: fluxAiConfig.model.trim(),
+        messages: [
+          { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
+          { role: 'user', content: tertiaryPrompt }
+        ],
+        temperature: 0.5, // Slightly higher temperature for diverse questions
+        attachments: { files: fileIds, tags: [documentType, "feedback"] },
+        mode: 'rag'
+      };
+      
+      const tertiaryResponse = await makeAiChatRequest(tertiaryRequest);
+      
+      if (tertiaryResponse && tertiaryResponse.choices && tertiaryResponse.choices.length > 0) {
+        const tertiaryAiText = tertiaryResponse.choices[0].message?.content;
+        
+        if (tertiaryAiText) {
+          console.log('Tertiary AI response received for additional questions');
+          
+          // Parse the tertiary response
+          const tertiaryQuestionsMap = parseQuestionsFromAiResponse(tertiaryAiText, perspectiveSettings);
+          
+          // Add the new questions to our sanitizedQuestionsMap
+          for (const { perspective } of insufficientPerspectives) {
+            if (tertiaryQuestionsMap[perspective] && tertiaryQuestionsMap[perspective].length > 0) {
+              console.log(`Found ${tertiaryQuestionsMap[perspective].length} additional questions for ${perspective}`);
+              
+              // Add sanitized questions
+              const departmentName = templateInfo.department || 'General';
+              const additionalQuestions = tertiaryQuestionsMap[perspective].map(question => ({
+                ...question,
+                text: sanitizeQuestionText(question.text, departmentName)
+              }));
+              
+              // Filter out any duplicate questions based on text similarity
+              const existingTexts = new Set(sanitizedQuestionsMap[perspective].map(q => q.text.toLowerCase().trim()));
+              const uniqueAdditionalQuestions = additionalQuestions.filter(q => {
+                const normalizedText = q.text.toLowerCase().trim();
+                if (existingTexts.has(normalizedText)) {
+                  return false;
+                }
+                existingTexts.add(normalizedText);
+                return true;
+              });
+              
+              sanitizedQuestionsMap[perspective].push(...uniqueAdditionalQuestions);
+              console.log(`Added ${uniqueAdditionalQuestions.length} unique additional questions for ${perspective}`);
+            }
+          }
+        }
+      }
+    } catch (tertiaryError) {
+      console.warn('Error in tertiary AI call for additional questions:', tertiaryError.message);
+      console.log('Will proceed with available AI questions plus fallbacks as needed');
+    }
+  }
+
   // --- Balance Questions & Add Fallbacks ---
    const perspectiveSettings = templateInfo.perspectiveSettings || { /* default settings */ };
    console.log('Balancing questions per perspective settings...');

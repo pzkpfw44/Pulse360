@@ -17,7 +17,7 @@ import {
   HelpCircle,
   Zap,
   Brain,
-  Edit 
+  Edit
 } from 'lucide-react';
 
 // TabPanel component for perspective tabs
@@ -74,11 +74,11 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
     const updatedScales = currentScale.id
       ? scales.map(s => s.id === currentScale.id ? currentScale : s)
       : [...scales, {...currentScale, id: currentScale._id}];
-    
+
     setScales(updatedScales);
     setEditMode(false);
     setCurrentScale(null);
-    
+
     if (onSave) onSave(updatedScales);
   };
 
@@ -86,7 +86,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
   const handleDeleteScale = (scaleId) => {
     const updatedScales = scales.filter(s => s.id !== scaleId);
     setScales(updatedScales);
-    
+
     if (onSave) onSave(updatedScales);
   };
 
@@ -102,7 +102,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
         <div>
           <div className="flex justify-between mb-4">
             <h2 className="text-lg font-semibold">Rating Scales</h2>
-            <button 
+            <button
               className="flex items-center px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
               onClick={handleCreateScale}
             >
@@ -110,7 +110,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
               Add Scale
             </button>
           </div>
-          
+
           {scales.length === 0 ? (
             <div className="p-6 bg-gray-50 rounded-lg text-center">
               <p className="text-gray-600 mb-4">
@@ -131,13 +131,13 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
                   <div className="flex justify-between mb-2">
                     <h3 className="font-medium">{scale.name}</h3>
                     <div>
-                      <button 
+                      <button
                         className="text-gray-600 hover:text-blue-600 p-1"
                         onClick={() => handleEditScale(scale)}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
-                      <button 
+                      <button
                         className="text-gray-600 hover:text-red-600 p-1"
                         onClick={() => handleDeleteScale(scale.id)}
                       >
@@ -145,29 +145,29 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
                       </button>
                     </div>
                   </div>
-                  
+
                   <p className="text-sm text-gray-600 mb-2">
                     Scale: {scale.minValue} to {scale.maxValue}
                   </p>
-                  
+
                   <div className="mt-2">
                     {scale.defaultForPerspective && (
-                      <span 
+                      <span
                         className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
                       >
-                        {scale.defaultForPerspective === 'all' 
-                          ? 'Default for All Perspectives' 
+                        {scale.defaultForPerspective === 'all'
+                          ? 'Default for All Perspectives'
                           : `Default for ${scale.defaultForPerspective.charAt(0).toUpperCase() + scale.defaultForPerspective.slice(1)} Perspective`}
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="my-2 border-t border-gray-100 pt-2" />
-                  
+
                   <p className="text-sm text-gray-600">
                     Rating Labels:
                   </p>
-                  
+
                   <div className="mt-2">
                     {scale.labels && Object.entries(scale.labels).map(([value, label]) => (
                       <div key={value} className="flex mb-1">
@@ -188,7 +188,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
           <h2 className="text-lg font-semibold mb-4">
             {currentScale.id ? 'Edit Rating Scale' : 'Create New Rating Scale'}
           </h2>
-          
+
           <div className="grid grid-cols-1 gap-4">
             <div>
               <label htmlFor="scaleName" className="block text-sm font-medium text-gray-500 mb-1">
@@ -202,7 +202,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
                 className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
             </div>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="minValue" className="block text-sm font-medium text-gray-500 mb-1">
@@ -219,7 +219,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label htmlFor="maxValue" className="block text-sm font-medium text-gray-500 mb-1">
                   Maximum Value
@@ -236,7 +236,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
                 />
               </div>
             </div>
-            
+
             <div>
               <label htmlFor="defaultPerspective" className="block text-sm font-medium text-gray-500 mb-1">
                 Default For Perspective
@@ -258,7 +258,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
                 This scale will be the default for questions in the selected perspective
               </p>
             </div>
-            
+
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">
                 Rating Labels
@@ -284,9 +284,9 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
               </div>
             </div>
           </div>
-          
+
           <div className="mt-6 flex justify-end">
-            <button 
+            <button
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 mr-2"
               onClick={() => {
                 setEditMode(false);
@@ -296,7 +296,7 @@ const RatingScaleEditor = ({ scales, setScales, onSave, onCancel }) => {
             >
               Cancel
             </button>
-            <button 
+            <button
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
               onClick={handleSaveScale}
             >
@@ -356,11 +356,11 @@ const TemplateReview = () => {
       try {
         setLoading(true);
         console.log('Fetching template with ID:', id);
-        
+
         // Use templatesApi instead of axios directly
         const response = await templatesApi.getById(id);
         console.log('Template response:', response.data);
-        
+
         // Make sure perspective is set for all questions
         if (response.data && response.data.questions) {
           response.data.questions = response.data.questions.map(q => ({
@@ -368,7 +368,7 @@ const TemplateReview = () => {
             perspective: q.perspective || 'peer' // Default to 'peer' if missing
           }));
         }
-        
+
         // Initialize perspective settings if not present
         if (!response.data.perspectiveSettings) {
           response.data.perspectiveSettings = {
@@ -379,9 +379,9 @@ const TemplateReview = () => {
             external: { questionCount: 5, enabled: false }
           };
         }
-        
+
         setTemplate(response.data);
-        
+
         // Setup rating scales
         if (response.data.ratingScales && response.data.ratingScales.length > 0) {
           setRatingScales(response.data.ratingScales);
@@ -402,7 +402,7 @@ const TemplateReview = () => {
             defaultForPerspective: 'all'
           }]);
         }
-        
+
         // Extract unique categories
         const uniqueCategories = [...new Set(
           response.data.questions
@@ -410,12 +410,12 @@ const TemplateReview = () => {
             .map(q => q.category)
         )];
         setCategories(uniqueCategories);
-        
+
         // Try to set perspective tab based on active perspectives
         const activePerspectives = Object.entries(response.data.perspectiveSettings || {})
           .filter(([, settings]) => settings.enabled)
           .map(([key]) => key);
-          
+
         if (activePerspectives.length > 0) {
           const firstActivePerspective = activePerspectives[0];
           setPerspectiveTab(perspectiveMap[firstActivePerspective]?.index || 0);
@@ -439,7 +439,7 @@ const TemplateReview = () => {
   // Handle perspective tab changes
   const handlePerspectiveTabChange = (newValue) => {
     setPerspectiveTab(newValue);
-    
+
     // Update newQuestion to use the selected perspective
     const perspectiveKey = getPerspectiveKeyFromIndex(newValue);
     setNewQuestion({
@@ -451,7 +451,7 @@ const TemplateReview = () => {
   // Get questions filtered by the current perspective
   const getQuestionsForCurrentPerspective = () => {
     if (!template || !template.questions) return [];
-    
+
     const currentPerspective = getPerspectiveKeyFromIndex(perspectiveTab);
     return template.questions.filter(q => q.perspective === currentPerspective);
   };
@@ -459,7 +459,7 @@ const TemplateReview = () => {
   // Group questions by category
   const groupQuestionsByCategory = (questions) => {
     const grouped = {};
-    
+
     questions.forEach(question => {
       const category = question.category || 'General';
       if (!grouped[category]) {
@@ -467,40 +467,40 @@ const TemplateReview = () => {
       }
       grouped[category].push(question);
     });
-    
+
     // Sort questions by order within each category
     Object.keys(grouped).forEach(category => {
       grouped[category].sort((a, b) => a.order - b.order);
     });
-    
+
     return grouped;
   };
 
   // Handle drag and drop reordering
   const handleDragEnd = (result) => {
     if (!result.destination) return;
-    
+
     const currentPerspective = getPerspectiveKeyFromIndex(perspectiveTab);
     const questionsForPerspective = template.questions.filter(q => q.perspective === currentPerspective);
-    
+
     const sourceIndex = result.source.index;
     const destIndex = result.destination.index;
-    
+
     // Create a new array with the reordered questions
     const reorderedPerspectiveQuestions = [...questionsForPerspective];
     const [reorderedItem] = reorderedPerspectiveQuestions.splice(sourceIndex, 1);
     reorderedPerspectiveQuestions.splice(destIndex, 0, reorderedItem);
-    
+
     // Update order property for the reordered perspective questions
     const updatedPerspectiveQuestions = reorderedPerspectiveQuestions.map((item, index) => ({
       ...item,
       order: index + 1
     }));
-    
+
     // Combine with questions from other perspectives
     const otherQuestions = template.questions.filter(q => q.perspective !== currentPerspective);
     const allUpdatedQuestions = [...otherQuestions, ...updatedPerspectiveQuestions];
-    
+
     setTemplate({
       ...template,
       questions: allUpdatedQuestions
@@ -516,34 +516,34 @@ const TemplateReview = () => {
 
   // Handle saving edited question
   const handleSaveQuestion = () => {
-    const updatedQuestions = template.questions.map(q => 
+    const updatedQuestions = template.questions.map(q =>
       q.id === editingQuestion.id ? editingQuestion : q
     );
-    
+
     setTemplate({
       ...template,
       questions: updatedQuestions
     });
-    
+
     setEditingQuestion(null);
   };
 
   // Handle deleting a question
   const handleDeleteQuestion = (questionId) => {
     const currentPerspective = getPerspectiveKeyFromIndex(perspectiveTab);
-    
+
     // First, filter out the deleted question
     const updatedQuestions = template.questions.filter(q => q.id !== questionId);
-    
+
     // Then, reorder the questions within the current perspective
     const perspectiveQuestions = updatedQuestions.filter(q => q.perspective === currentPerspective);
     const otherQuestions = updatedQuestions.filter(q => q.perspective !== currentPerspective);
-    
+
     const reorderedPerspectiveQuestions = perspectiveQuestions.map((q, index) => ({
       ...q,
       order: index + 1
     }));
-    
+
     setTemplate({
       ...template,
       questions: [...otherQuestions, ...reorderedPerspectiveQuestions]
@@ -553,22 +553,22 @@ const TemplateReview = () => {
   // Handle adding a new question
   const handleAddQuestion = () => {
     if (!newQuestion.text.trim()) return;
-    
+
     const currentPerspective = getPerspectiveKeyFromIndex(perspectiveTab);
     const perspectiveQuestions = template.questions.filter(q => q.perspective === currentPerspective);
-    
+
     const questionToAdd = {
       ...newQuestion,
       perspective: currentPerspective,
       _id: `temp_${Date.now()}`, // Temporary ID until saved to backend
       order: perspectiveQuestions.length + 1
     };
-    
+
     setTemplate({
       ...template,
       questions: [...template.questions, questionToAdd]
     });
-    
+
     setNewQuestion({
       text: '',
       type: 'rating',
@@ -576,7 +576,7 @@ const TemplateReview = () => {
       perspective: currentPerspective,
       required: true
     });
-    
+
     setShowNewQuestionForm(false);
   };
 
@@ -584,7 +584,7 @@ const TemplateReview = () => {
   const handleAddCategory = (categoryName) => {
     if (!categoryName.trim()) return;
     if (categories.includes(categoryName)) return;
-    
+
     setCategories([...categories, categoryName]);
   };
 
@@ -597,7 +597,7 @@ const TemplateReview = () => {
         [field]: value
       }
     };
-    
+
     setTemplate({
       ...template,
       perspectiveSettings: updatedSettings
@@ -609,15 +609,15 @@ const TemplateReview = () => {
     try {
       setReAnalyzing(true);
       setReAnalysisResult(null);
-      
+
       const response = await api.post(`/templates/${id}/reanalyze`);
-      
+
       setTemplate(response.data.template);
       setReAnalysisResult({
         success: true,
         message: response.data.message
       });
-      
+
     } catch (err) {
       console.error('Re-analysis error:', err);
       setReAnalysisResult({
@@ -634,14 +634,14 @@ const TemplateReview = () => {
     try {
       setSavingTemplate(true);
       console.log('Saving template:', template.id);
-      
+
       // Prepare the rating scales data
       const preparedRatingScales = ratingScales.map(scale => {
         // Remove the _id property if it exists (it's only for temporary frontend use)
         const { _id, ...scaleData } = scale;
         return scaleData;
       });
-      
+
       await templatesApi.update(id, {
         name: template.name,
         description: template.description,
@@ -652,7 +652,7 @@ const TemplateReview = () => {
         perspectiveSettings: template.perspectiveSettings,
         ratingScales: preparedRatingScales
       });
-      
+
       // Navigate back to templates list
       navigate('/templates');
     } catch (err) {
@@ -662,13 +662,13 @@ const TemplateReview = () => {
       setSavingTemplate(false);
     }
   };
-  
+
   // Update the handleApproveTemplate function
   const handleApproveTemplate = async () => {
     try {
       setSavingTemplate(true);
       console.log('Approving template:', id);
-      
+
       // Prepare questions data - ensure all questions have the proper format
       const formattedQuestions = template.questions.map(q => {
         // Remove _id property which is only for frontend use
@@ -684,14 +684,14 @@ const TemplateReview = () => {
           ratingScaleId: q.ratingScaleId
         };
       });
-      
+
       // Prepare the rating scales data
       const preparedRatingScales = ratingScales.map(scale => {
         // Remove the _id property if it exists (it's only for temporary frontend use)
         const { _id, ...scaleData } = scale;
         return scaleData;
       });
-      
+
       // Use templatesApi instead of direct api call to avoid the double /api/ prefix
       const response = await templatesApi.approve(id, {
         name: template.name,
@@ -701,9 +701,9 @@ const TemplateReview = () => {
         questions: formattedQuestions,
         ratingScales: preparedRatingScales
       });
-      
+
       console.log('Template approved successfully:', response.data);
-      
+
       // Navigate back to templates list
       navigate('/templates');
     } catch (err) {
@@ -729,7 +729,7 @@ const TemplateReview = () => {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4" role="alert">
           <p>{error}</p>
         </div>
-        <button 
+        <button
           className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
           onClick={() => navigate('/templates')}
         >
@@ -750,13 +750,15 @@ const TemplateReview = () => {
     .sort((a, b) => perspectiveMap[a].index - perspectiveMap[b].index);
 
   return (
-    <div className="max-w-4xl mx-auto my-4">
+    // Added pb-24 (padding-bottom: 6rem) to the main container to prevent content
+    // from being hidden behind the fixed action bar. Adjust value if needed.
+    <div className="max-w-4xl mx-auto my-4 pb-24">
       {/* Header Section */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-1">
           {showSettings ? 'Template Settings' : 'Review Template'}
         </h1>
-        
+
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
           <div>
             <p className="text-gray-500">
@@ -768,7 +770,7 @@ const TemplateReview = () => {
               >
                 {template.status === 'pending_review' ? 'Pending Review' : 'Approved'}
               </span>
-              
+
               {/* Generation Method Badge */}
               {template.generatedBy === 'flux_ai_direct' && (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
@@ -808,41 +810,14 @@ const TemplateReview = () => {
               )}
             </div>
           </div>
-          
+
           <div className="mt-4 sm:mt-0">
-            <button 
-              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
-              onClick={() => navigate('/templates')}
-            >
-              Cancel
-            </button>
-            
-            <button
-              className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center inline-flex
-                ${(savingTemplate || template.questions.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
-              onClick={() => setConfirmDialogOpen(true)}
-              disabled={savingTemplate || template.questions.length === 0}
-            >
-              {savingTemplate ? (
-                <>
-                  <svg className="animate-spin h-4 w-4 mr-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-1" />
-                  Approve Template
-                </>
-              )}
-            </button>
+            {/* Buttons moved to fixed footer */}
           </div>
         </div>
-        
+
         <div className="border-t border-gray-200 my-4" />
-        
+
         {/* Template Base Info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
@@ -857,7 +832,7 @@ const TemplateReview = () => {
               className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
-          
+
           <div>
             <label htmlFor="department" className="block text-sm font-medium text-gray-500 mb-1">
               Department / Function
@@ -871,7 +846,7 @@ const TemplateReview = () => {
               placeholder="e.g., Finance, Engineering, Marketing"
             />
           </div>
-          
+
           <div className="md:col-span-2">
             <label htmlFor="purpose" className="block text-sm font-medium text-gray-500 mb-1">
               Template Purpose
@@ -885,7 +860,7 @@ const TemplateReview = () => {
               rows={2}
             />
           </div>
-          
+
           <div className="md:col-span-2">
             <label htmlFor="description" className="block text-sm font-medium text-gray-500 mb-1">
               Description
@@ -899,7 +874,7 @@ const TemplateReview = () => {
             />
           </div>
         </div>
-        
+
         {/* Template Actions */}
         <div className="flex justify-between items-center mb-6">
           <button
@@ -909,8 +884,8 @@ const TemplateReview = () => {
             <Settings className="h-4 w-4 mr-1" />
             {showSettings ? 'Back to Questions' : 'Template Settings'}
           </button>
-          
-          {!showSettings && (
+
+          {!showSettings && (template.generatedBy?.includes('ai') || (template.sourceDocuments && template.sourceDocuments.length > 0)) && (
             <button
               className={`px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 flex items-center
                 ${reAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -929,10 +904,10 @@ const TemplateReview = () => {
             </button>
           )}
         </div>
-        
+
         {/* Re-analysis Result Alert */}
         {reAnalysisResult && (
-          <div 
+          <div
             className={`mb-6 p-4 rounded-md flex ${
               reAnalysisResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
             }`}
@@ -960,7 +935,7 @@ const TemplateReview = () => {
           </div>
         )}
       </div>
-      
+
       {/* Settings or Questions Content */}
       {showSettings ? (
         /* Settings Content */
@@ -1009,7 +984,7 @@ const TemplateReview = () => {
               </button>
             </nav>
           </div>
-          
+
           {/* Settings Tab Panels */}
           {/* Perspectives Tab */}
           <div className={`p-6 ${settingsTab !== 0 ? 'hidden' : ''}`}>
@@ -1017,12 +992,12 @@ const TemplateReview = () => {
             <p className="text-sm text-gray-500 mb-4">
               Configure which perspectives are included in this assessment and how many questions each should have.
             </p>
-            
+
             <div className="border border-gray-200 rounded-lg p-4 mb-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {Object.keys(perspectiveMap).map(perspective => (
-                  <div 
-                    key={perspective} 
+                  <div
+                    key={perspective}
                     className={`border border-gray-200 rounded-lg p-4 ${
                       !template.perspectiveSettings[perspective]?.enabled ? 'opacity-60' : ''
                     }`}
@@ -1030,20 +1005,20 @@ const TemplateReview = () => {
                     <div className="flex justify-between items-center mb-2">
                       <h3 className="font-medium">{perspectiveMap[perspective].name}</h3>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
+                        <input
                           type="checkbox"
                           className="sr-only peer"
                           checked={template.perspectiveSettings[perspective]?.enabled || false}
                           onChange={(e) => handlePerspectiveSettingChange(
-                            perspective, 
-                            'enabled', 
+                            perspective,
+                            'enabled',
                             e.target.checked
                           )}
                         />
                         <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
-                    
+
                     <div>
                       <label htmlFor={`${perspective}-count`} className="block text-sm font-medium text-gray-500 mb-1">
                         Question Count
@@ -1063,7 +1038,7 @@ const TemplateReview = () => {
                         className="w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                       />
                     </div>
-                    
+
                     <p className="text-xs text-gray-500 mt-2">
                       Current: {template.questions.filter(q => q.perspective === perspective).length} questions
                     </p>
@@ -1072,31 +1047,32 @@ const TemplateReview = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Rating Scales Tab */}
           <div className={`p-6 ${settingsTab !== 1 ? 'hidden' : ''}`}>
             <RatingScaleEditor
               scales={ratingScales}
               setScales={setRatingScales}
+              // Pass handleSaveTemplate to RatingScaleEditor if changes there should trigger main save
             />
           </div>
-          
+
           {/* Documents Tab */}
           <div className={`p-6 ${settingsTab !== 2 ? 'hidden' : ''}`}>
             <h2 className="text-lg font-semibold mb-2">Source Documents</h2>
-            
+
             {template.sourceDocuments && template.sourceDocuments.length > 0 ? (
               <div>
                 <p className="text-sm text-gray-500 mb-4">
                   These documents were used to generate the template questions. You can re-analyze them to generate additional questions.
                 </p>
-                
+
                 <div className="border border-gray-200 rounded-lg p-4">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-medium">
                       Source Documents ({template.sourceDocuments.length})
                     </h3>
-                    
+
                     <button
                       className={`px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 flex items-center text-sm
                         ${reAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -1114,15 +1090,15 @@ const TemplateReview = () => {
                       Re-analyze with AI
                     </button>
                   </div>
-                  
+
                   <div className="border-t border-gray-200 my-2" />
-                  
+
                   {template.lastAnalysisDate && (
                     <p className="text-sm text-gray-500 mb-4">
                       Last analyzed: {new Date(template.lastAnalysisDate).toLocaleString()}
                     </p>
                   )}
-                  
+
                   <div className="space-y-2">
                     {template.sourceDocuments.map((doc, index) => (
                       <div key={doc.id || index} className="border border-gray-200 rounded p-3 flex items-center">
@@ -1157,7 +1133,7 @@ const TemplateReview = () => {
             <h2 className="text-xl font-semibold">
               Questions ({template.questions.length})
             </h2>
-            
+
             <button
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
               onClick={() => setShowNewQuestionForm(true)}
@@ -1166,7 +1142,7 @@ const TemplateReview = () => {
               Add Question
             </button>
           </div>
-          
+
           {/* Perspective Tabs */}
           <div className="border-b border-gray-200 mb-6">
             <nav className="-mb-px flex space-x-4 overflow-x-auto">
@@ -1186,26 +1162,26 @@ const TemplateReview = () => {
               ))}
             </nav>
           </div>
-          
+
           {/* Questions for Current Perspective */}
           <div className="mt-4">
             {activePerspectives.map(perspective => {
               const perspectiveIndex = perspectiveMap[perspective].index;
               const filteredQuestions = template.questions.filter(q => q.perspective === perspective);
               const questionsByCategory = groupQuestionsByCategory(filteredQuestions);
-              
+
               return (
                 <div key={perspective} className={perspectiveTab !== perspectiveIndex ? 'hidden' : ''}>
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-medium">
                       {perspectiveMap[perspective].name}
                     </h3>
-                    
+
                     <p className="text-sm text-gray-500">
                       {filteredQuestions.length} questions in this perspective
                     </p>
                   </div>
-                  
+
                   {Object.keys(questionsByCategory).length === 0 ? (
                     <div className="bg-gray-50 p-6 text-center rounded-lg">
                       <p className="text-gray-600 mb-4">
@@ -1236,7 +1212,7 @@ const TemplateReview = () => {
                             {categoryQuestions.length} questions
                           </span>
                         </div>
-                        
+
                         <DragDropContext onDragEnd={handleDragEnd}>
                           <Droppable droppableId={`${perspective}-${category}`}>
                             {(provided) => (
@@ -1276,7 +1252,7 @@ const TemplateReview = () => {
                                                 rows={2}
                                               />
                                             </div>
-                                            
+
                                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                               <div>
                                                 <label htmlFor="questionType" className="block text-sm font-medium text-gray-500 mb-1">
@@ -1296,7 +1272,7 @@ const TemplateReview = () => {
                                                   <option value="multiple_choice">Multiple Choice</option>
                                                 </select>
                                               </div>
-                                              
+
                                               <div>
                                                 <label htmlFor="category" className="block text-sm font-medium text-gray-500 mb-1">
                                                   Category
@@ -1310,7 +1286,7 @@ const TemplateReview = () => {
                                                       ...editingQuestion,
                                                       category: categoryValue
                                                     });
-                                                    
+
                                                     if (categoryValue && !categories.includes(categoryValue)) {
                                                       handleAddCategory(categoryValue);
                                                     }
@@ -1325,7 +1301,7 @@ const TemplateReview = () => {
                                                   ))}
                                                 </select>
                                               </div>
-                                              
+
                                               {editingQuestion.type === 'rating' && ratingScales.length > 0 && (
                                                 <div>
                                                   <label htmlFor="ratingScale" className="block text-sm font-medium text-gray-500 mb-1">
@@ -1349,10 +1325,10 @@ const TemplateReview = () => {
                                                   </select>
                                                 </div>
                                               )}
-                                              
+
                                               <div className="flex items-center">
                                                 <label className="relative inline-flex items-center cursor-pointer mt-5">
-                                                  <input 
+                                                  <input
                                                     type="checkbox"
                                                     className="sr-only peer"
                                                     checked={editingQuestion.required}
@@ -1366,7 +1342,7 @@ const TemplateReview = () => {
                                                 </label>
                                               </div>
                                             </div>
-                                            
+
                                             <div className="flex justify-end mt-4">
                                               <button
                                                 className="px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
@@ -1391,24 +1367,24 @@ const TemplateReview = () => {
                                                 <p className="text-gray-900 font-medium mb-2">
                                                   {question.text}
                                                 </p>
-                                                
+
                                                 <div className="flex flex-wrap gap-2">
-                                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                                    ${question.type === 'rating' ? 'bg-blue-100 text-blue-800' : 
-                                                      question.type === 'open_ended' ? 'bg-green-100 text-green-800' : 
+                                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                    ${question.type === 'rating' ? 'bg-blue-100 text-blue-800' :
+                                                      question.type === 'open_ended' ? 'bg-green-100 text-green-800' :
                                                       'bg-purple-100 text-purple-800'}`}
                                                   >
-                                                    {question.type === 'rating' ? 'Rating Scale' : 
-                                                     question.type === 'open_ended' ? 'Open Ended' : 
+                                                    {question.type === 'rating' ? 'Rating Scale' :
+                                                     question.type === 'open_ended' ? 'Open Ended' :
                                                      'Multiple Choice'}
                                                   </span>
-                                                  
+
                                                   {question.category && (
                                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                                                       {question.category}
                                                     </span>
                                                   )}
-                                                  
+
                                                   {question.required && (
                                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
                                                       Required
@@ -1416,7 +1392,7 @@ const TemplateReview = () => {
                                                   )}
                                                 </div>
                                               </div>
-                                              
+
                                               <div className="ml-4 flex-shrink-0 flex">
                                                 <button
                                                   className="text-gray-400 hover:text-blue-600 p-1"
@@ -1446,7 +1422,7 @@ const TemplateReview = () => {
                       </div>
                     ))
                   )}
-                  
+
                   {/* Add Question Button for Non-Empty Perspective */}
                   {Object.keys(questionsByCategory).length > 0 && (
                     <div className="mt-6 text-center">
@@ -1469,7 +1445,7 @@ const TemplateReview = () => {
               );
             })}
           </div>
-          
+
           {/* New Question Form */}
           {showNewQuestionForm && (
             <div className="mt-8 border-t border-gray-200 pt-6">
@@ -1478,7 +1454,7 @@ const TemplateReview = () => {
                   Add New Question
                 </h3>
               </div>
-              
+
               <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="mb-4">
                   <label htmlFor="newQuestionText" className="block text-sm font-medium text-gray-500 mb-1">
@@ -1496,7 +1472,7 @@ const TemplateReview = () => {
                     required
                   />
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label htmlFor="newQuestionType" className="block text-sm font-medium text-gray-500 mb-1">
@@ -1516,7 +1492,7 @@ const TemplateReview = () => {
                       <option value="multiple_choice">Multiple Choice</option>
                     </select>
                   </div>
-                  
+
                   <div>
                     <label htmlFor="newQuestionPerspective" className="block text-sm font-medium text-gray-500 mb-1">
                       Perspective
@@ -1538,7 +1514,7 @@ const TemplateReview = () => {
                       ))}
                     </select>
                   </div>
-                  
+
                   <div>
                     <label htmlFor="newCategory" className="block text-sm font-medium text-gray-500 mb-1">
                       Category
@@ -1552,7 +1528,7 @@ const TemplateReview = () => {
                           ...newQuestion,
                           category: categoryValue
                         });
-                        
+
                         if (categoryValue && !categories.includes(categoryValue)) {
                           handleAddCategory(categoryValue);
                         }
@@ -1567,7 +1543,7 @@ const TemplateReview = () => {
                       ))}
                     </select>
                   </div>
-                  
+
                   {newQuestion.type === 'rating' && ratingScales.length > 0 && (
                     <div>
                       <label htmlFor="newRatingScale" className="block text-sm font-medium text-gray-500 mb-1">
@@ -1591,10 +1567,10 @@ const TemplateReview = () => {
                       </select>
                     </div>
                   )}
-                  
+
                   <div className="flex items-center">
                     <label className="relative inline-flex items-center cursor-pointer mt-5">
-                      <input 
+                      <input
                         type="checkbox"
                         className="sr-only peer"
                         checked={newQuestion.required}
@@ -1608,7 +1584,7 @@ const TemplateReview = () => {
                     </label>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-end mt-4">
                   <button
                     className="px-3 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
@@ -1631,25 +1607,26 @@ const TemplateReview = () => {
           )}
         </div>
       )}
-      
-      {/* Floating action bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 flex justify-between z-10">
+
+      {/* Floating action bar - UPDATED LINE BELOW */}
+      <div className="fixed bottom-0 md:left-64 left-0 right-0 bg-white border-t border-gray-200 p-4 flex justify-between z-10 shadow-up">
+        {/* Added shadow-up for better visibility */}
         <button
           className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
           onClick={() => navigate('/templates')}
         >
           Cancel
         </button>
-        
+
         <div>
           <button
             className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 mr-2"
             onClick={handleSaveTemplate}
             disabled={savingTemplate}
           >
-            Save Draft
+            {savingTemplate ? 'Saving...' : 'Save Draft'}
           </button>
-          
+
           <button
             className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center inline-flex
               ${(savingTemplate || template.questions.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -1673,7 +1650,7 @@ const TemplateReview = () => {
           </button>
         </div>
       </div>
-      
+
       {/* Confirmation Dialog */}
       {confirmDialogOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -1681,9 +1658,9 @@ const TemplateReview = () => {
             <div className="fixed inset-0 transition-opacity" onClick={() => setConfirmDialogOpen(false)}>
               <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
             </div>
-  
+
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-  
+
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="sm:flex sm:items-start">
@@ -1698,17 +1675,19 @@ const TemplateReview = () => {
                 </div>
               </div>
               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="w-full inline-flex justify-center rounded border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
                   onClick={handleApproveTemplate}
+                  disabled={savingTemplate} // Disable button while processing
                 >
-                  Approve
+                  {savingTemplate ? 'Approving...' : 'Approve'}
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="mt-3 w-full inline-flex justify-center rounded border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
                   onClick={() => setConfirmDialogOpen(false)}
+                  disabled={savingTemplate} // Disable cancel while processing
                 >
                   Cancel
                 </button>
