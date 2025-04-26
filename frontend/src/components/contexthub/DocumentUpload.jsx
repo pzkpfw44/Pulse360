@@ -83,7 +83,12 @@ const DocumentUpload = ({ onDocumentUploaded }) => {
       console.error('Error uploading documents:', error);
       
       // Extract detailed error message if available
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Error uploading documents';
+      let errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Error uploading documents';
+      
+      // Check for storage limit error
+      if (errorMessage.includes('storage') || errorMessage.includes('space')) {
+        errorMessage = 'Insufficient storage space in Flux AI account. Please delete some files from Settings > Flux AI > Storage Management.';
+      }
       
       setUploadStatus({
         success: false,

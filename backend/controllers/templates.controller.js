@@ -624,10 +624,17 @@ exports.generateConfiguredTemplate = async (req, res) => {
       userId: req.user.id
     });
 
-    // Find the documents
+    // Find the documents WITH their FluxAI file IDs
     const documents = await Document.findAll({
-      where: { id: documentIds }
+      where: { id: documentIds },
+      attributes: ['id', 'filename', 'path', 'fluxAiFileId', 'status', 'documentType']
     });
+
+    console.log('Found documents with FluxAI file IDs:', documents.map(d => ({ 
+      id: d.id, 
+      filename: d.filename, 
+      fluxAiFileId: d.fluxAiFileId 
+    })));
 
     if (documents.length === 0) {
       return res.status(404).json({ message: 'No documents found with the provided IDs' });
@@ -1710,11 +1717,12 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
       try {
         // If the document already has a fluxAiFileId, reuse it
         if (document.fluxAiFileId) {
-          console.log(`Reusing existing Flux AI file ID for document ${document.id}: ${document.fluxAiFileId}`);
+          console.log(`REUSING EXISTING Flux AI file ID for document ${document.id}: ${document.fluxAiFileId}`);
           fileIds.push(document.fluxAiFileId);
           continue;
         }
 
+        console.log(`Document ${document.id} has NO fluxAiFileId, will need to upload`);
         const filePath = document.path;
         console.log('Uploading file:', filePath);
 
@@ -1878,27 +1886,65 @@ async function startDocumentAnalysis(documents, documentType, userId, templateIn
       createdBy: userId
     });
 
+    // Log found questions and check if we have enough for each perspective
     console.log(`Found ${totalQuestions} questions from AI response, balancing by perspective`);
+
+    // Import the necessary services
+    const { deduplicateQuestions } = require('../services/question-parser.service');
+    const { generateFallbackQuestions } = require('../services/fallback-questions.service');
+
+    // First, deduplicate all questions by perspective
+    console.log('Deduplicating questions within each perspective');
+    const perspectiveQuestions = {};
+
+    for (const perspective in parsedQuestions) {
+      if (parsedQuestions[perspective] && parsedQuestions[perspective].length > 0) {
+        // Deduplicate within each perspective
+        perspectiveQuestions[perspective] = deduplicateQuestions(parsedQuestions[perspective]);
+        console.log(`Perspective ${perspective}: ${parsedQuestions[perspective].length} raw questions → ${perspectiveQuestions[perspective].length} after deduplication`);
+      } else {
+        perspectiveQuestions[perspective] = [];
+      }
+    }
 
     // Balance questions by perspective
     const allQuestions = [];
     console.log('Balancing questions by perspective settings');
-    for (const perspective in parsedQuestions) {
+
+    for (const perspective in template.perspectiveSettings) {
+      // Skip disabled perspectives
       if (!template.perspectiveSettings[perspective]?.enabled) {
         console.log(`Perspective ${perspective} is disabled, skipping questions`);
         continue;
       }
-      const targetCount = template.perspectiveSettings[perspective]?.questionCount || 10; // Default if undefined
-      const availableQuestions = parsedQuestions[perspective] || [];
+      
+      const targetCount = template.perspectiveSettings[perspective]?.questionCount || 10;
+      const availableQuestions = perspectiveQuestions[perspective] || [];
       console.log(`Perspective ${perspective}: Target count ${targetCount}, available ${availableQuestions.length}`);
 
-      // Select questions based on target count (simplified logic: take up to target count)
-       const questionsToUse = availableQuestions.slice(0, targetCount);
-      // A more robust implementation might randomly select or prioritize
-
-      allQuestions.push(...questionsToUse);
+      if (availableQuestions.length === 0) {
+        console.log(`Perspective ${perspective}: generating ${targetCount} generic questions (none available)`);
+        // Generate fallback questions for this perspective
+        const fallbackQuestions = generateFallbackQuestions(perspective, targetCount, documentType, allQuestions);
+        allQuestions.push(...fallbackQuestions);
+      } else if (availableQuestions.length < targetCount) {
+        console.log(`Perspective ${perspective}: found ${availableQuestions.length} questions, need ${targetCount-availableQuestions.length} more`);
+        // Use available questions and add some fallback ones to reach the target
+        const neededCount = targetCount - availableQuestions.length;
+        const fallbackQuestions = generateFallbackQuestions(perspective, neededCount, documentType, [...allQuestions, ...availableQuestions]);
+        allQuestions.push(...availableQuestions, ...fallbackQuestions);
+      } else {
+        console.log(`Perspective ${perspective}: selecting ${targetCount} questions from ${availableQuestions.length} available`);
+        // We have enough questions, select the required number
+        const questionsToUse = availableQuestions.slice(0, targetCount);
+        allQuestions.push(...questionsToUse);
+      }
     }
-    console.log(`Balanced questions: ${allQuestions.length} total questions`);
+
+    // Final deduplication to ensure no duplicates across perspectives
+    const uniqueQuestions = deduplicateQuestions(allQuestions);
+
+    console.log(`Balanced questions: ${uniqueQuestions.length} total questions after deduplication`);
 
 
     // Create questions in DB
