@@ -17,16 +17,28 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
     fetchEmployees();
   }, []);
 
+   // Update parent data when local state changes
+  useEffect(() => {
+    const employee = employees.find(e => e.id === selectedEmployee);
+    onDataChange({
+      targetEmployeeId: selectedEmployee,
+      targetEmployeeDetails: employee,
+      name: campaignName,
+      description: campaignDescription
+    });
+  }, [selectedEmployee, campaignName, campaignDescription, employees, onDataChange]);
+
+
   const fetchEmployees = async () => {
     try {
       setLoading(true);
       const response = await api.get('/employees');
-      
+
       // Filter to active employees only
       const activeEmployees = response.data.employees
         ? response.data.employees.filter(e => e.status !== 'inactive')
         : [];
-      
+
       setEmployees(activeEmployees);
       setError(null);
     } catch (err) {
@@ -39,35 +51,21 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
 
   const handleEmployeeSelect = (employeeId) => {
     setSelectedEmployee(employeeId);
-    
+
     // Find the employee details
     const employee = employees.find(e => e.id === employeeId);
-    
+
     // If no campaign name set yet, suggest one based on employee name
     if (!campaignName && employee) {
       setCampaignName(`${employee.firstName} ${employee.lastName} - 360 Feedback`);
+      // No need to call onDataChange here, useEffect handles it
+    } else {
+       // Still need to update parent if name doesn't change but selection does
+       onDataChange({ targetEmployeeId: employeeId, targetEmployeeDetails: employee });
     }
-    
-    onDataChange({ 
-      targetEmployeeId: employeeId,
-      targetEmployeeDetails: employee, // Store the full employee details
-      name: campaignName,
-      description: campaignDescription
-    });
   };
 
-  const handleNextClick = () => {
-    if (selectedEmployee && campaignName) {
-      const employee = employees.find(e => e.id === selectedEmployee);
-      
-      onNext({ 
-        targetEmployeeId: selectedEmployee,
-        targetEmployeeDetails: employee, // Include full employee details
-        name: campaignName,
-        description: campaignDescription
-      });
-    }
-  };
+  // Removed handleNextClick function as the button is removed.
 
   // Filter employees based on search term
   const filteredEmployees = employees.filter(employee =>
@@ -92,7 +90,7 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4" role="alert">
           <p>{error}</p>
         </div>
-        <button 
+        <button
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
           onClick={fetchEmployees}
         >
@@ -114,7 +112,7 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
       {/* Campaign basic info */}
       <div className="bg-gray-50 p-4 rounded-lg mb-6">
         <h3 className="font-medium text-gray-900 mb-3">Campaign Information</h3>
-        
+
         <div className="mb-4">
           <label htmlFor="campaignName" className="block text-sm font-medium text-gray-700 mb-1">
             Campaign Name <span className="text-red-500">*</span>
@@ -124,14 +122,11 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
             id="campaignName"
             className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             value={campaignName}
-            onChange={(e) => {
-              setCampaignName(e.target.value);
-              onDataChange({ name: e.target.value });
-            }}
+            onChange={(e) => setCampaignName(e.target.value)} // useEffect handles onDataChange
             required
           />
         </div>
-        
+
         <div>
           <label htmlFor="campaignDescription" className="block text-sm font-medium text-gray-700 mb-1">
             Description (Optional)
@@ -141,10 +136,7 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
             rows="3"
             className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             value={campaignDescription}
-            onChange={(e) => {
-              setCampaignDescription(e.target.value);
-              onDataChange({ description: e.target.value });
-            }}
+            onChange={(e) => setCampaignDescription(e.target.value)} // useEffect handles onDataChange
             placeholder="Brief description of this feedback campaign's purpose"
           />
         </div>
@@ -227,19 +219,8 @@ const TargetSelection = ({ data, onDataChange, onNext }) => {
         </div>
       )}
 
-      <div className="flex justify-end mt-6">
-        <button
-          onClick={handleNextClick}
-          disabled={!selectedEmployee || !campaignName}
-          className={`px-4 py-2 text-white rounded-md ${
-            selectedEmployee && campaignName
-              ? 'bg-blue-600 hover:bg-blue-700'
-              : 'bg-gray-300 cursor-not-allowed'
-          }`}
-        >
-          Next: Select Assessors
-        </button>
-      </div>
+      {/* The redundant button block that was here has been removed */}
+
     </div>
   );
 };

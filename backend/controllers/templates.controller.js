@@ -1894,19 +1894,30 @@ try {
     
     // Create a focused prompt specifically for missing perspectives
     const secondaryPrompt = `
-  I need 360-degree feedback assessment questions ONLY for these specific perspectives:
-  ${missingPerspectives.map(p => `- ${p.replace('_', ' ')}: ${perspectiveSettings[p].questionCount} questions`).join('\n')}
+    I need 360-degree feedback assessment questions ONLY for these specific perspectives:
+    ${missingPerspectives.map(p => `- ${p.replace('_', ' ')}: ${perspectiveSettings[p].questionCount} questions`).join('\n')}
 
-  Based on the document which is a ${documentType.replace('_', ' ')}, please generate appropriate questions.
+    Based on the document which is a ${documentType.replace('_', ' ')}, please generate appropriate questions.
 
-  Format each question as:
-  Question: [Question text]
-  Type: [rating or open_ended]
-  Category: [relevant category]
+    Format each question as:
+    Question: [Question text]
+    Type: [rating or open_ended]
+    Category: [relevant category]
 
-  IMPORTANT: Please ONLY create questions for these specific perspectives:
-  ${missingPerspectives.join(', ')}
-  `;
+    ${missingPerspectives.includes('external') ? `
+    CRITICAL INSTRUCTIONS FOR EXTERNAL STAKEHOLDER QUESTIONS:
+    1. External stakeholder questions evaluate how the person interacts with people OUTSIDE the organization.
+    2. These include clients, vendors, partners, regulators, industry peers, etc.
+    3. Focus on relationship building, communication with externals, professionalism, and reputation.
+    4. Example questions:
+      - "How effectively does this person represent the organization in external interactions?"
+      - "How well does this person build relationships with external stakeholders?"
+      - "How would you rate this person's responsiveness to external requests?"
+    ` : ''}
+
+    IMPORTANT: Please ONLY create questions for these specific perspectives:
+    ${missingPerspectives.join(', ')}
+    `;
 
     try {
       // Make a secondary AI request

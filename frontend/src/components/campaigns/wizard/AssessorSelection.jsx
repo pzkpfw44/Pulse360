@@ -13,7 +13,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
   const [suggestedAssessors, setSuggestedAssessors] = useState(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
-  
+
   // Define relationship colors
   const relationshipColors = {
     'self': 'bg-purple-100 text-purple-800',
@@ -22,6 +22,14 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
     'direct_report': 'bg-amber-100 text-amber-800',
     'external': 'bg-gray-100 text-gray-800'
   };
+
+   // Update parent component whenever selected participants change
+  useEffect(() => {
+    onDataChange({ participants: selectedParticipants });
+    validateSelection(); // Re-validate when participants change
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedParticipants, onDataChange]);
+
 
   // Group participants by relationship type
   const getParticipantsByType = () => {
@@ -32,14 +40,14 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
       direct_report: selectedParticipants.filter(p => p.relationshipType === 'direct_report'),
       external: selectedParticipants.filter(p => p.relationshipType === 'external')
     };
-    
+
     return grouped;
   };
 
   // Generate counts for each relationship type
   const getCounts = () => {
     const grouped = getParticipantsByType();
-    
+
     return {
       self: {
         current: grouped.self.length,
@@ -73,19 +81,19 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
   const validateSelection = () => {
     const counts = getCounts();
     const errors = {};
-    
+
     if (!counts.self.complete) {
       errors.self = 'Self-assessment is required';
     }
-    
+
     if (!counts.manager.complete) {
       errors.manager = 'At least one manager is required';
     }
-    
+
     if (!counts.peer.complete) {
       errors.peer = 'At least three peers are required';
     }
-    
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -93,11 +101,12 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
   // Fetch employees on component mount
   useEffect(() => {
     fetchEmployees();
-    
+
     // If target employee and template are selected, get AI suggestions
     if (data.targetEmployeeId && data.templateId) {
       getSuggestedAssessors();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.targetEmployeeId, data.templateId]);
 
   // Initialize selected participants from data
@@ -114,7 +123,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
       const hasSelfAssessment = selectedParticipants.some(
         p => p.relationshipType === 'self'
       );
-      
+
       if (!hasSelfAssessment) {
         // Add target employee as self-assessor automatically
         const targetAsSelf = {
@@ -128,11 +137,12 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             jobTitle: data.targetEmployeeDetails.jobTitle || ''
           }
         };
-        
+
         setSelectedParticipants(prev => [...prev, targetAsSelf]);
-        onDataChange({ participants: [...selectedParticipants, targetAsSelf] });
+        // No need to call onDataChange here, the other useEffect handles it
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.targetEmployeeId, data.targetEmployeeDetails]);
 
   // Fetch employees
@@ -140,12 +150,12 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
     try {
       setLoading(true);
       const response = await api.get('/employees');
-      
+
       // Filter to active employees only
       const activeEmployees = response.data.employees
         ? response.data.employees.filter(e => e.status !== 'inactive')
         : [];
-      
+
       setEmployees(activeEmployees);
       setError(null);
     } catch (err) {
@@ -164,7 +174,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
         templateId: data.templateId,
         employeeId: data.targetEmployeeId
       });
-      
+
       setSuggestedAssessors(response.data);
     } catch (err) {
       console.error('Error getting suggested assessors:', err);
@@ -176,31 +186,33 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
 
   // Add a participant
   const addParticipant = (employee, relationshipType) => {
+    // Prevent target employee from being added as anything other than Self
+    if (employee.id === data.targetEmployeeId && relationshipType !== 'self') {
+      return; // Do nothing if trying to add target as manager/peer etc.
+    }
+
     // Check if participant already exists
     const existingIndex = selectedParticipants.findIndex(
       p => p.employeeId === employee.id && p.relationshipType === relationshipType
     );
-    
+
     const exists = existingIndex !== -1;
-    
+
     // If exists, REMOVE instead of ignoring
     if (exists) {
-      // Create a new array without the removed participant
-      const updatedParticipants = [...selectedParticipants];
-      updatedParticipants.splice(existingIndex, 1);
-      
+      const updatedParticipants = selectedParticipants.filter((_, index) => index !== existingIndex);
       setSelectedParticipants(updatedParticipants);
-      onDataChange({ participants: updatedParticipants });
+      // useEffect handles onDataChange
       return;
     }
-    
-    // For self, only allow one and replace existing
+
+    // For self, only allow one and replace existing if target employee is being added
     if (relationshipType === 'self') {
       // Remove existing self if any
       const newParticipants = selectedParticipants.filter(
         p => p.relationshipType !== 'self'
       );
-      
+
       const newParticipant = {
         employeeId: employee.id,
         relationshipType,
@@ -212,14 +224,13 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
           jobTitle: employee.jobTitle || ''
         }
       };
-      
+
       const updatedParticipants = [...newParticipants, newParticipant];
       setSelectedParticipants(updatedParticipants);
-      onDataChange({ participants: updatedParticipants });
-      
+       // useEffect handles onDataChange
       return;
     }
-    
+
     // For other relationship types, add to the list
     const newParticipant = {
       employeeId: employee.id,
@@ -232,28 +243,20 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
         jobTitle: employee.jobTitle || ''
       }
     };
-    
-    const updatedParticipants = [...selectedParticipants, newParticipant];
-    setSelectedParticipants(updatedParticipants);
-    onDataChange({ participants: updatedParticipants });
+
+    setSelectedParticipants(prev => [...prev, newParticipant]);
+    // useEffect handles onDataChange
   };
+
 
   // Remove a participant
   const removeParticipant = (participantIndex) => {
     const updatedParticipants = selectedParticipants.filter((_, index) => index !== participantIndex);
     setSelectedParticipants(updatedParticipants);
-    onDataChange({ participants: updatedParticipants });
+    // useEffect handles onDataChange
   };
 
-  // Handle next click
-  const handleNextClick = () => {
-    if (validateSelection()) {
-      onNext({ participants: selectedParticipants });
-    } else {
-      // Scroll to top to show validation errors
-      window.scrollTo(0, 0);
-    }
-  };
+  // Removed handleNextClick function as the button is removed.
 
   // Calculate progress
   const isSelectionComplete = () => {
@@ -285,11 +288,11 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
     // Prevent target employee from being added as anything other than Self
     const isTargetEmployee = employee.id === data.targetEmployeeId;
     const isDisabled = isTargetEmployee && relationshipType !== 'self';
-    
+
     return (
-      <div 
+      <div
         className={`border rounded-lg p-4 ${
-          isSelected ? 'border-blue-500 bg-blue-50' : 
+          isSelected ? 'border-blue-500 bg-blue-50' :
           isDisabled ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed' :
           'border-gray-200 hover:border-blue-300'
         } transition-all`}
@@ -312,6 +315,14 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
           )}
         </div>
         {/* Rest of the card content... */}
+        {employee.jobTitle && (
+         <p className="text-xs text-gray-600 mt-1">{employee.jobTitle}</p>
+        )}
+        {confidence && (
+          <div className="mt-2 text-xs text-gray-500">
+            Confidence: {Math.round(confidence * 100)}%
+          </div>
+        )}
       </div>
     );
   };
@@ -320,11 +331,11 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
   const renderParticipantList = () => {
     const grouped = getParticipantsByType();
     const counts = getCounts();
-    
+
     return (
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-4">Selected Assessors</h3>
-        
+
         {/* Self */}
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
@@ -340,26 +351,28 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
               <span className="text-xs text-red-600">{validationErrors.self}</span>
             )}
           </div>
-          
+
           <div className="bg-gray-50 rounded-lg p-3">
             {grouped.self.length > 0 ? (
               grouped.self.map((participant, index) => (
                 <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
                   <div>
                     <span className="text-sm font-medium">
-                      {participant.employee.firstName} {participant.employee.lastName}
+                       {participant.employee.firstName} {participant.employee.lastName}
                     </span>
                     <span className="text-xs text-gray-500 block">
                       {participant.employee.email}
                     </span>
                   </div>
                   <button
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                    className="text-red-600 hover:text-red-800 transition-colors text-xs"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p =>
                       p.employeeId === participant.employeeId && p.relationshipType === 'self'
                     ))}
+                    // Disable remove if it's the target employee
+                    disabled={participant.employeeId === data.targetEmployeeId}
                   >
-                    Remove
+                    {participant.employeeId === data.targetEmployeeId ? '(Required)' : 'Remove'}
                   </button>
                 </div>
               ))
@@ -368,7 +381,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             )}
           </div>
         </div>
-        
+
         {/* Manager */}
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
@@ -384,7 +397,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
               <span className="text-xs text-red-600">{validationErrors.manager}</span>
             )}
           </div>
-          
+
           <div className="bg-gray-50 rounded-lg p-3">
             {grouped.manager.length > 0 ? (
               grouped.manager.map((participant, index) => (
@@ -398,8 +411,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     </span>
                   </div>
                   <button
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                    className="text-red-600 hover:text-red-800 transition-colors text-xs"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p =>
                       p.employeeId === participant.employeeId && p.relationshipType === 'manager'
                     ))}
                   >
@@ -412,7 +425,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             )}
           </div>
         </div>
-        
+
         {/* Peers */}
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
@@ -428,7 +441,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
               <span className="text-xs text-red-600">{validationErrors.peer}</span>
             )}
           </div>
-          
+
           <div className="bg-gray-50 rounded-lg p-3">
             {grouped.peer.length > 0 ? (
               grouped.peer.map((participant, index) => (
@@ -442,8 +455,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     </span>
                   </div>
                   <button
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                    className="text-red-600 hover:text-red-800 transition-colors text-xs"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p =>
                       p.employeeId === participant.employeeId && p.relationshipType === 'peer'
                     ))}
                   >
@@ -456,7 +469,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             )}
           </div>
         </div>
-        
+
         {/* Direct Reports (if any) */}
         {grouped.direct_report.length > 0 && (
           <div className="mb-4">
@@ -468,7 +481,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                 {counts.direct_report.current}
               </span>
             </div>
-            
+
             <div className="bg-gray-50 rounded-lg p-3">
               {grouped.direct_report.map((participant, index) => (
                 <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
@@ -481,8 +494,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     </span>
                   </div>
                   <button
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                    className="text-red-600 hover:text-red-800 transition-colors text-xs"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p =>
                       p.employeeId === participant.employeeId && p.relationshipType === 'direct_report'
                     ))}
                   >
@@ -493,7 +506,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             </div>
           </div>
         )}
-        
+
         {/* External (if any) */}
         {grouped.external.length > 0 && (
           <div className="mb-4">
@@ -505,21 +518,21 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                 {counts.external.current}
               </span>
             </div>
-            
+
             <div className="bg-gray-50 rounded-lg p-3">
               {grouped.external.map((participant, index) => (
                 <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
                   <div>
                     <span className="text-sm font-medium">
-                      {participant.employee.firstName} {participant.employee.lastName}
+                       {participant.employee.firstName} {participant.employee.lastName}
                     </span>
                     <span className="text-xs text-gray-500 block">
                       {participant.employee.email}
                     </span>
                   </div>
                   <button
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    onClick={() => removeParticipant(selectedParticipants.findIndex(p => 
+                    className="text-red-600 hover:text-red-800 transition-colors text-xs"
+                    onClick={() => removeParticipant(selectedParticipants.findIndex(p =>
                       p.employeeId === participant.employeeId && p.relationshipType === 'external'
                     ))}
                   >
@@ -551,7 +564,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4" role="alert">
           <p>{error}</p>
         </div>
-        <button 
+        <button
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
           onClick={fetchEmployees}
         >
@@ -567,7 +580,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-2">Select Assessors</h2>
         <p className="text-gray-600">
-          Choose the individuals who will provide feedback for {data.targetEmployeeName || 'the target employee'}
+           Choose the individuals who will provide feedback for {data.targetEmployeeDetails?.firstName || 'the target employee'} {data.targetEmployeeDetails?.lastName || ''}
         </p>
       </div>
 
@@ -589,7 +602,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
       {/* Progress Bars */}
       <div className="mb-6 bg-white rounded-lg shadow p-4">
         <h3 className="text-sm font-medium text-gray-700 mb-3">Selection Progress</h3>
-        
+
         <div className="space-y-4">
           {/* Self Assessment */}
           <div>
@@ -600,16 +613,16 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                 </span>
                 <span>{getCounts().self.current}/{getCounts().self.required}</span>
               </div>
-              <span>{getCounts().self.complete ? '✓' : ''}</span>
+              <span className={`${getCounts().self.complete ? 'text-green-500' : 'text-gray-400'}`}>{getCounts().self.complete ? '✓' : ''}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className={`h-2 rounded-full ${getCounts().self.complete ? 'bg-green-500' : 'bg-blue-500'}`}
                 style={{ width: `${Math.min(100, (getCounts().self.current / getCounts().self.required) * 100)}%` }}
               ></div>
             </div>
           </div>
-          
+
           {/* Manager */}
           <div>
             <div className="flex justify-between text-sm mb-1">
@@ -619,16 +632,16 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                 </span>
                 <span>{getCounts().manager.current}/{getCounts().manager.required}</span>
               </div>
-              <span>{getCounts().manager.complete ? '✓' : ''}</span>
+              <span className={`${getCounts().manager.complete ? 'text-green-500' : 'text-gray-400'}`}>{getCounts().manager.complete ? '✓' : ''}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className={`h-2 rounded-full ${getCounts().manager.complete ? 'bg-green-500' : 'bg-blue-500'}`}
                 style={{ width: `${Math.min(100, (getCounts().manager.current / getCounts().manager.required) * 100)}%` }}
               ></div>
             </div>
           </div>
-          
+
           {/* Peers */}
           <div>
             <div className="flex justify-between text-sm mb-1">
@@ -638,10 +651,10 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                 </span>
                 <span>{getCounts().peer.current}/{getCounts().peer.required}</span>
               </div>
-              <span>{getCounts().peer.complete ? '✓' : ''}</span>
+              <span className={`${getCounts().peer.complete ? 'text-green-500' : 'text-gray-400'}`}>{getCounts().peer.complete ? '✓' : ''}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className={`h-2 rounded-full ${getCounts().peer.complete ? 'bg-green-500' : 'bg-blue-500'}`}
                 style={{ width: `${Math.min(100, (getCounts().peer.current / getCounts().peer.required) * 100)}%` }}
               ></div>
@@ -666,7 +679,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             Refresh Suggestions
           </button>
         </div>
-        
+
         {loadingSuggestions ? (
           <div className="flex justify-center py-8">
             <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
@@ -684,7 +697,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     const isSelected = selectedParticipants.some(
                       p => p.employeeId === suggestion.id && p.relationshipType === 'self'
                     );
-                    
+
                     // Convert suggestion to employee format
                     const employee = {
                       id: suggestion.id,
@@ -693,13 +706,13 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                       email: suggestion.email,
                       jobTitle: suggestion.jobTitle
                     };
-                    
+
                     return renderAssessorCard(employee, 'self', isSelected, suggestion.confidence);
                   })}
                 </div>
               </div>
             )}
-            
+
             {/* Managers */}
             {suggestedAssessors.suggestions.manager.length > 0 && (
               <div className="mb-6">
@@ -711,7 +724,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     const isSelected = selectedParticipants.some(
                       p => p.employeeId === suggestion.id && p.relationshipType === 'manager'
                     );
-                    
+
                     // Convert suggestion to employee format
                     const employee = {
                       id: suggestion.id,
@@ -720,13 +733,13 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                       email: suggestion.email,
                       jobTitle: suggestion.jobTitle
                     };
-                    
+
                     return renderAssessorCard(employee, 'manager', isSelected, suggestion.confidence);
                   })}
                 </div>
               </div>
             )}
-            
+
             {/* Peers */}
             {suggestedAssessors.suggestions.peer.length > 0 && (
               <div className="mb-6">
@@ -738,7 +751,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     const isSelected = selectedParticipants.some(
                       p => p.employeeId === suggestion.id && p.relationshipType === 'peer'
                     );
-                    
+
                     // Convert suggestion to employee format
                     const employee = {
                       id: suggestion.id,
@@ -747,13 +760,13 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                       email: suggestion.email,
                       jobTitle: suggestion.jobTitle
                     };
-                    
+
                     return renderAssessorCard(employee, 'peer', isSelected, suggestion.confidence);
                   })}
                 </div>
               </div>
             )}
-            
+
             {/* Direct Reports */}
             {suggestedAssessors.suggestions.direct_report.length > 0 && (
               <div className="mb-6">
@@ -765,7 +778,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     const isSelected = selectedParticipants.some(
                       p => p.employeeId === suggestion.id && p.relationshipType === 'direct_report'
                     );
-                    
+
                     // Convert suggestion to employee format
                     const employee = {
                       id: suggestion.id,
@@ -774,7 +787,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                       email: suggestion.email,
                       jobTitle: suggestion.jobTitle
                     };
-                    
+
                     return renderAssessorCard(employee, 'direct_report', isSelected, suggestion.confidence);
                   })}
                 </div>
@@ -795,7 +808,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
       {/* Manual Selection */}
       <div className="mt-8">
         <h3 className="text-lg font-semibold mb-4">Manual Selection</h3>
-        
+
         <div className="relative mb-6">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-gray-400" />
@@ -808,7 +821,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        
+
         <div className="flex space-x-2 mb-6 overflow-x-auto py-2">
           <button
             className={`px-3 py-1 rounded-full text-sm ${
@@ -851,7 +864,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
             External
           </button>
         </div>
-        
+
         {filteredEmployees.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {filteredEmployees.map((employee) => (
@@ -871,7 +884,7 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                     )}
                   </div>
                 </div>
-                
+
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     onClick={() => addParticipant(employee, 'self')}
@@ -880,6 +893,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                         ? 'bg-purple-600 text-white'
                         : relationshipColors.self
                     }`}
+                    // Disable if this employee is not the target employee
+                    disabled={employee.id !== data.targetEmployeeId}
                   >
                     + Self
                   </button>
@@ -890,6 +905,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                         ? 'bg-blue-600 text-white'
                         : relationshipColors.manager
                     }`}
+                     // Disable if this employee IS the target employee
+                     disabled={employee.id === data.targetEmployeeId}
                   >
                     + Manager
                   </button>
@@ -900,6 +917,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                         ? 'bg-green-600 text-white'
                         : relationshipColors.peer
                     }`}
+                     // Disable if this employee IS the target employee
+                     disabled={employee.id === data.targetEmployeeId}
                   >
                     + Peer
                   </button>
@@ -910,6 +929,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                         ? 'bg-amber-600 text-white'
                         : relationshipColors.direct_report
                     }`}
+                     // Disable if this employee IS the target employee
+                     disabled={employee.id === data.targetEmployeeId}
                   >
                     + Direct Report
                   </button>
@@ -920,6 +941,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
                         ? 'bg-gray-600 text-white'
                         : relationshipColors.external
                     }`}
+                     // Disable if this employee IS the target employee
+                     disabled={employee.id === data.targetEmployeeId}
                   >
                     + External
                   </button>
@@ -934,19 +957,8 @@ const AssessorSelection = ({ data, onDataChange, onNext, onPrev, showValidationE
         )}
       </div>
 
-      <div className="flex justify-end mt-6">
-        <button
-          onClick={handleNextClick}
-          disabled={!isSelectionComplete()}
-          className={`px-4 py-2 text-white rounded-md ${
-            isSelectionComplete()
-              ? 'bg-blue-600 hover:bg-blue-700'
-              : 'bg-gray-300 cursor-not-allowed'
-          }`}
-        >
-          Next: Schedule Campaign
-        </button>
-      </div>
+      {/* The redundant button block that was here has been removed */}
+
     </div>
   );
 };

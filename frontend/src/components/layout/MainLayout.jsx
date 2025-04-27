@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, Link } from 'react-router-dom'; // Link for non-nav elements like the logo
 import {
   Home, Upload, FileText,
   BarChart2, MessageSquare, Database, Settings,
@@ -11,19 +11,18 @@ import NotificationBell from '../ui/NotificationBell';
 import api from "../../services/api";
 
 // Sidebar navigation item component
-const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
-  const location = useLocation();
-  const isActive = location.pathname === href ||
-    (href !== '/' && location.pathname.includes(href));
-
+const SidebarNavItem = ({ href, icon: Icon, title, badge, end = false }) => {
   return (
-    <Link
+    <NavLink
       to={href}
-      className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-        isActive
-          ? 'bg-white/20 text-white'
-          : 'text-white/90 hover:bg-white/10 hover:text-white'
-      }`}
+      end={end}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+          isActive
+            ? 'bg-white/20 text-white' // Active styles
+            : 'text-white/90 hover:bg-white/10 hover:text-white' // Inactive styles
+        }`
+      }
     >
       <Icon className="h-5 w-5" />
       <span className="flex-1">{title}</span>
@@ -32,7 +31,7 @@ const SidebarNavItem = ({ href, icon: Icon, title, badge }) => {
           {badge}
         </span>
       )}
-    </Link>
+    </NavLink>
   );
 };
 

@@ -162,19 +162,6 @@ const TemplateSelection = ({ data, onDataChange, onNext }) => {
         </div>
       )}
 
-      <div className="flex justify-end mt-6">
-        <button
-          onClick={handleNextClick}
-          disabled={!selectedTemplate}
-          className={`px-4 py-2 text-white rounded-md ${
-            selectedTemplate
-              ? 'bg-blue-600 hover:bg-blue-700'
-              : 'bg-gray-300 cursor-not-allowed'
-          }`}
-        >
-          Next: Select Target Employee
-        </button>
-      </div>
     </div>
   );
 };

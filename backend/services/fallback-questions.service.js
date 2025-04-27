@@ -22,109 +22,101 @@ function generateFallbackQuestions(perspective, count, documentType, existingAiQ
   console.log(`Fallback Generator: Initial candidate pool size = ${allCandidateQuestions.length}`);
 
   // --- Step 1: Filter candidates against existing AI questions ---
-  // Create a set of normalized texts from existing AI questions for efficient lookup
   const existingAiTextsNorm = new Set(existingAiQuestions.map(q => q.text.toLowerCase().replace(/[.,?!;:]/g, '').replace(/\s+/g, ' ').trim()));
-
   allCandidateQuestions = allCandidateQuestions.filter(candidate => {
       const candidateTextNorm = candidate.text.toLowerCase().replace(/[.,?!;:]/g, '').replace(/\s+/g, ' ').trim();
-      // Check similarity against existing AI questions
       let isSimilarToExisting = false;
       for (const existingNormText of existingAiTextsNorm) {
-          if (calculateSimilarity(candidateTextNorm, existingNormText) > 0.85) { // Increased threshold
-               // console.log(`Fallback filter: Removed candidate similar to existing AI Q: "${candidate.text}"`);
-               isSimilarToExisting = true;
-               break;
+          if (calculateSimilarity(candidateTextNorm, existingNormText) > 0.85) {
+               isSimilarToExisting = true; break;
           }
       }
-      return !isSimilarToExisting; // Keep candidate only if not too similar to existing AI questions
+      return !isSimilarToExisting;
   });
   console.log(`Fallback Generator -> ${allCandidateQuestions.length} candidates remain after filtering against existing AI questions.`);
 
-
   // --- Step 2: Deduplicate remaining candidates internally ---
   let uniqueInternalCandidates = [];
-  // Use a set to track normalized texts of candidates already added to uniqueInternalCandidates
   const usedInternalTextsNorm = new Set();
-
   for (const question of allCandidateQuestions) {
       const normalizedText = question.text.toLowerCase().replace(/[.,?!;:]/g, '').replace(/\s+/g, ' ').trim();
-      // Check for exact match first against already added unique candidates
       if (!usedInternalTextsNorm.has(normalizedText)) {
-          // If no exact match, check similarity against already added unique candidates
            let tooSimilarToInternal = false;
-           for(const uniqueTextNorm of usedInternalTextsNorm) { // Iterate through the Set of normalized texts
-               if (calculateSimilarity(normalizedText, uniqueTextNorm) > 0.85) { // Increased threshold
-                   tooSimilarToInternal = true;
-                   // console.log(`Fallback internal similarity filter: Skipping "${question.text}" (similar to an existing unique candidate)`);
-                   break;
+           for(const uniqueTextNorm of usedInternalTextsNorm) {
+               if (calculateSimilarity(normalizedText, uniqueTextNorm) > 0.85) {
+                   tooSimilarToInternal = true; break;
                }
            }
-           // Add the candidate if it's not an exact match and not too similar
            if (!tooSimilarToInternal) {
                uniqueInternalCandidates.push(question);
-               usedInternalTextsNorm.add(normalizedText); // Add the normalized text to the set for future checks
+               usedInternalTextsNorm.add(normalizedText);
            }
       }
-      // else: Exact match found, skip.
   }
   console.log(`Fallback Generator -> ${uniqueInternalCandidates.length} candidates remain after internal deduplication (exact & similarity > 0.85).`);
 
-
   // --- Step 3: Shuffle the unique candidates for better diversity in selection ---
-  // Fisher-Yates (Knuth) Shuffle
   for (let i = uniqueInternalCandidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [uniqueInternalCandidates[i], uniqueInternalCandidates[j]] = [uniqueInternalCandidates[j], uniqueInternalCandidates[i]];
   }
-  // console.log(`Fallback Generator -> Shuffled ${uniqueInternalCandidates.length} unique candidates.`);
-
 
   // --- Step 4: Select the required number of questions ---
   let selectedQuestions = uniqueInternalCandidates.slice(0, count);
-  console.log(`Fallback Generator -> Selected ${selectedQuestions.length} fallback questions.`);
-
+  console.log(`Fallback Generator -> Selected ${selectedQuestions.length} fallback questions from unique pool.`);
 
   // --- Step 5: Final check - If still not enough, generate placeholders ---
   if (selectedQuestions.length < count) {
-    console.warn(`Fallback Generator: Could only select ${selectedQuestions.length} unique fallback questions. Generating placeholders for the remaining ${count - selectedQuestions.length}.`);
-    const needed = count - selectedQuestions.length;
-    const areas = ["communication", "teamwork", "leadership", "problem-solving", "decision-making", "customer focus", "adaptability", "results orientation", "strategic thinking", "innovation"];
+    const neededPlaceholders = count - selectedQuestions.length;
+    console.warn(`Fallback Generator: Could only select ${selectedQuestions.length} unique fallbacks. Generating ${neededPlaceholders} placeholders.`);
+    const areas = ["communication", "teamwork", "leadership", "problem-solving", "decision-making", "customer focus", "adaptability", "results orientation", "strategic thinking", "innovation", "collaboration", "planning"]; // Added more areas
     // Track placeholder text to avoid duplicates of placeholders themselves
-    const existingFallbackTexts = new Set(selectedQuestions.map(q => q.text));
+    const existingFallbackTextsNorm = new Set(selectedQuestions.map(q => q.text.toLowerCase().replace(/[.,?!;:]/g, '').replace(/\s+/g, ' ').trim()));
 
-    for (let i = 0; i < needed; i++) {
-      const area = areas[(i + selectedQuestions.length) % areas.length]; // Cycle through areas
-      const placeholderText = `Please rate this person's ${area} skills. [Generic Fallback #${i + 1}]`;
-       if (!existingFallbackTexts.has(placeholderText)) {
-          selectedQuestions.push({
-              text: placeholderText,
-              type: 'rating',
-              category: area.charAt(0).toUpperCase() + area.slice(1),
-              perspective: perspective, // Ensure perspective is set correctly
-              required: true
-          });
-          existingFallbackTexts.add(placeholderText);
-       } else {
-           // If placeholder already exists (small 'needed' count vs areas), create a slightly different one
-           const uniquePlaceholderText = `Please rate this person's ${area} skills (Rating). [Generic Fallback #${i + 1}]`;
-            if (!existingFallbackTexts.has(uniquePlaceholderText)) {
-               selectedQuestions.push({
-                  text: uniquePlaceholderText, type: 'rating', category: area.charAt(0).toUpperCase() + area.slice(1), perspective: perspective, required: true
-               });
-              existingFallbackTexts.add(uniquePlaceholderText);
+    for (let i = 0; i < neededPlaceholders; i++) {
+        let placeholderText = '';
+        let area = '';
+        let attempt = 0;
+        let isUnique = false;
+
+        // Try to generate a unique placeholder
+        while (!isUnique && attempt < areas.length * 2) { // Limit attempts
+            area = areas[(i + selectedQuestions.length + attempt) % areas.length]; // Cycle through areas, add attempt offset
+            const baseText = perspective === 'self'
+                ? `How would you rate your own ${area} skills?`
+                : `Please rate this person's ${area} skills.`;
+
+            placeholderText = `${baseText} [Generic Fallback #${i + 1}${attempt > 0 ? `_v${attempt}` : ''}]`; // Add version if needed
+            const normalizedPlaceholder = placeholderText.toLowerCase().replace(/[.,?!;:]/g, '').replace(/\s+/g, ' ').trim();
+
+            if (!existingFallbackTextsNorm.has(normalizedPlaceholder)) {
+                selectedQuestions.push({
+                    text: placeholderText,
+                    type: 'rating',
+                    category: area.charAt(0).toUpperCase() + area.slice(1),
+                    perspective: perspective,
+                    required: true
+                });
+                existingFallbackTextsNorm.add(normalizedPlaceholder); // Add normalized text to prevent future duplicates
+                isUnique = true; // Found a unique one
             }
-            // If even that exists, we might have an issue, but unlikely for small 'needed' counts
-       }
+            attempt++; // Increment attempt counter
+        }
+        if (!isUnique) {
+            console.error(`Fallback Generator: Could not generate a unique placeholder for ${perspective} after ${attempt} attempts. There might be excessive duplication.`);
+            // Optionally, add a very generic non-unique one as a last resort
+            // selectedQuestions.push({ text: `Generic Question Placeholder #${i+1}`, type: 'rating', category: 'General', perspective: perspective, required: true });
+        }
     }
-    console.log(`Fallback Generator -> Added ${needed} placeholder fallbacks. Total: ${selectedQuestions.length}`);
+    console.log(`Fallback Generator -> Added ${neededPlaceholders} placeholder fallbacks. Total: ${selectedQuestions.length}`);
   }
 
   // Final step: Ensure correct properties and add fallback flag
-  // Order will be reassigned by the calling function (ensurePerspectiveQuestionCounts)
   return selectedQuestions.map((question, index) => ({
     ...question,
-    perspective: perspective, // Ensure perspective is correctly assigned
-    isFallback: true // Add a flag to identify these easily
+    perspective: perspective,
+    isFallback: true
+    // Order will be reassigned by the calling function (ensurePerspectiveQuestionCounts)
   }));
 }
 
