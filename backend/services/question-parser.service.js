@@ -141,6 +141,7 @@ function sanitizeQuestionText(text, departmentName = 'General') {
 
 /**
  * Parses questions from AI response and returns a map grouped by perspective (NOT a flat array)
+ * Enhanced to handle different AI response formats
  * @param {string} aiResponse - The text response from AI
  * @param {Object} perspectiveSettings - Settings for perspectives
  * @returns {Object} - Map of questions grouped by perspective
@@ -160,119 +161,104 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     }
     console.log('Starting AI Response Parsing...');
 
-    // Define the patterns for splitting, including capturing the perspective name
-    // Using a single, more robust pattern covering variations.
-    // It captures the perspective name (GROUP 1) right after the separator (=== or newline)
-    // It looks for MANAGER, PEER, DIRECT REPORT, SELF, or EXTERNAL STAKEHOLDER followed by ASSESSMENT
-    const sectionSplitPattern =
-        /(?:^|\n)\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i;
-
-    // Split the response by the pattern. The pattern captures the delimiter,
-    // so the resulting array will interleave content and perspective names.
-    // Example: [ content_before_first_header, header1, content_after_header1, header2, content_after_header2, ...]
-    const parts = aiResponse.split(sectionSplitPattern);
-
-    console.log(`Split AI response into ${parts.length} parts.`);
-
-    let currentPerspective = null;
-
-    for (let i = 0; i < parts.length; i++) {
-        const part = parts[i]?.trim();
-        if (!part) continue; // Skip empty parts resulting from split
-
-        // Check if the part matches one of the perspective names (captured by the regex)
-        const perspectiveMatch = /^(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)$/i.exec(part);
-
-        if (perspectiveMatch) {
-            // This part is a perspective header captured by the split regex
-            const perspectiveHeader = perspectiveMatch[1].toUpperCase();
-            if (perspectiveHeader === 'DIRECT REPORT') currentPerspective = 'direct_report';
-            else if (perspectiveHeader === 'EXTERNAL STAKEHOLDER') currentPerspective = 'external';
-            else currentPerspective = perspectiveHeader.toLowerCase();
-            console.log(`Identified Perspective Header: ${currentPerspective}`);
-        } else if (currentPerspective) {
-            // This part is content following a known perspective header
-            console.log(`Processing content for perspective: ${currentPerspective}`);
-            const sectionContent = part;
-            // Regex to find Question:, Type:, Category: blocks within the content
-            const questionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
-            let qMatch;
-
-            while ((qMatch = questionRegex.exec(sectionContent)) !== null) {
-                const questionText = qMatch[1]?.trim();
-                const questionType = (qMatch[2]?.trim() || 'rating').toLowerCase();
-                const category = qMatch[3]?.trim() || 'General';
-
-                if (questionText && questionsByPerspective[currentPerspective]) {
-                    questionsByPerspective[currentPerspective].push({
-                        text: questionText,
-                        type: questionType === 'open_ended' ? 'open_ended' : 'rating',
-                        category: category,
-                        perspective: currentPerspective,
-                        required: true, // Assuming required unless specified otherwise
-                        order: questionsByPerspective[currentPerspective].length + 1 // Temporary order within perspective
-                    });
-                    console.log(`  -> Added question [${currentPerspective}]: "${questionText.substring(0, 40)}..."`);
-                }
-            }
-        } else {
-             console.log(`Skipping content part found before first recognized header or with unknown perspective: "${part.substring(0, 60)}..."`);
-        }
-    }
-
-    // --- Fallback (Optional - if the split logic fails entirely) ---
-    const totalQuestionsFound = Object.values(questionsByPerspective).reduce((sum, qArr) => sum + qArr.length, 0);
-    if (totalQuestionsFound === 0 && aiResponse.length > 0) {
-        console.warn("Primary parsing failed to find any questions via section headers. Attempting global fallback search...");
-        // Simple fallback to look for standalone Question: blocks anywhere in the text
-        const globalQuestionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
-        let gMatch;
-        const defaultPerspective = 'peer'; // If we can't determine perspective, use peer as default
+    // First look for multi-format headers (support both === PERSPECTIVE === and numbered style)
+    // 1. Try the clean === PERSPECTIVE ASSESSMENT === format we requested
+    const formatPatterns = [
+        // Classic format with === ===
+        /(?:^|\n)\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i,
         
-        while ((gMatch = globalQuestionRegex.exec(aiResponse)) !== null) {
-            const questionText = gMatch[1]?.trim();
-            const questionType = (gMatch[2]?.trim() || 'rating').toLowerCase();
-            const category = gMatch[3]?.trim() || 'General';
-            
-            if (questionText) {
-                // Try to guess the perspective from surrounding context (20 chars before)
-                const beforeContext = aiResponse.substring(Math.max(0, gMatch.index - 100), gMatch.index).toLowerCase();
-                let guessedPerspective = defaultPerspective;
-                
-                if (beforeContext.includes('manager')) guessedPerspective = 'manager';
-                else if (beforeContext.includes('peer')) guessedPerspective = 'peer';
-                else if (beforeContext.includes('direct report')) guessedPerspective = 'direct_report';
-                else if (beforeContext.includes('self')) guessedPerspective = 'self';
-                else if (beforeContext.includes('external')) guessedPerspective = 'external';
-                
-                questionsByPerspective[guessedPerspective].push({
-                    text: questionText,
-                    type: questionType === 'open_ended' ? 'open_ended' : 'rating',
-                    category: category,
-                    perspective: guessedPerspective,
-                    required: true,
-                    order: questionsByPerspective[guessedPerspective].length + 1
-                });
-                console.log(`  -> Added question via global fallback [${guessedPerspective}]: "${questionText.substring(0, 40)}..."`);
-            }
+        // Numbered format (e.g., "1. === MANAGER ASSESSMENT ===")
+        /(?:^|\n)\s*\d+\.\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i,
+        
+        // Simple bolded/starred format (e.g., "**MANAGER ASSESSMENT**")
+        /(?:^|\n)\s*(?:\*\*|__)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT(?:\*\*|__)?\s*\n/i,
+    ];
+
+    // Try each format pattern until we find one that works
+    let foundSections = false;
+    let parts = [];
+    let formatPattern = null;
+
+    for (const pattern of formatPatterns) {
+        parts = aiResponse.split(pattern);
+        
+        // If we got more than just the original string, this pattern worked
+        if (parts.length > 1) {
+            formatPattern = pattern;
+            foundSections = true;
+            console.log(`Found matching format pattern: ${pattern}`);
+            break;
         }
     }
 
-    // --- Post-processing and Logging ---
-    console.log(`Successfully parsed ${totalQuestionsFound} questions from AI response via primary section method.`);
+    // Process sections if we found a matching format
+    if (foundSections) {
+        console.log(`Split AI response into ${parts.length} parts using section headers.`);
+        let currentPerspective = null;
 
-    // Deduplication step BEFORE adding fallbacks
-    const deduplicatedQuestionsByPerspective = {};
-    // Process each perspective to deduplicate questions
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i]?.trim();
+            if (!part) continue; // Skip empty parts
+
+            // Check if the part is a perspective header captured by the regex
+            const perspectiveMatch = /^(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)$/i.exec(part);
+
+            if (perspectiveMatch) {
+                // This part is a perspective header
+                const perspectiveHeader = perspectiveMatch[1].toUpperCase();
+                if (perspectiveHeader === 'DIRECT REPORT') currentPerspective = 'direct_report';
+                else if (perspectiveHeader === 'EXTERNAL STAKEHOLDER') currentPerspective = 'external';
+                else currentPerspective = perspectiveHeader.toLowerCase();
+                console.log(`Identified Perspective Header: ${currentPerspective}`);
+            } else if (currentPerspective) {
+                // This part is content following a known perspective header
+                console.log(`Processing content for perspective: ${currentPerspective}`);
+                const sectionContent = part;
+                
+                // Parse questions from this section
+                parseQuestionsFromSection(sectionContent, currentPerspective, questionsByPerspective);
+            } else {
+                console.log(`Skipping content part found before first recognized header or with unknown perspective: "${part.substring(0, 60)}..."`);
+            }
+        }
+    } else {
+        // No sections found, try alternative parsing approaches
+        console.log("No clear section headers found. Trying alternative parsing approaches...");
+        
+        // Try to find numbered question blocks (e.g., "1. Question: How effectively...")
+        if (tryParseNumberedQuestions(aiResponse, questionsByPerspective)) {
+            console.log("Successfully parsed questions using numbered format");
+        } 
+        // If still no questions, try a more aggressive fallback approach
+        else if (tryParseFallbackFormat(aiResponse, questionsByPerspective, perspectiveSettings)) {
+            console.log("Successfully parsed questions using fallback format parser");
+        }
+        // Last resort: look for any Question: blocks anywhere in the text
+        else {
+            console.warn("Primary and alternative parsing failed. Attempting global fallback search...");
+            parseGlobalQuestions(aiResponse, questionsByPerspective);
+        }
+    }
+
+    // Count total questions found across all perspectives
+    const totalQuestionsFound = Object.values(questionsByPerspective).reduce((sum, qArr) => sum + qArr.length, 0);
+    
+    if (totalQuestionsFound === 0) {
+        console.error("Failed to parse any questions from the AI response using all parsing methods.");
+        return questionsByPerspective; // Return empty map
+    }
+    
+    console.log(`Successfully parsed ${totalQuestionsFound} questions from AI response.`);
+
+    // Deduplicate questions within each perspective
+    const deduplicatedQuestionsMap = {};
     Object.keys(questionsByPerspective).forEach(perspective => {
-        deduplicatedQuestionsByPerspective[perspective] = deduplicateQuestions(
-            questionsByPerspective[perspective]
-        );
+        deduplicatedQuestionsMap[perspective] = deduplicateQuestions(questionsByPerspective[perspective]);
     });
 
     // Re-assign order for each perspective separately
-    Object.keys(deduplicatedQuestionsByPerspective).forEach(perspective => {
-        deduplicatedQuestionsByPerspective[perspective] = deduplicatedQuestionsByPerspective[perspective].map(
+    Object.keys(deduplicatedQuestionsMap).forEach(perspective => {
+        deduplicatedQuestionsMap[perspective] = deduplicatedQuestionsMap[perspective].map(
             (question, index) => ({
                 ...question,
                 order: index + 1 // Update order based on new index after deduplication
@@ -282,8 +268,8 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
 
     // Check for empty perspectives AND log warning
     const finalQuestionCounts = {};
-    Object.keys(deduplicatedQuestionsByPerspective).forEach(p => {
-        finalQuestionCounts[p] = deduplicatedQuestionsByPerspective[p]?.length || 0;
+    Object.keys(deduplicatedQuestionsMap).forEach(p => {
+        finalQuestionCounts[p] = deduplicatedQuestionsMap[p]?.length || 0;
     });
     console.log("Final counts per perspective after parsing and deduplication:", finalQuestionCounts);
 
@@ -292,15 +278,189 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
         .map(([perspective]) => perspective);
 
     if (emptyPerspectives.length > 0) {
-        console.error(`CRITICAL WARNING: No AI questions parsed for enabled perspectives: ${emptyPerspectives.join(', ')}. Fallback questions will be used by ensurePerspectiveQuestionCounts unless a second AI call is implemented.`);
+        console.error(`CRITICAL WARNING: No AI questions parsed for enabled perspectives: ${emptyPerspectives.join(', ')}. Fallback questions will be used.`);
     }
 
-    // IMPORTANT CHANGE: Return the map of questions grouped by perspective
-    // instead of a flat array. This ensures the calling code can correctly
-    // process questions for each perspective.
-    return deduplicatedQuestionsByPerspective;
+    return deduplicatedQuestionsMap;
 }
 
+/**
+ * Parse questions from a section of text for a specific perspective
+ * @param {string} sectionText - The text content for a specific perspective
+ * @param {string} perspective - The current perspective (manager, peer, etc.)
+ * @param {Object} questionsByPerspective - The map to add questions to
+ */
+function parseQuestionsFromSection(sectionText, perspective, questionsByPerspective) {
+    // Regex to find Question:, Type:, Category: blocks within the content
+    const questionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
+    let qMatch;
+
+    while ((qMatch = questionRegex.exec(sectionText)) !== null) {
+        const questionText = qMatch[1]?.trim();
+        const questionType = (qMatch[2]?.trim() || 'rating').toLowerCase();
+        const category = qMatch[3]?.trim() || 'General';
+
+        if (questionText && questionsByPerspective[perspective]) {
+            questionsByPerspective[perspective].push({
+                text: questionText,
+                type: questionType === 'open_ended' ? 'open_ended' : 'rating',
+                category: category,
+                perspective: perspective,
+                required: true, // Assuming required unless specified otherwise
+                order: questionsByPerspective[perspective].length + 1 // Temporary order within perspective
+            });
+            console.log(`  -> Added question [${perspective}]: "${questionText.substring(0, 40)}..."`);
+        }
+    }
+}
+
+/**
+ * Try to parse a numbered question format (1. Question:... 2. Question:...)
+ * @param {string} aiResponse - The full AI response text
+ * @param {Object} questionsByPerspective - The map to add questions to
+ * @returns {boolean} - True if any questions were found
+ */
+function tryParseNumberedQuestions(aiResponse, questionsByPerspective) {
+    // Look for perspective headers with numbers
+    const perspectiveHeaderRegex = /\b(\d+)[\.\)]\s*(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*(?:ASSESSMENT|QUESTIONS|PERSPECTIVE)?\s*:/i;
+    
+    // Split by numbered headers like "1. MANAGER ASSESSMENT:"
+    const sections = aiResponse.split(/\n\s*\d+[\.\)]\s*(?:MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*(?:ASSESSMENT|QUESTIONS|PERSPECTIVE)?\s*:/i);
+    
+    if (sections.length <= 1) {
+        // No numbered perspective sections found
+        return false;
+    }
+    
+    console.log(`Found ${sections.length - 1} numbered perspective sections`);
+    
+    // The first section is before any headers, so skip it
+    let currentPerspective = null;
+    
+    // Process each section
+    for (let i = 1; i < sections.length; i++) {
+        // Get the header from the previous section split
+        const headerMatch = aiResponse.match(perspectiveHeaderRegex);
+        
+        if (headerMatch) {
+            // Extract the perspective from the header
+            const perspectiveName = headerMatch[2].toUpperCase();
+            
+            if (perspectiveName === 'DIRECT REPORT') currentPerspective = 'direct_report';
+            else if (perspectiveName === 'EXTERNAL STAKEHOLDER') currentPerspective = 'external';
+            else currentPerspective = perspectiveName.toLowerCase();
+            
+            console.log(`Found numbered section for perspective: ${currentPerspective}`);
+            
+            // Process the questions in this section
+            if (currentPerspective && questionsByPerspective[currentPerspective]) {
+                parseQuestionsFromSection(sections[i], currentPerspective, questionsByPerspective);
+            }
+        }
+    }
+    
+    // Check if we found any questions
+    const totalFound = Object.values(questionsByPerspective).reduce((sum, arr) => sum + arr.length, 0);
+    return totalFound > 0;
+}
+
+/**
+ * Try parsing with a more aggressive fallback approach
+ * @param {string} aiResponse - The full AI response text
+ * @param {Object} questionsByPerspective - The map to add questions to
+ * @param {Object} perspectiveSettings - Settings for perspectives
+ * @returns {boolean} - True if any questions were found
+ */
+function tryParseFallbackFormat(aiResponse, questionsByPerspective, perspectiveSettings) {
+    // Try to detect blocks that might represent different perspectives
+    const paragraphs = aiResponse.split(/\n\s*\n/);
+    
+    // Check if we have roughly the right number of paragraphs for the perspectives
+    const enabledPerspectives = Object.entries(perspectiveSettings)
+        .filter(([_, settings]) => settings?.enabled)
+        .map(([perspective]) => perspective);
+    
+    // If we don't have roughly the right number of paragraphs, this approach won't work
+    if (paragraphs.length < enabledPerspectives.length) {
+        return false;
+    }
+    
+    console.log(`Attempting fallback parsing with ${paragraphs.length} paragraphs for ${enabledPerspectives.length} perspectives`);
+    
+    // For each paragraph, try to guess which perspective it belongs to
+    for (let i = 0; i < paragraphs.length; i++) {
+        const paragraph = paragraphs[i];
+        
+        // Skip short paragraphs (likely headers or explanations)
+        if (paragraph.length < 50) continue;
+        
+        // Try to detect which perspective this paragraph is for
+        let detectedPerspective = null;
+        
+        // Look for strong perspective indicators
+        if (/\bmanager['s]?\b|\bsupervisor['s]?\b/i.test(paragraph)) {
+            detectedPerspective = 'manager';
+        } else if (/\bpeer['s]?\b|\bcolleague['s]?\b/i.test(paragraph)) {
+            detectedPerspective = 'peer';
+        } else if (/\bdirect report['s]?\b|\bsubordinate['s]?\b|\bteam member['s]?\b/i.test(paragraph)) {
+            detectedPerspective = 'direct_report';
+        } else if (/\byou\b|\byour\b|\byourself\b|\bself[-\s]assessment\b/i.test(paragraph)) {
+            detectedPerspective = 'self';
+        } else if (/\bexternal\b|\bclient['s]?\b|\bcustomer['s]?\b|\bpartner['s]?\b|\bstakeholder['s]?\b/i.test(paragraph)) {
+            detectedPerspective = 'external';
+        }
+        
+        // If we detected a perspective, parse questions from this paragraph
+        if (detectedPerspective && questionsByPerspective[detectedPerspective]) {
+            console.log(`Detected ${detectedPerspective} perspective in paragraph ${i+1}`);
+            parseQuestionsFromSection(paragraph, detectedPerspective, questionsByPerspective);
+        }
+    }
+    
+    // Check if we found any questions
+    const totalFound = Object.values(questionsByPerspective).reduce((sum, arr) => sum + arr.length, 0);
+    return totalFound > 0;
+}
+
+/**
+ * Last resort: parse any question from anywhere in the text
+ * @param {string} aiResponse - The full AI response text
+ * @param {Object} questionsByPerspective - The map to add questions to
+ */
+function parseGlobalQuestions(aiResponse, questionsByPerspective) {
+    // Simple fallback to look for standalone Question: blocks anywhere in the text
+    const globalQuestionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
+    let gMatch;
+    const defaultPerspective = 'peer'; // If we can't determine perspective, use peer as default
+    
+    while ((gMatch = globalQuestionRegex.exec(aiResponse)) !== null) {
+        const questionText = gMatch[1]?.trim();
+        const questionType = (gMatch[2]?.trim() || 'rating').toLowerCase();
+        const category = gMatch[3]?.trim() || 'General';
+        
+        if (questionText) {
+            // Try to guess the perspective from surrounding context (100 chars before)
+            const beforeContext = aiResponse.substring(Math.max(0, gMatch.index - 100), gMatch.index).toLowerCase();
+            let guessedPerspective = defaultPerspective;
+            
+            if (beforeContext.includes('manager')) guessedPerspective = 'manager';
+            else if (beforeContext.includes('peer')) guessedPerspective = 'peer';
+            else if (beforeContext.includes('direct report')) guessedPerspective = 'direct_report';
+            else if (beforeContext.includes('self')) guessedPerspective = 'self';
+            else if (beforeContext.includes('external')) guessedPerspective = 'external';
+            
+            questionsByPerspective[guessedPerspective].push({
+                text: questionText,
+                type: questionType === 'open_ended' ? 'open_ended' : 'rating',
+                category: category,
+                perspective: guessedPerspective,
+                required: true,
+                order: questionsByPerspective[guessedPerspective].length + 1
+            });
+            console.log(`  -> Added question via global fallback [${guessedPerspective}]: "${questionText.substring(0, 40)}..."`);
+        }
+    }
+}
 
 /**
  * Deduplicates questions based on perspective and text similarity

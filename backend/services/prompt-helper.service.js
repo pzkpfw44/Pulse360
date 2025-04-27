@@ -171,47 +171,54 @@ Purpose: ${purpose}
 Department/Function: ${department}
 Focus Areas/Description: ${description}
 
-CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
-1.  **QUANTITY OVER QUALITY:** Generate MORE THAN the required number of questions for each perspective, so we can select the best ones. For each perspective, provide ${buffer} more questions than requested.
-2.  **SUBJECT:** Refer to the person being assessed as "this person", "the individual", or "they/them". For Self Assessment, use "you/your". **DO NOT use the words "${purpose}", "${department}", or "${description}" as a substitute for the person's name or title.**
-3.  **QUESTION COUNT:** Generate the following EXACT number of unique, non-duplicate questions for each enabled perspective: ${counts}. Do not generate questions for disabled perspectives.
-4.  **DIVERSITY:** Ensure a mix of question types and categories. Cover different aspects of leadership from the document.
-5.  **RESPONSE FORMAT:** Adhere STRICTLY to the required response format below. Do NOT include any extra text, explanations, summaries, introductions, or apologies. ONLY provide the formatted questions.
-6.  **RELEVANCE:** Ensure questions are relevant to the document content, document type, purpose, and focus areas provided above.
-7.  **QUESTION TYPES:** Include a mix of 'rating' and 'open_ended' questions for each perspective. Phrase 'rating' questions for a Likert scale (e.g., "How effectively...", "To what extent..."). Phrase 'open_ended' questions to ask for specific examples or details (e.g., "Provide examples of...", "Describe how...").
-8.  **AVOID DEPARTMENT/METADATA IN QUESTIONS:** Do NOT include specific department names (like "${department} Department") or metadata words ("${purpose}", "${description}") directly in the question text itself. Use generic phrases like "in this role", "within the team", "in the organization", "for their position" instead.
-
-REQUIRED RESPONSE FORMAT (USE EXACTLY):
+CRITICAL INSTRUCTIONS - FOLLOW THE EXACT FORMAT BELOW:
+1. Generate high-quality 360-degree feedback questions.
+2. Use ONLY the following format - this is mandatory:
 
 === MANAGER ASSESSMENT ===
-Question: [Text of the question for Manager perspective]
+Question: [Manager question text]
 Type: [rating or open_ended]
-Category: [A relevant category, e.g., Strategic Thinking]
+Category: [Category name]
 
 === PEER ASSESSMENT ===
-Question: [Text of the question for Peer perspective]
+Question: [Peer question text]
 Type: [rating or open_ended]
-Category: [A relevant category, e.g., Collaboration]
+Category: [Category name]
 
 === DIRECT REPORT ASSESSMENT ===
-Question: [Text of the question for Direct Report perspective]
+Question: [Direct report question text]
 Type: [rating or open_ended]
-Category: [A relevant category, e.g., Team Development]
+Category: [Category name]
 
 === SELF ASSESSMENT ===
-Question: [Text of the question for Self perspective]
+Question: [Self question text]
 Type: [rating or open_ended]
-Category: [A relevant category, e.g., Self-Awareness]
+Category: [Category name]
 
-${externalEnabled ? `
-=== EXTERNAL STAKEHOLDER ASSESSMENT ===
-Question: [Text of the question for External Stakeholder perspective, focusing on interactions with clients, partners, or external parties]
+${externalEnabled ? `=== EXTERNAL STAKEHOLDER ASSESSMENT ===
+Question: [External stakeholder question text]
 Type: [rating or open_ended]
-Category: [A relevant category, e.g., Client Focus, Partnership Building, Professionalism]
-` : ''/* End of External Stakeholder Format */}
-${externalEnabled && externalCount > 0 ? `\nREMEMBER: Generate exactly ${externalCount} unique questions for EXTERNAL STAKEHOLDER ASSESSMENT focusing on external interactions.` : ''}
+Category: [Category name]
+` : ''}
 
-IMPORTANT: Generate MORE questions than the minimum required so we can pick the best ones. Quality and creativity are essential!
+IMPORTANT GUIDELINES:
+1. **FORMAT REQUIREMENTS:** 
+   - Each section MUST start with "=== PERSPECTIVE ASSESSMENT ===" (using exact === symbols)
+   - Each question MUST use the "Question:", "Type:", "Category:" format exactly
+   - DO NOT number questions or add extra formatting
+
+2. **QUANTITY:** Generate these exact numbers of questions:
+   ${counts}
+
+3. **SUBJECT REFERENCES:** Refer to the person being assessed as "this person" for manager/peer/direct report/external. Use "you/your" for self-assessment.
+
+4. **QUESTION TYPES:** Mix 'rating' questions (e.g., "How effectively...") and 'open_ended' questions (e.g., "Describe how...").
+
+5. **AVOID REFERENCES:** DO NOT include specific department names (like "${department} Department") in questions. Use generic phrases like "in this role", "within the team", etc.
+
+6. **STRICTLY ADHERE TO FORMAT:** Do not add any introductions, explanations, notes, or conclusions. ONLY include the specified sections and question format.
+
+Remember: The EXACT format with "===" section headers and proper indentation is critical for automated processing.
 `;
 } // End of createAnalysisPrompt function
 
