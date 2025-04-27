@@ -499,39 +499,61 @@ class FeedbackController {
     try {
       const { assessorToken, responses } = req.body;
       
-      console.log(`[DRAFT] Saving draft for token ${assessorToken}`);
+      console.log(`[DRAFT] Attempting to save draft for token ${assessorToken}`);
       
       if (!assessorToken || !responses || !Array.isArray(responses)) {
+        console.log(`[DRAFT] Bad request: Token or responses missing/invalid.`);
         return res.status(400).json({ 
-          message: 'Token and responses are required' 
+          message: 'Token and responses array are required' 
         });
       }
       
-      // Find the participant by token
+      // Find the participant by token, include Campaign and TargetEmployee
       const participant = await CampaignParticipant.findOne({
         where: { invitationToken: assessorToken },
-        include: [{ model: Campaign, as: 'campaign' }]
+        include: [
+          { 
+            model: Campaign, 
+            as: 'campaign',
+            include: [
+              // Include TargetEmployee directly associated with Campaign
+              { model: Employee, as: 'targetEmployee', attributes: ['id'] } 
+            ]
+          }
+        ]
       });
       
       if (!participant) {
         console.log(`[DRAFT] Participant not found for token ${assessorToken}`);
         return res.status(404).json({ 
-          message: 'Assessment not found',
+          message: 'Assessment session not found',
           error: 'invalid_token'
         });
       }
+
+      // Ensure campaign and targetEmployee data are loaded
+      if (!participant.campaign || !participant.campaign.targetEmployee) {
+        console.error(`[DRAFT] Failed to load campaign or target employee data for participant ${participant.id}`);
+        return res.status(500).json({ message: 'Failed to load necessary campaign data.' });
+      }
       
       const campaignId = participant.campaign.id;
-      console.log(`[DRAFT] Found participant ${participant.id} for campaign ${campaignId}`);
+      const targetEmployeeId = participant.campaign.targetEmployee.id; // Get targetEmployeeId
+      
+      console.log(`[DRAFT] Found participant ${participant.id} for campaign ${campaignId}, target employee ${targetEmployeeId}`);
       
       // Update or create responses using raw SQL
       let savedCount = 0;
+      let errorCount = 0;
       
       for (const response of responses) {
-        if (!response.questionId) continue;
+        if (!response.questionId) {
+          console.log(`[DRAFT] Skipping response object without questionId.`);
+          continue;
+        }
         
         try {
-          // Check if response exists
+          // Check if response exists using participantId and questionId
           const existing = await sequelize.query(
             'SELECT id FROM responses WHERE participantId = ? AND questionId = ?',
             {
@@ -541,34 +563,39 @@ class FeedbackController {
           );
           
           if (existing.length > 0) {
-            // Update existing
+            // Update existing response
+            const responseIdToUpdate = existing[0].id;
+            console.log(`[DRAFT] Updating existing response ${responseIdToUpdate} for question ${response.questionId}`);
             await sequelize.query(
               `UPDATE responses 
-               SET ratingValue = ?, textResponse = ?, updatedAt = NOW() 
+               SET ratingValue = ?, textResponse = ?, updatedAt = datetime('now') 
                WHERE id = ?`,
               {
                 replacements: [
-                  response.rating || null,
+                  response.rating !== undefined ? response.rating : null, // Handle undefined rating
                   response.text || '',
-                  existing[0].id
+                  responseIdToUpdate
                 ],
                 type: sequelize.QueryTypes.UPDATE
               }
             );
           } else {
-            // Create new
+            // Create new response
+            const newResponseId = uuidv4();
+            console.log(`[DRAFT] Creating new response for question ${response.questionId} with targetEmployeeId ${targetEmployeeId}`);
             await sequelize.query(
               `INSERT INTO responses 
-               (id, participantId, questionId, ratingValue, textResponse, campaignId, createdAt, updatedAt) 
-               VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+               (id, participantId, questionId, ratingValue, textResponse, campaignId, targetEmployeeId, createdAt, updatedAt) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`, // Added targetEmployeeId
               {
                 replacements: [
-                  uuidv4(),
+                  newResponseId,
                   participant.id,
                   response.questionId,
-                  response.rating || null,
+                  response.rating !== undefined ? response.rating : null, // Handle undefined rating
                   response.text || '',
-                  campaignId
+                  campaignId,
+                  targetEmployeeId // Pass the targetEmployeeId here
                 ],
                 type: sequelize.QueryTypes.INSERT
               }
@@ -577,30 +604,49 @@ class FeedbackController {
           
           savedCount++;
         } catch (err) {
-          console.error(`[DRAFT] Error saving/updating response:`, err);
+          errorCount++;
+          console.error(`[DRAFT] Error saving/updating response for question ${response.questionId}:`, err.message);
+          // Continue processing other responses even if one fails
         }
       }
+
+      console.log(`[DRAFT] Processed ${responses.length} responses. Saved/Updated: ${savedCount}, Errors: ${errorCount}`);
       
-      // Update participant status if it was pending or invited
-      if (['pending', 'invited'].includes(participant.status)) {
-        await participant.update({ 
-          status: 'in_progress',
-          lastAccessedAt: new Date()
-        });
-        console.log(`[DRAFT] Updated participant status to in_progress`);
+      // Update participant status to 'in_progress' if needed
+      if (['pending', 'invited'].includes(participant.status) && participant.status !== 'in_progress') {
+         try {
+            await participant.update({ 
+              status: 'in_progress',
+              lastAccessedAt: new Date()
+            });
+            console.log(`[DRAFT] Updated participant status to in_progress`);
+         } catch(updateErr) {
+            console.error(`[DRAFT] Error updating participant status:`, updateErr.message);
+         }
       }
       
+      // Return success even if some individual responses failed, but maybe indicate errors
+      if (errorCount > 0) {
+        return res.status(207).json({ // 207 Multi-Status might be appropriate
+          message: `Draft partially saved with ${errorCount} errors.`,
+          responseCount: savedCount,
+          errorCount: errorCount,
+          timestamp: new Date()
+        });
+      }
+
       return res.status(200).json({
         message: 'Draft saved successfully',
         responseCount: savedCount,
         timestamp: new Date()
       });
+
     } catch (error) {
-      console.error('[DRAFT] Error saving feedback draft:', error);
+      console.error('[DRAFT] General error saving feedback draft:', error);
       
       return res.status(500).json({
         message: 'An error occurred while saving the draft',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   }

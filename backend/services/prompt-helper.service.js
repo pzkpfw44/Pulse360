@@ -135,25 +135,34 @@ function createAnalysisPrompt(documentType, templateInfo = {}) {
   const description = templateInfo.description || 'General feedback';
 
   // Calculate the required question counts string for enabled perspectives
+  // REQUEST BUFFER: Ask for more questions than needed to ensure we have enough
+  const buffer = 5; // Extra questions to request per perspective
+  
   const countsArray = Object.entries(perspectiveSettings)
     .filter(([_, settings]) => settings?.enabled) // Add safety check for settings object
     .map(([perspective, settings]) => {
       let perspectiveName = perspective.toUpperCase();
       if (perspective === 'direct_report') perspectiveName = 'DIRECT REPORT';
       if (perspective === 'external') perspectiveName = 'EXTERNAL STAKEHOLDER';
+      
       // Ensure questionCount is a number, default if missing
-      const count = typeof settings?.questionCount === 'number' ? settings.questionCount : 5;
-      return `${perspectiveName}: ${count} questions`;
+      const actualCount = typeof settings?.questionCount === 'number' ? settings.questionCount : 5;
+      
+      // Request more questions than needed - we'll trim down later
+      const requestCount = actualCount + buffer;
+      
+      return `${perspectiveName}: ${requestCount} questions (we'll select the best ${actualCount})`;
     });
 
    const counts = countsArray.join(', ');
 
   // Determine if external is enabled
   const externalEnabled = perspectiveSettings.external?.enabled;
-  const externalCount = typeof perspectiveSettings.external?.questionCount === 'number' ? perspectiveSettings.external.questionCount : 0;
+  const externalCount = typeof perspectiveSettings.external?.questionCount === 'number' 
+    ? perspectiveSettings.external.questionCount + buffer // Apply buffer to external as well
+    : 0;
 
 // Construct the prompt using template literals
-// ADDED EXPLICIT NEGATIVE CONSTRAINTS
 return `Analyze the attached document(s) and generate unique questions for a 360-degree feedback assessment.
 
 CONTEXT FOR ASSESSMENT:
@@ -163,12 +172,14 @@ Department/Function: ${department}
 Focus Areas/Description: ${description}
 
 CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
-1.  **SUBJECT:** Refer to the person being assessed as "this person", "the individual", or "they/them". For Self Assessment, use "you/your". **DO NOT use the words "${purpose}", "${department}", or "${description}" as a substitute for the person's name or title.** For example, DO NOT write "How would you rate the ${department}'s ability...". Instead, write "How would you rate this person's ability...".
-2.  **QUESTION COUNT:** Generate the following EXACT number of unique, non-duplicate questions for each enabled perspective: ${counts}. Do not generate questions for disabled perspectives.
-3.  **RESPONSE FORMAT:** Adhere STRICTLY to the required response format below. Do NOT include any extra text, explanations, summaries, introductions, or apologies. ONLY provide the formatted questions.
-4.  **RELEVANCE:** Ensure questions are relevant to the document content, document type, purpose, and focus areas provided above.
-5.  **QUESTION TYPES:** Include a mix of 'rating' and 'open_ended' questions for each perspective. Phrase 'rating' questions for a Likert scale (e.g., "How effectively...", "To what extent..."). Phrase 'open_ended' questions to ask for specific examples or details (e.g., "Provide examples of...", "Describe how...").
-6.  **AVOID DEPARTMENT/METADATA IN QUESTIONS:** Do NOT include specific department names (like "${department} Department") or metadata words ("${purpose}", "${description}") directly in the question text itself. Use generic phrases like "in this role", "within the team", "in the organization", "for their position" instead.
+1.  **QUANTITY OVER QUALITY:** Generate MORE THAN the required number of questions for each perspective, so we can select the best ones. For each perspective, provide ${buffer} more questions than requested.
+2.  **SUBJECT:** Refer to the person being assessed as "this person", "the individual", or "they/them". For Self Assessment, use "you/your". **DO NOT use the words "${purpose}", "${department}", or "${description}" as a substitute for the person's name or title.**
+3.  **QUESTION COUNT:** Generate the following EXACT number of unique, non-duplicate questions for each enabled perspective: ${counts}. Do not generate questions for disabled perspectives.
+4.  **DIVERSITY:** Ensure a mix of question types and categories. Cover different aspects of leadership from the document.
+5.  **RESPONSE FORMAT:** Adhere STRICTLY to the required response format below. Do NOT include any extra text, explanations, summaries, introductions, or apologies. ONLY provide the formatted questions.
+6.  **RELEVANCE:** Ensure questions are relevant to the document content, document type, purpose, and focus areas provided above.
+7.  **QUESTION TYPES:** Include a mix of 'rating' and 'open_ended' questions for each perspective. Phrase 'rating' questions for a Likert scale (e.g., "How effectively...", "To what extent..."). Phrase 'open_ended' questions to ask for specific examples or details (e.g., "Provide examples of...", "Describe how...").
+8.  **AVOID DEPARTMENT/METADATA IN QUESTIONS:** Do NOT include specific department names (like "${department} Department") or metadata words ("${purpose}", "${description}") directly in the question text itself. Use generic phrases like "in this role", "within the team", "in the organization", "for their position" instead.
 
 REQUIRED RESPONSE FORMAT (USE EXACTLY):
 
@@ -200,7 +211,7 @@ Category: [A relevant category, e.g., Client Focus, Partnership Building, Profes
 ` : ''/* End of External Stakeholder Format */}
 ${externalEnabled && externalCount > 0 ? `\nREMEMBER: Generate exactly ${externalCount} unique questions for EXTERNAL STAKEHOLDER ASSESSMENT focusing on external interactions.` : ''}
 
-FINAL CHECK: Ensure ONLY the formatted questions are present in your response, respecting the exact counts and subject references. Do not add any introductory or concluding remarks.
+IMPORTANT: Generate MORE questions than the minimum required so we can pick the best ones. Quality and creativity are essential!
 `;
 } // End of createAnalysisPrompt function
 

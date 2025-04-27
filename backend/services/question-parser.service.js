@@ -140,10 +140,10 @@ function sanitizeQuestionText(text, departmentName = 'General') {
 
 
 /**
- * Parses questions from AI response and returns flat array
+ * Parses questions from AI response and returns a map grouped by perspective (NOT a flat array)
  * @param {string} aiResponse - The text response from AI
  * @param {Object} perspectiveSettings - Settings for perspectives
- * @returns {Array} - Flat array of questions with perspective property
+ * @returns {Object} - Map of questions grouped by perspective
  */
 function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     const questionsByPerspective = {
@@ -156,7 +156,7 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
 
     if (!aiResponse || typeof aiResponse !== 'string') {
         console.error('Invalid AI response provided to parser.');
-        return [];
+        return questionsByPerspective; // Return empty map instead of empty array
     }
     console.log('Starting AI Response Parsing...');
 
@@ -215,59 +215,90 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
                     console.log(`  -> Added question [${currentPerspective}]: "${questionText.substring(0, 40)}..."`);
                 }
             }
-             // Optional: Reset perspective if content was processed, reduces risk of misattribution on messy formats
-             // currentPerspective = null;
         } else {
              console.log(`Skipping content part found before first recognized header or with unknown perspective: "${part.substring(0, 60)}..."`);
-             // This part might be intro text or content before the first valid header matched by the split
         }
     }
 
     // --- Fallback (Optional - if the split logic fails entirely) ---
     const totalQuestionsFound = Object.values(questionsByPerspective).reduce((sum, qArr) => sum + qArr.length, 0);
     if (totalQuestionsFound === 0 && aiResponse.length > 0) {
-        console.warn("Primary parsing failed to find any questions via section headers. Attempting global fallback search (if implemented)...");
-        // Implement keyword-based fallback here if needed, but the improved split should be preferred.
+        console.warn("Primary parsing failed to find any questions via section headers. Attempting global fallback search...");
+        // Simple fallback to look for standalone Question: blocks anywhere in the text
+        const globalQuestionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
+        let gMatch;
+        const defaultPerspective = 'peer'; // If we can't determine perspective, use peer as default
+        
+        while ((gMatch = globalQuestionRegex.exec(aiResponse)) !== null) {
+            const questionText = gMatch[1]?.trim();
+            const questionType = (gMatch[2]?.trim() || 'rating').toLowerCase();
+            const category = gMatch[3]?.trim() || 'General';
+            
+            if (questionText) {
+                // Try to guess the perspective from surrounding context (20 chars before)
+                const beforeContext = aiResponse.substring(Math.max(0, gMatch.index - 100), gMatch.index).toLowerCase();
+                let guessedPerspective = defaultPerspective;
+                
+                if (beforeContext.includes('manager')) guessedPerspective = 'manager';
+                else if (beforeContext.includes('peer')) guessedPerspective = 'peer';
+                else if (beforeContext.includes('direct report')) guessedPerspective = 'direct_report';
+                else if (beforeContext.includes('self')) guessedPerspective = 'self';
+                else if (beforeContext.includes('external')) guessedPerspective = 'external';
+                
+                questionsByPerspective[guessedPerspective].push({
+                    text: questionText,
+                    type: questionType === 'open_ended' ? 'open_ended' : 'rating',
+                    category: category,
+                    perspective: guessedPerspective,
+                    required: true,
+                    order: questionsByPerspective[guessedPerspective].length + 1
+                });
+                console.log(`  -> Added question via global fallback [${guessedPerspective}]: "${questionText.substring(0, 40)}..."`);
+            }
+        }
     }
 
     // --- Post-processing and Logging ---
     console.log(`Successfully parsed ${totalQuestionsFound} questions from AI response via primary section method.`);
 
-    // Deduplication step BEFORE adding fallbacks (and before returning)
-    const allParsedQuestions = Object.values(questionsByPerspective).flat();
-    const uniqueParsedQuestions = deduplicateQuestions(allParsedQuestions); // Assumes deduplicateQuestions exists in this file
-    console.log(` -> ${uniqueParsedQuestions.length} questions remain after deduplication.`);
+    // Deduplication step BEFORE adding fallbacks
+    const deduplicatedQuestionsByPerspective = {};
+    // Process each perspective to deduplicate questions
+    Object.keys(questionsByPerspective).forEach(perspective => {
+        deduplicatedQuestionsByPerspective[perspective] = deduplicateQuestions(
+            questionsByPerspective[perspective]
+        );
+    });
 
-    // Re-structure back into map for logging final counts before returning flat array
-    const uniqueQuestionsByPerspective = { manager: [], peer: [], direct_report: [], self: [], external: [] };
-    uniqueParsedQuestions.forEach(q => {
-        if (uniqueQuestionsByPerspective[q.perspective]) {
-            uniqueQuestionsByPerspective[q.perspective].push(q);
-        }
+    // Re-assign order for each perspective separately
+    Object.keys(deduplicatedQuestionsByPerspective).forEach(perspective => {
+        deduplicatedQuestionsByPerspective[perspective] = deduplicatedQuestionsByPerspective[perspective].map(
+            (question, index) => ({
+                ...question,
+                order: index + 1 // Update order based on new index after deduplication
+            })
+        );
     });
 
     // Check for empty perspectives AND log warning
     const finalQuestionCounts = {};
-    Object.keys(questionsByPerspective).forEach(p => {
-        // Use the counts *after* deduplication
-        finalQuestionCounts[p] = uniqueQuestionsByPerspective[p] ? uniqueQuestionsByPerspective[p].length : 0;
+    Object.keys(deduplicatedQuestionsByPerspective).forEach(p => {
+        finalQuestionCounts[p] = deduplicatedQuestionsByPerspective[p]?.length || 0;
     });
     console.log("Final counts per perspective after parsing and deduplication:", finalQuestionCounts);
 
-
-    const emptyPerspectives = Object.entries(perspectiveSettings || {}) // Add null check for safety
+    const emptyPerspectives = Object.entries(perspectiveSettings || {})
         .filter(([perspective, settings]) => settings?.enabled && finalQuestionCounts[perspective] === 0)
         .map(([perspective]) => perspective);
 
     if (emptyPerspectives.length > 0) {
         console.error(`CRITICAL WARNING: No AI questions parsed for enabled perspectives: ${emptyPerspectives.join(', ')}. Fallback questions will be used by ensurePerspectiveQuestionCounts unless a second AI call is implemented.`);
-        // **IMPORTANT**: The calling service should check for this situation (e.g., by checking counts)
-        // *after* this function returns and potentially trigger a second AI call.
     }
 
-    // Return the unique questions as a flat array, re-assigning order based on flat array index
-    // The balancing function will handle final ordering after potential fallbacks are added.
-    return uniqueParsedQuestions.map((q, index) => ({ ...q, order: index + 1 }));
+    // IMPORTANT CHANGE: Return the map of questions grouped by perspective
+    // instead of a flat array. This ensures the calling code can correctly
+    // process questions for each perspective.
+    return deduplicatedQuestionsByPerspective;
 }
 
 
@@ -279,16 +310,9 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
 function deduplicateQuestions(questions) {
     // Function to deduplicate questions - remains the same as provided previously
     const uniqueQuestions = [];
-    const textMap = new Map(); // Maps perspective to set of question texts
+    const textMap = new Set(); // Set of normalized question texts
 
     for (const question of questions) {
-        const perspective = question.perspective || 'unknown';
-
-        // Initialize set for this perspective if it doesn't exist
-        if (!textMap.has(perspective)) {
-            textMap.set(perspective, new Set());
-        }
-
         // Normalize the question text for comparison (lowercase, no punctuation, trimmed)
         const normalizedText = question.text
             .toLowerCase()
@@ -296,33 +320,33 @@ function deduplicateQuestions(questions) {
             .replace(/\s+/g, ' ') // Normalize whitespace
             .trim();
 
-        // Check if this question is unique for its perspective
-        const perspectiveSet = textMap.get(perspective);
-
         let isDuplicate = false;
 
         // Check for exact match first
-        if (perspectiveSet.has(normalizedText)) {
+        if (textMap.has(normalizedText)) {
             isDuplicate = true;
-            // console.log(`Dedupe: Exact match found for perspective ${perspective}: "${question.text}"`);
         } else {
-             // If not exact match, check for high similarity with existing questions in this perspective
-             for (const existingText of perspectiveSet) {
-                // Use the calculateSimilarity function (assumed to be defined in this file)
+             // If not exact match, check for high similarity with existing questions
+             for (const existingQuestion of uniqueQuestions) {
+                const existingText = existingQuestion.text
+                    .toLowerCase()
+                    .replace(/[.,?!;:]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                
+                // Use the calculateSimilarity function
                 if (calculateSimilarity(normalizedText, existingText) > 0.85) { // Using stricter threshold
                     isDuplicate = true;
-                    // console.log(`Dedupe: Similar match found for perspective ${perspective} (${calculateSimilarity(normalizedText, existingText).toFixed(2)}):\n  "${question.text}"\n  "${existingText}"`);
                     break;
                 }
             }
         }
 
         if (!isDuplicate) {
-            perspectiveSet.add(normalizedText); // Add normalized text to prevent future duplicates
+            textMap.add(normalizedText); // Add normalized text to prevent future duplicates
             uniqueQuestions.push(question); // Add the original question object
         }
     }
-    // console.log(`Deduplication: Input ${questions.length}, Output ${uniqueQuestions.length}`);
     return uniqueQuestions;
 }
 
@@ -432,9 +456,9 @@ function ensurePerspectiveQuestionCounts(questionsMap, perspectiveSettings, docu
 
 
 module.exports = {
-  parseQuestionsFromAiResponse, // Updated function
+  parseQuestionsFromAiResponse,
   sanitizeQuestionText,
-  deduplicateQuestions, // Make sure it's defined or imported if used
-  ensurePerspectiveQuestionCounts, // Make sure it's defined or imported if used
-  calculateSimilarity // Make sure it's defined or imported if used by deduplicateQuestions
+  deduplicateQuestions,
+  ensurePerspectiveQuestionCounts,
+  calculateSimilarity
 };

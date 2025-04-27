@@ -28,6 +28,7 @@ const FeedbackAssessment = ({
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [saveError, setSaveError] = useState(null); // To store and display save errors
   
   // Refs for tracking changes and auto-save timer
   const autoSaveTimerRef = useRef(null);
@@ -144,33 +145,66 @@ const FeedbackAssessment = ({
   const saveDraft = async () => {
     if (submitted) return; // Don't save if already submitted
     
+    setSaving(true);
+    setSaveError(null); // Clear previous errors on new attempt
+    
     try {
-      setSaving(true);
-      hasUnsavedChanges.current = false;
-      
       // Format the responses for the API
       const formattedResponses = questions.map(question => {
         return {
           questionId: question.id,
           questionType: question.type,
-          rating: ratings[question.id] || null,
+          rating: ratings[question.id] !== undefined ? ratings[question.id] : null, // Ensure null if undefined
           text: responses[question.id] || ''
         };
       });
 
+      // Ensure we only save if there are actual changes
+      // Note: hasUnsavedChanges tracking might need refinement, but this is basic
+      if (!hasUnsavedChanges.current) {
+          console.log("No unsaved changes detected, skipping draft save.");
+          setSaving(false);
+          return; 
+      }
+
+      console.log("Attempting to save draft...", { assessorToken, responses: formattedResponses.length });
       const response = await axios.post(`${API_URL}/feedback/save-draft`, {
         assessorToken,
         responses: formattedResponses
       });
 
-      // Update last saved timestamp
-      setLastSaved(new Date());
+      // Check response status (optional but good practice)
+      if (response.status === 200 || response.status === 207) { // Handle potential 207 Multi-Status
+        console.log("Draft saved successfully:", response.data);
+        setLastSaved(new Date(response.data.timestamp || Date.now())); // Use timestamp from backend if available
+        hasUnsavedChanges.current = false; // Mark changes as saved
+         if (response.status === 207) {
+           setSaveError(`Draft saved, but ${response.data.errorCount} response(s) had issues.`);
+         }
+      } else {
+         // Handle unexpected success status codes if needed
+         console.warn("Draft save API returned unexpected status:", response.status, response.data);
+         setSaveError('Draft saved, but server returned an unexpected status.');
+         // Decide if we should still count this as "saved"
+         // setLastSaved(new Date()); // Maybe? Or null?
+         // hasUnsavedChanges.current = true; // Keep changes as unsaved?
+      }
+
     } catch (error) {
-      console.error('Error saving draft:', error);
-      // Don't show error to user, just mark that we still have unsaved changes
-      hasUnsavedChanges.current = true;
+      console.error('Error saving draft:', error.response?.data || error.message);
+      hasUnsavedChanges.current = true; // Ensure changes are marked as unsaved on error
+      setLastSaved(null); // Clear the last saved time on error
+      
+      // Set a user-friendly error message
+      if (error.response) {
+        // Use message from backend if available, otherwise generic
+        setSaveError(error.response.data?.message || 'Failed to save draft. Please check connection.');
+      } else {
+        setSaveError('Network error: Unable to save draft.');
+      }
+      
     } finally {
-      setSaving(false);
+      setSaving(false); // Ensure saving indicator stops
     }
   };
 
@@ -392,6 +426,12 @@ const FeedbackAssessment = ({
           )}
         </div>
       </div>
+
+      {saveError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+          <p><AlertTriangle className="inline h-4 w-4 mr-1" /> {saveError}</p>
+        </div>
+      )}
 
       {/* Errors at the top */}
       {errors.general && (
