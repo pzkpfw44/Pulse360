@@ -1631,61 +1631,139 @@ function generateQuestionForTheme(theme, perspective, type) {
   return selectedTemplate;
 }
 
-/**
- * Selects/Trims AI-generated questions based on perspective settings.
- * Does NOT add fallbacks. Returns the selected AI questions per perspective.
- * INPUT: questionsMap is an OBJECT like { manager: [q1, q2], peer: [q3], ... }
- * OUTPUT: Map in the same format, with lists trimmed to targetCount.
- * @param {Object} questionsMap - Questions grouped by perspective { manager: [...], peer: [...], ... }
- * @param {Object} perspectiveSettings - Settings with question counts
- * @returns {Object} - Map of perspectives containing ONLY the selected/trimmed AI questions.
- */
-function balanceQuestionsByPerspective(questionsMap, perspectiveSettings) {
-  console.log('[Balancer - STEP 1] Selecting/Trimming AI questions...');
-  const result = {}; // This will hold the selected/trimmed AI questions
-
-  // Validate inputs
-  if (!perspectiveSettings || typeof perspectiveSettings !== 'object') {
-      console.error("[Balancer ERROR] Invalid perspectiveSettings input.");
-      return {};
+// Function to balance questions according to perspective settings
+function balanceQuestionsByPerspective(questions, perspectiveSettings = {}) {
+  // If no perspective settings or no questions, return original questions
+  if (!perspectiveSettings || Object.keys(perspectiveSettings).length === 0 || questions.length === 0) {
+    return questions;
   }
-   if (!questionsMap || typeof questionsMap !== 'object') {
-       // If input map is invalid, still create entries for enabled perspectives
-       console.warn("[Balancer WARN] Invalid questionsMap input provided.");
-       Object.keys(perspectiveSettings).forEach(p => {
-           if (perspectiveSettings[p]?.enabled) result[p] = [];
-       });
-       return result;
-  }
-
-  // Iterate through each perspective defined in the settings
-  for (const perspective in perspectiveSettings) {
-      // Skip perspectives that are not enabled in the settings
-      if (!perspectiveSettings[perspective]?.enabled) {
-          continue;
+  
+  console.log('Balancing questions by perspective settings');
+  
+  // Group questions by perspective
+  const groupedQuestions = {};
+  questions.forEach(question => {
+    const perspective = question.perspective || 'peer'; // Default to peer if missing
+    if (!groupedQuestions[perspective]) {
+      groupedQuestions[perspective] = [];
+    }
+    groupedQuestions[perspective].push(question);
+  });
+  
+  // Create balanced questions array
+  const balancedQuestions = [];
+  let questionOrder = 1;
+  
+  // For each perspective in the settings
+  Object.entries(perspectiveSettings).forEach(([perspective, settings]) => {
+    // Skip disabled perspectives
+    if (!settings.enabled) {
+      console.log(`Perspective ${perspective} is disabled, skipping`);
+      return;
+    }
+    
+    // Get the target count and available questions
+    const targetCount = settings.questionCount || 10;
+    const availableQuestions = groupedQuestions[perspective] || [];
+    
+    console.log(`Perspective ${perspective}: Target count ${targetCount}, available ${availableQuestions.length}`);
+    
+    // If we have more questions than needed, select a subset
+    if (availableQuestions.length > targetCount) {
+      console.log(`Perspective ${perspective}: selecting ${targetCount} questions from ${availableQuestions.length} available`);
+      
+      // Ensure balance between rating and open-ended questions
+      // Try to keep about 70% rating and 30% open-ended
+      const ratingQuestions = availableQuestions.filter(q => q.type === 'rating');
+      const openEndedQuestions = availableQuestions.filter(q => q.type === 'open_ended');
+      
+      const targetRatingCount = Math.ceil(targetCount * 0.7);
+      const targetOpenEndedCount = targetCount - targetRatingCount;
+      
+      let selectedQuestions = [];
+      
+      // Add rating questions up to target
+      if (ratingQuestions.length > 0) {
+        selectedQuestions = [...selectedQuestions, 
+                            ...ratingQuestions.slice(0, Math.min(targetRatingCount, ratingQuestions.length))];
       }
-
-      const targetCount = perspectiveSettings[perspective]?.questionCount || 5; // Get target count
-      // Get the array of available AI questions for this perspective from the input map
-      const availableQuestions = questionsMap[perspective] || [];
-
-      console.log(` --> Balancer Check [${perspective}]: Target=${targetCount}, Available AI=${availableQuestions.length}`);
-
-      if (availableQuestions.length > targetCount) {
-          // If more AI questions available than needed, trim the list
-          console.log(` ---> Trimming ${perspective} from ${availableQuestions.length} to ${targetCount}`);
-          // Simple slice for now. Could add smarter logic later (e.g., balance types)
-          result[perspective] = availableQuestions.slice(0, targetCount);
-      } else {
-          // If fewer or equal AI questions available, keep all of them
-          console.log(` ---> Keeping all ${availableQuestions.length} available AI questions for ${perspective} (Target: ${targetCount})`);
-          result[perspective] = [...availableQuestions]; // Copy the array
+      
+      // Add open-ended questions up to target
+      if (openEndedQuestions.length > 0) {
+        selectedQuestions = [...selectedQuestions, 
+                            ...openEndedQuestions.slice(0, Math.min(targetOpenEndedCount, openEndedQuestions.length))];
       }
-  }
-
-  console.log('[Balancer - STEP 1] AI Question Selection/Trimming complete.');
-  // Returns a map like { manager: [10 Qs], peer: [9 Qs], ..., external: [0 Qs] }
-  return result;
+      
+      // If we still don't have enough, add more of whatever we have
+      if (selectedQuestions.length < targetCount) {
+        const remainingQuestions = availableQuestions.filter(q => 
+          !selectedQuestions.some(sq => sq.id === q.id || sq._id === q._id)
+        );
+        
+        selectedQuestions = [
+          ...selectedQuestions,
+          ...remainingQuestions.slice(0, targetCount - selectedQuestions.length)
+        ];
+      }
+      
+      // Add the selected questions with updated order
+      selectedQuestions.forEach(question => {
+        balancedQuestions.push({
+          ...question,
+          order: questionOrder++
+        });
+      });
+    } 
+    // If we have exactly the right number or fewer, use all available
+    else if (availableQuestions.length > 0) {
+      console.log(`Perspective ${perspective}: using all ${availableQuestions.length} available questions (target: ${targetCount})`);
+      
+      // Add all available questions with updated order
+      availableQuestions.forEach(question => {
+        balancedQuestions.push({
+          ...question,
+          order: questionOrder++
+        });
+      });
+      
+      // If we're short, generate additional generic questions
+      const shortfall = targetCount - availableQuestions.length;
+      if (shortfall > 0) {
+        console.log(`Perspective ${perspective}: generating ${shortfall} additional generic questions`);
+        
+        // Generate generic questions for this perspective - use your existing helper function
+        const additionalQuestions = generateGenericQuestions(perspective, shortfall, questionOrder);
+        
+        // Add the additional questions
+        additionalQuestions.forEach(question => {
+          balancedQuestions.push({
+            ...question,
+            perspective: perspective,
+            order: questionOrder++
+          });
+        });
+      }
+    }
+    // If no questions available for this perspective, generate all generic ones
+    else if (targetCount > 0) {
+      console.log(`Perspective ${perspective}: generating ${targetCount} generic questions (none available)`);
+      
+      // Generate generic questions for this perspective
+      const genericQuestions = generateGenericQuestions(perspective, targetCount, questionOrder);
+      
+      // Add the generic questions
+      genericQuestions.forEach(question => {
+        balancedQuestions.push({
+          ...question,
+          perspective: perspective,
+          order: questionOrder++
+        });
+      });
+    }
+  });
+  
+  console.log(`Balanced questions: ${balancedQuestions.length} total questions`);
+  return balancedQuestions;
 }
 
 // Function to implement two-step approach for question generation
@@ -1845,10 +1923,7 @@ async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo 
   }
 }
 
-// Analyze documents with Flux AI (updated version)
-// analyzeDocumentsWithFluxAI function in documents.controller.js
-// Replace the existing function with this updated version
-
+// Analyze documents with Flux AI 
 async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo = {}) {
   try {
     console.log('[analyzeDocumentsWithFluxAI] Starting analysis...');
@@ -1873,18 +1948,19 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
     }
 
     // --- Create PRIMARY Prompt ---
-    // Uses createAnalysisPrompt defined in this file
-    const prompt = createAnalysisPrompt(documentType, templateInfo);
-    console.log("[analyzeDocumentsWithFluxAI] Primary Prompt (sample):", prompt.substring(0, 150) + "...");
+    // Use the service's createAnalysisPrompt instead of the local one
+    const { createAnalysisPrompt } = require('../services/prompt-helper.service');
+    const promptContent = createAnalysisPrompt(documentType, templateInfo);
+    console.log("[analyzeDocumentsWithFluxAI] Primary Prompt (sample):", promptContent.substring(0, 150) + "...");
 
     // --- Make PRIMARY AI Request ---
     const messages = [
-        { role: "system", content: "You are a specialized AI assistant..." }, // Use your system prompt
-        { role: "user", content: prompt }
+        { role: "system", content: fluxAiConfig.getSystemPrompt('document_analysis') },
+        { role: "user", content: promptContent }
     ];
     const requestPayload = {
         model: fluxAiConfig.model.trim(), messages: messages, stream: false, temperature: 0.3,
-        attachments: { tags: [documentType], files: fileIds }, mode: 'rag'
+        attachments: { files: fileIds, tags: [documentType, "feedback"] }, mode: 'rag'
     };
     console.log('[analyzeDocumentsWithFluxAI] Making PRIMARY AI request...');
     // Uses makeAiChatRequest from the service
@@ -1908,279 +1984,403 @@ async function analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documen
 
     // --- Parse & Sanitize PRIMARY Response ---
     console.log('[analyzeDocumentsWithFluxAI] Parsing PRIMARY AI Response...');
-    // Uses parseQuestionsFromAIResponse defined in this file - returns flat array
-    const rawQuestions = parseQuestionsFromAiResponse(aiResponseText, perspectiveSettings);
-    console.log(`[analyzeDocumentsWithFluxAI] Extracted ${rawQuestions.length} raw questions.`);
+    // Use service's parseQuestionsFromAiResponse instead of local one
+    const { parseQuestionsFromAiResponse, sanitizeQuestionText } = require('../services/question-parser.service'); 
+    
+    // Parse the AI response into a map of questions grouped by perspective
+    const parsedQuestionsMap = parseQuestionsFromAiResponse(aiResponseText, perspectiveSettings);
+    
+    // Count total questions parsed
+    const totalParsed = Object.values(parsedQuestionsMap).reduce((sum, arr) => sum + arr.length, 0);
+    console.log(`[analyzeDocumentsWithFluxAI] Parsed ${totalParsed} questions (includes internal deduplication).`);
 
     // Sanitize questions
-    // Uses sanitizeQuestionText defined in this file
-    const sanitizedQuestionsFlat = rawQuestions.map(q => ({
-        ...q, text: sanitizeQuestionText(q.text, departmentName)
-    }));
-    console.log(`[analyzeDocumentsWithFluxAI] Sanitized ${sanitizedQuestionsFlat.length} questions.`);
-
-    // Check if ANY questions were extracted
-    if (sanitizedQuestionsFlat.length === 0) {
-        console.warn('[analyzeDocumentsWithFluxAI] No questions extracted after parsing/sanitizing. Using fallback.');
-        return createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-    }
-
-    // --- Prepare for Secondary/Tertiary Calls ---
-    // Re-group sanitized questions by perspective
-    let currentQuestionsByPerspective = {};
-    sanitizedQuestionsFlat.forEach(q => {
-        if (!currentQuestionsByPerspective[q.perspective]) {
-            currentQuestionsByPerspective[q.perspective] = [];
-        }
-        currentQuestionsByPerspective[q.perspective].push(q);
+    const sanitizedQuestionsMap = {};
+    Object.keys(parsedQuestionsMap).forEach(perspective => {
+        // Default to empty array if perspective is missing from parsed results
+        const questionsForPerspective = parsedQuestionsMap[perspective] || [];
+        sanitizedQuestionsMap[perspective] = questionsForPerspective.map(question => ({
+            ...question,
+            text: sanitizeQuestionText(question.text, departmentName)
+        }));
     });
-    console.log('[Follow-up Checks] Initial counts:', JSON.stringify(Object.keys(currentQuestionsByPerspective).reduce((acc, key) => { acc[key] = currentQuestionsByPerspective[key].length; return acc; }, {})));
+    console.log(`[analyzeDocumentsWithFluxAI] Sanitized questions using department: ${departmentName}`);
 
-    // Check for missing/insufficient perspectives
+    // --- Check for Missing or Insufficient Perspectives ---
     const enabledPerspectives = Object.keys(perspectiveSettings).filter(p => perspectiveSettings[p]?.enabled);
-    let missingPerspectives = [];
-    let insufficientPerspectives = [];
+    const missingPerspectives = [];
+    const insufficientPerspectives = [];
+
     enabledPerspectives.forEach(perspective => {
-        const targetCount = perspectiveSettings[perspective]?.questionCount || 5;
-        const availableCount = currentQuestionsByPerspective[perspective]?.length || 0;
-        console.log(`[Check Phase] Perspective: ${perspective}, Target: ${targetCount}, Available: ${availableCount}`);
-        if (availableCount === 0 && targetCount > 0) missingPerspectives.push(perspective);
-        else if (availableCount < targetCount) insufficientPerspectives.push({ perspective, available: availableCount, needed: targetCount - availableCount });
+      const targetCount = perspectiveSettings[perspective].questionCount || 5;
+      const availableCount = sanitizedQuestionsMap[perspective]?.length || 0;
+      
+      if (availableCount === 0 && perspectiveSettings[perspective].enabled) {
+        missingPerspectives.push(perspective);
+      } else if (availableCount < targetCount) {
+        insufficientPerspectives.push({
+          perspective, 
+          available: availableCount,
+          needed: targetCount - availableCount
+        });
+      }
     });
-    console.log(`[Check Phase] Missing: ${missingPerspectives.join(', ') || 'None'}. Insufficient: ${insufficientPerspectives.map(p=>p.perspective).join(', ') || 'None'}`);
+    
+    console.log(`[analyzeDocumentsWithFluxAI] Missing perspectives: ${missingPerspectives.join(', ') || 'None'}`);
+    console.log(`[analyzeDocumentsWithFluxAI] Insufficient perspectives: ${insufficientPerspectives.map(p => p.perspective).join(', ') || 'None'}`);
 
-    console.log('[Follow-up Calls] Checking conditions...');
-    console.log(`[Follow-up Calls] Value of missingPerspectives.length: ${missingPerspectives.length}`);
-    console.log(`[Follow-up Calls] Value of insufficientPerspectives.length: ${insufficientPerspectives.length}`);
-
-    // --- Secondary Call (Missing) ---
+    // --- Handle Missing Perspectives with Secondary Call ---
     if (missingPerspectives.length > 0) {
-      console.log(`[Secondary Call EXECUTION] ****** ENTERING IF BLOCK ****** Triggering for: ${missingPerspectives.join(', ')}`);
-      // Create prompt (uses local createAnalysisPrompt)
-      const secondaryPrompt = `Generate ONLY the questions for the following perspectives based on the attached document:\n${missingPerspectives.map(p => `- ${p.replace('_', ' ')}: ${perspectiveSettings[p].questionCount} questions`).join('\n')}\nUse format: Question:[Text]\\nType:[rating|open_ended]\\nCategory:[Category]`;
-      console.log(`[Secondary Call LOG] Simplified Prompt (sample): ${secondaryPrompt.substring(0,150)}...`);
+      console.log(`[analyzeDocumentsWithFluxAI] Making secondary call for missing perspectives: ${missingPerspectives.join(', ')}`);
+      
+      // Create a focused prompt specifically for these missing perspectives
+      const secondaryPrompt = `
+I need you to generate 360-degree feedback assessment questions ONLY for these specific perspectives:
+${missingPerspectives.map(p => {
+  const count = perspectiveSettings[p].questionCount;
+  return `- ${p.replace('_', ' ')}: ${count} questions`;
+}).join('\n')}
+
+IMPORTANT CONTEXT:
+- Document Type: ${documentType.replace(/_/g, ' ')}
+- Purpose: ${templateInfo.purpose || 'Leadership assessment'}
+- Department: ${templateInfo.department || 'General'} 
+- Description: ${templateInfo.description || 'General feedback'}
+
+${missingPerspectives.includes('external') ? `
+SPECIAL INSTRUCTIONS FOR EXTERNAL STAKEHOLDER QUESTIONS:
+- External stakeholder questions evaluate how the person interacts with people OUTSIDE the organization
+- Focus on relationship building, client communication, professionalism, and representing the organization
+- Examples: "How effectively does this person represent the organization in external interactions?"` : ''}
+
+FORMAT EACH QUESTION EXACTLY LIKE THIS:
+===PERSPECTIVE===
+Question: [Question text]
+Type: [rating or open_ended]
+Category: [relevant category]
+
+IMPORTANT: DO NOT include any department references like "${departmentName} Department" in questions.
+DO NOT use phrases like "in the general department" or "for the general purpose."
+ONLY generate questions for these perspectives: ${missingPerspectives.join(', ')}
+`;
+
+      // Make a secondary AI request specifically for missing perspectives
       try {
-        const secondaryRequest = { model: fluxAiConfig.model.trim(), messages: [ { role: 'system', content: "You are a specialized AI assistant..." }, { role: 'user', content: secondaryPrompt } ], temperature: 0.35, attachments: { files: fileIds, tags: [documentType, "feedback"] }, mode: 'rag' };
-        // Uses makeAiChatRequest from service
-        const secondaryResponse = await makeAiChatRequest(secondaryRequest);
-        if (secondaryResponse?.choices?.length) {
-            const secondaryAiText = secondaryResponse.choices[0].message?.content;
-            console.log(`[Secondary Call LOG] Response received (length: ${secondaryAiText?.length || 0}).`);
-            if (secondaryAiText) {
-                // Uses local parseQuestionsFromAIResponse - returns flat array
-                const secondaryQuestionsFlat = parseQuestionsFromAiResponse(secondaryAiText, perspectiveSettings);
-                const secondaryQuestionsMap = {}; // Regroup
-                secondaryQuestionsFlat.forEach(q => {
-                    if(!secondaryQuestionsMap[q.perspective]) secondaryQuestionsMap[q.perspective] = [];
-                    secondaryQuestionsMap[q.perspective].push(q);
-                });
-
-                for (const perspective of missingPerspectives) {
-                    const newQs = secondaryQuestionsMap[perspective];
-                    if (newQs?.length) {
-                        console.log(`[Secondary Call MERGE] Found ${newQs.length} for ${perspective}.`);
-                        if (!currentQuestionsByPerspective[perspective]) currentQuestionsByPerspective[perspective] = [];
-                        // Uses local sanitizeQuestionText
-                        const sanitizedNewQs = newQs.map(q => ({ ...q, text: sanitizeQuestionText(q.text, departmentName) }));
-                        currentQuestionsByPerspective[perspective].push(...sanitizedNewQs);
-                        console.log(`[Secondary Call MERGE] Merged ${sanitizedNewQs.length} for ${perspective}. New total: ${currentQuestionsByPerspective[perspective].length}`);
-                    } else { console.log(`[Secondary Call MERGE] No questions parsed for ${perspective} in secondary response.`); }
-                }
-            } else { console.log('[Secondary Call LOG] Response has no content.'); }
-        } else { console.log('[Secondary Call LOG] No valid choices in response.'); }
-      } catch (err) { console.error('[Secondary Call ERROR]', err.message); }
-    } else {
-        console.log('[Follow-up Calls] Skipping secondary call - Condition missingPerspectives.length > 0 is FALSE.');
-    }
-
-    // --- Tertiary Call (Insufficient) ---
-    if (insufficientPerspectives.length > 0) {
-       console.log(`[Tertiary Call EXECUTION] ****** ENTERING IF BLOCK ****** Triggering for: ${insufficientPerspectives.map(p => `${p.perspective}(${p.needed})`).join(', ')}`);
-       // Uses local createAnalysisPrompt
-       const tertiaryPrompt = `Generate ONLY NEW, ADDITIONAL questions for these perspectives based on the attached document:\n${insufficientPerspectives.map(p => `- ${p.perspective.replace('_', ' ')}: ${p.needed} more questions`).join('\n')}\nUse format: Question:[Text]\\nType:[rating|open_ended]\\nCategory:[Category]`;
-       console.log(`[Tertiary Call LOG] Simplified Prompt (sample): ${tertiaryPrompt.substring(0,150)}...`);
-
-       try {
-           const tertiaryRequest = { model: fluxAiConfig.model.trim(), messages: [ { role: 'system', content: "You are a specialized AI assistant..." }, { role: 'user', content: tertiaryPrompt } ], temperature: 0.5, attachments: { files: fileIds, tags: [documentType, "feedback"] }, mode: 'rag' };
-           // Uses makeAiChatRequest from service
-           const tertiaryResponse = await makeAiChatRequest(tertiaryRequest);
-           if (tertiaryResponse?.choices?.length) {
-               const tertiaryAiText = tertiaryResponse.choices[0].message?.content;
-               console.log(`[Tertiary Call LOG] Response received (length: ${tertiaryAiText?.length || 0}).`);
-               if (tertiaryAiText) {
-                    // Uses local parseQuestionsFromAIResponse - returns flat array
-                   const tertiaryQuestionsFlat = parseQuestionsFromAiResponse(tertiaryAiText, perspectiveSettings);
-                   const tertiaryQuestionsMap = {}; // Regroup
-                   tertiaryQuestionsFlat.forEach(q => {
-                      if(!tertiaryQuestionsMap[q.perspective]) tertiaryQuestionsMap[q.perspective] = [];
-                      tertiaryQuestionsMap[q.perspective].push(q);
-                   });
-
-                   for (const { perspective } of insufficientPerspectives) {
-                        const addQs = tertiaryQuestionsMap[perspective];
-                        if (addQs?.length) {
-                           console.log(`[Tertiary Call MERGE] Found ${addQs.length} additional for ${perspective}`);
-                           if (!currentQuestionsByPerspective[perspective]) currentQuestionsByPerspective[perspective] = [];
-                           // Uses local sanitizeQuestionText
-                           const sanitizedAddQs = addQs.map(q => ({ ...q, text: sanitizeQuestionText(q.text, departmentName) }));
-                           const existingTexts = new Set(currentQuestionsByPerspective[perspective].map(q => q.text.toLowerCase().trim()));
-                           // Deduplicate before adding
-                           const uniqueAdditionalQuestions = sanitizedAddQs.filter(q => !existingTexts.has(q.text.toLowerCase().trim()));
-                           currentQuestionsByPerspective[perspective].push(...uniqueAdditionalQuestions);
-                           console.log(`[Tertiary Call MERGE] Merged ${uniqueAdditionalQuestions.length} unique additional for ${perspective}. New total: ${currentQuestionsByPerspective[perspective].length}`);
-                        } else { console.log(`[Tertiary Call MERGE] No additional questions parsed for ${perspective} in tertiary response.`); }
-                   }
-               } else { console.log('[Tertiary Call LOG] Response has no content.'); }
-           } else { console.log('[Tertiary Call LOG] No valid choices in response.'); }
-       } catch (err) { console.error('[Tertiary Call ERROR]', err.message); }
-    } else {
-      console.log('[Follow-up Calls] Skipping tertiary call - Condition insufficientPerspectives.length > 0 is FALSE.');
-    }
-
-    // --- Balance AI Questions (Trim/Select Only) ---
-    console.log('[Balancing Phase] Calling simplified balancer...');
-    // Calls the *corrected* local balanceQuestionsByPerspective function from Step 1
-    // Input: currentQuestionsByPerspective map, Output: map of selected/trimmed AI questions
-    const selectedAiQuestionsMap = balanceQuestionsByPerspective(currentQuestionsByPerspective, perspectiveSettings);
-
-    // --- Generate Fallbacks IF NEEDED and Merge ---
-    console.log('[Fallback Phase] Checking for shortfalls after balancing AI questions...');
-    // Use the generateFallbackQuestions SERVICE (ensure it's required at the top)
-    const { generateFallbackQuestions: generateFallbacksFromService } = require('../services/fallback-questions.service');
-    const { deduplicateQuestions: dedupeQuestionsFromService } = require('../services/question-parser.service'); // Need dedupe from service
-
-    const finalQuestionsMap = {}; // This will hold the final mix of AI + Fallback Qs
-    let fallbackNeeded = false;
-
-    // Iterate through enabled perspectives to check against target counts
-    for (const perspective in perspectiveSettings) {
-        if (!perspectiveSettings[perspective]?.enabled) continue; // Skip disabled
-
-        const targetCount = perspectiveSettings[perspective]?.questionCount || 5;
-        // Get the AI questions selected by the balancer for this perspective
-        const availableSelectedAi = selectedAiQuestionsMap[perspective] || [];
-        // Initialize the final map for this perspective with the selected AI questions
-        finalQuestionsMap[perspective] = [...availableSelectedAi];
-
-        // Calculate if more questions are needed
-        const shortfall = targetCount - availableSelectedAi.length;
-
-        // Generate fallbacks ONLY if there is a shortfall
-        if (shortfall > 0) {
-              fallbackNeeded = true; // Flag that at least one fallback call is needed
-              console.warn(`[Fallback Phase] Perspective ${perspective}: Shortfall of ${shortfall}. Generating fallbacks...`);
-
-              // Call the fallback SERVICE, requesting the specific number needed
-              // Pass the *already selected* AI questions for this perspective to avoid duplicates
-              const fallbackQuestions = generateFallbacksFromService(
-                  perspective,
-                  shortfall, // Request only the number needed
-                  documentType, // Pass documentType if needed by fallback logic
-                  availableSelectedAi // Pass existing AI questions to avoid duplicates
-              );
-              // Add the generated fallbacks to the final map for this perspective
-              finalQuestionsMap[perspective].push(...fallbackQuestions);
-              console.log(`[Fallback Phase] Added ${fallbackQuestions.length} fallback(s) for ${perspective}. New count: ${finalQuestionsMap[perspective].length}`);
-        } else {
-              console.log(`[Fallback Phase] Perspective ${perspective}: Target count (${targetCount}) met with AI questions (${availableSelectedAi.length}). No fallbacks needed.`);
-        }
-    }
-    if(!fallbackNeeded) console.log('[Fallback Phase] No fallbacks were needed.');
-
-    // --- Final Deduplication AFTER Merging Fallbacks (Safety Net) ---
-    console.log('[Final Prep] Running final dedupe after merging fallbacks...');
-    for(const perspective in finalQuestionsMap){
-          if (finalQuestionsMap[perspective]) {
-              const initialCount = finalQuestionsMap[perspective].length;
-              // Use dedupe service
-              finalQuestionsMap[perspective] = dedupeQuestionsFromService(finalQuestionsMap[perspective]);
-              if (finalQuestionsMap[perspective].length < initialCount) {
-                  console.log(`[Final Prep] Deduplicated ${perspective} from ${initialCount} to ${finalQuestionsMap[perspective].length}`);
+        const secondaryResponse = await makeAiChatRequest({
+          model: fluxAiConfig.model.trim(),
+          messages: [
+            { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
+            { role: 'user', content: secondaryPrompt }
+          ],
+          temperature: 0.4, // Slightly higher for more creativity
+          attachments: { files: fileIds, tags: [documentType, "feedback"] },
+          mode: 'rag'
+        });
+        
+        if (secondaryResponse?.choices?.length > 0) {
+          const secondaryText = secondaryResponse.choices[0].message?.content;
+          
+          if (secondaryText) {
+            console.log('[analyzeDocumentsWithFluxAI] Secondary response received for missing perspectives');
+            
+            // Parse the secondary response
+            const secondaryQuestionsMap = parseQuestionsFromAiResponse(secondaryText, perspectiveSettings);
+            
+            // Add the new questions to our sanitizedQuestionsMap
+            for (const perspective of missingPerspectives) {
+              if (secondaryQuestionsMap[perspective]?.length > 0) {
+                console.log(`[analyzeDocumentsWithFluxAI] Found ${secondaryQuestionsMap[perspective].length} questions for ${perspective} in secondary response`);
+                
+                // Initialize the array for this perspective if needed
+                if (!sanitizedQuestionsMap[perspective]) sanitizedQuestionsMap[perspective] = [];
+                
+                // Add sanitized questions
+                const sanitizedNewQuestions = secondaryQuestionsMap[perspective].map(question => ({
+                  ...question,
+                  text: sanitizeQuestionText(question.text, departmentName)
+                }));
+                
+                sanitizedQuestionsMap[perspective].push(...sanitizedNewQuestions);
+                console.log(`[analyzeDocumentsWithFluxAI] Added ${sanitizedNewQuestions.length} questions for ${perspective}`);
               }
+            }
           }
+        }
+      } catch (error) {
+        console.warn('[analyzeDocumentsWithFluxAI] Error in secondary call:', error.message);
+      }
     }
 
-    // --- Prepare Final List for Insertion ---
-    console.log('[Insertion Prep] Flattening final question map and assigning order...');
-    const allQuestionsToInsert = [];
-    let globalOrderIndex = 1;
-    // Ensure consistent order (e.g., manager, peer, direct_report, self, external)
-    const perspectiveOrder = ['manager', 'peer', 'direct_report', 'self', 'external'];
-    perspectiveOrder.forEach(perspective => {
-        // Check if the perspective exists in the final map (it should if enabled)
-        if (finalQuestionsMap[perspective]) {
-              // Assign the final global order HERE
-              finalQuestionsMap[perspective].forEach(q => {
-                  allQuestionsToInsert.push({ ...q, order: globalOrderIndex++ });
-              });
-        }
-    });
-    const finalTotalCount = allQuestionsToInsert.length;
-    // Log the final count AFTER ordering and flattening
-    console.log(`[Insertion Prep] Final list prepared: ${finalTotalCount} questions.`);
+    // --- Handle Insufficient Perspectives with Tertiary Call ---
+    if (insufficientPerspectives.length > 0) {
+      console.log(`[analyzeDocumentsWithFluxAI] Making tertiary call for insufficient perspectives: ${insufficientPerspectives.map(p => p.perspective).join(', ')}`);
+      
+      // Create a focused prompt for insufficient perspectives
+      const tertiaryPrompt = `
+I need ADDITIONAL 360-degree feedback questions for these perspectives:
+${insufficientPerspectives.map(p => {
+  return `- ${p.perspective.replace('_', ' ')}: ${p.needed} more questions`;
+}).join('\n')}
 
+IMPORTANT CONTEXT:
+- Document Type: ${documentType.replace(/_/g, ' ')}
+- Purpose: ${templateInfo.purpose || 'Leadership assessment'}
+- Department: ${templateInfo.department || 'General'} 
+- Description: ${templateInfo.description || 'General feedback'}
+
+FORMAT EACH QUESTION EXACTLY LIKE THIS:
+===PERSPECTIVE===
+Question: [Question text]
+Type: [rating or open_ended]
+Category: [relevant category]
+
+IMPORTANT: DO NOT include any department references like "${departmentName} Department" in questions.
+DO NOT use phrases like "in the general department" or "for the general purpose."
+ONLY generate questions for these perspectives: ${insufficientPerspectives.map(p => p.perspective).join(', ')}
+`;
+
+      // Make a tertiary AI request
+      try {
+        const tertiaryResponse = await makeAiChatRequest({
+          model: fluxAiConfig.model.trim(),
+          messages: [
+            { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
+            { role: 'user', content: tertiaryPrompt }
+          ],
+          temperature: 0.5, // Higher temperature for more variety
+          attachments: { files: fileIds, tags: [documentType, "feedback"] },
+          mode: 'rag'
+        });
+        
+        if (tertiaryResponse?.choices?.length > 0) {
+          const tertiaryText = tertiaryResponse.choices[0].message?.content;
+          
+          if (tertiaryText) {
+            console.log('[analyzeDocumentsWithFluxAI] Tertiary response received for insufficient perspectives');
+            
+            // Parse the tertiary response
+            const tertiaryQuestionsMap = parseQuestionsFromAiResponse(tertiaryText, perspectiveSettings);
+            
+            // Add the new questions to our sanitizedQuestionsMap
+            for (const { perspective } of insufficientPerspectives) {
+              if (tertiaryQuestionsMap[perspective]?.length > 0) {
+                console.log(`[analyzeDocumentsWithFluxAI] Found ${tertiaryQuestionsMap[perspective].length} additional questions for ${perspective}`);
+                
+                // Sanitize the additional questions
+                const additionalQuestions = tertiaryQuestionsMap[perspective].map(question => ({
+                  ...question,
+                  text: sanitizeQuestionText(question.text, departmentName)
+                }));
+                
+                // Get existing questions for this perspective to check for duplicates
+                const existingQuestions = sanitizedQuestionsMap[perspective] || [];
+                const existingTexts = new Set(existingQuestions.map(q => q.text.toLowerCase().trim()));
+                
+                // Filter out duplicate questions
+                const uniqueAdditionalQuestions = additionalQuestions.filter(q => {
+                  const normalizedText = q.text.toLowerCase().trim();
+                  if (existingTexts.has(normalizedText)) return false;
+                  existingTexts.add(normalizedText);
+                  return true;
+                });
+                
+                // Add unique additional questions
+                if (!sanitizedQuestionsMap[perspective]) sanitizedQuestionsMap[perspective] = [];
+                sanitizedQuestionsMap[perspective].push(...uniqueAdditionalQuestions);
+                
+                console.log(`[analyzeDocumentsWithFluxAI] Added ${uniqueAdditionalQuestions.length} unique additional questions for ${perspective}`);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[analyzeDocumentsWithFluxAI] Error in tertiary call:', error.message);
+      }
+    }
+
+    // --- Now ensure we have the required number of questions for each perspective ---
+    // Get the service for generating fallback questions
+    const { generateFallbackQuestions } = require('../services/fallback-questions.service');
+    console.log('[analyzeDocumentsWithFluxAI] Ensuring required question counts...');
+    
+    const finalQuestionsMap = {};
+    
+    // Check each enabled perspective
+    for (const perspective in perspectiveSettings) {
+      if (!perspectiveSettings[perspective]?.enabled) continue;
+      
+      const targetCount = perspectiveSettings[perspective].questionCount;
+      const availableQuestions = sanitizedQuestionsMap[perspective] || [];
+      
+      console.log(`[analyzeDocumentsWithFluxAI] Perspective ${perspective}: ${availableQuestions.length}/${targetCount} questions available`);
+      
+      if (availableQuestions.length >= targetCount) {
+        // We have more than enough questions - select the required number
+        finalQuestionsMap[perspective] = availableQuestions.slice(0, targetCount);
+        console.log(`[analyzeDocumentsWithFluxAI] Using top ${targetCount} questions for ${perspective}`);
+      } else if (availableQuestions.length > 0) {
+        // We have some questions but not enough - add fallbacks
+        const neededCount = targetCount - availableQuestions.length;
+        console.log(`[analyzeDocumentsWithFluxAI] Adding ${neededCount} fallback questions for ${perspective}`);
+        
+        // Use available questions
+        finalQuestionsMap[perspective] = [...availableQuestions];
+        
+        // Generate fallback questions only for the deficit, passing existing questions to avoid duplicates
+        const fallbackQuestions = generateFallbackQuestions(
+          perspective,
+          neededCount,
+          documentType,
+          availableQuestions  // Pass existing questions to avoid duplicates
+        );
+        
+        // Ensure fallback questions are properly marked and sanitized
+        const sanitizedFallbacks = fallbackQuestions.map(q => ({
+          ...q,
+          text: sanitizeQuestionText(q.text, departmentName),
+          isFallback: true
+        }));
+        
+        // Add fallbacks to the final list
+        finalQuestionsMap[perspective].push(...sanitizedFallbacks);
+        console.log(`[analyzeDocumentsWithFluxAI] Added ${sanitizedFallbacks.length} fallback questions for ${perspective}`);
+      } else {
+        // We have no questions at all - generate all fallbacks
+        console.log(`[analyzeDocumentsWithFluxAI] Generating all ${targetCount} questions as fallbacks for ${perspective}`);
+        
+        const fallbackQuestions = generateFallbackQuestions(
+          perspective,
+          targetCount,
+          documentType,
+          [] // No existing questions
+        );
+        
+        // Ensure fallback questions are properly marked and sanitized
+        const sanitizedFallbacks = fallbackQuestions.map(q => ({
+          ...q,
+          text: sanitizeQuestionText(q.text, departmentName),
+          isFallback: true
+        }));
+        
+        finalQuestionsMap[perspective] = sanitizedFallbacks;
+      }
+      
+      // Verify final count
+      if (finalQuestionsMap[perspective].length !== targetCount) {
+        console.warn(`[analyzeDocumentsWithFluxAI] WARNING: Perspective ${perspective} has ${finalQuestionsMap[perspective].length} questions (target: ${targetCount})`);
+      }
+    }
 
     // --- Create Template in Database ---
-    console.log('[Template Creation] Creating template record...');
-    const name = templateInfo?.name || `${documentType.replace(/_/g, ' ')} Template`;
-    const description = templateInfo?.description || 'Generated from document analysis';
-    const template = await Template.create({ name, description, purpose: templateInfo?.purpose || '', department: departmentName, documentType, generatedBy: 'flux_ai', createdBy: userId, status: 'pending_review', perspectiveSettings, lastAnalysisDate: new Date() });
-    console.log(`[Template Creation] Template record created: ${template.id}`);
+    console.log('[analyzeDocumentsWithFluxAI] Creating template record...');
+    
+    const template = await Template.create({
+      name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
+      description: templateInfo.description || 'Generated from document analysis',
+      purpose: templateInfo.purpose || '',
+      department: departmentName,
+      documentType,
+      generatedBy: 'flux_ai',
+      status: 'pending_review',
+      perspectiveSettings,
+      createdBy: userId,
+      lastAnalysisDate: new Date()
+    });
+    
+    console.log(`[analyzeDocumentsWithFluxAI] Template created with ID: ${template.id}`);
 
-
-    // --- Insert Questions into Database ---
-    console.log(`[DB Insert] Inserting ${allQuestionsToInsert.length} questions...`);
-    let insertedCount = 0;
-    // Order is already set in allQuestionsToInsert
+    // --- Flatten and Insert Questions ---
+    console.log('[analyzeDocumentsWithFluxAI] Inserting questions...');
+    
+    let questionOrder = 1;
+    const allQuestionsToInsert = [];
+    
+    // Ensure consistent perspective order in the final output
+    const perspectiveOrder = ['manager', 'peer', 'direct_report', 'self', 'external'];
+    
+    // Build the final list of questions with ordered indexes
+    for (const perspective of perspectiveOrder) {
+      if (finalQuestionsMap[perspective]) {
+        // Add all questions for this perspective
+        finalQuestionsMap[perspective].forEach((question, index) => {
+          allQuestionsToInsert.push({
+            ...question,
+            order: questionOrder++,
+            perspective: perspective,
+            templateId: template.id
+          });
+        });
+      }
+    }
+    
+    console.log(`[analyzeDocumentsWithFluxAI] Inserting ${allQuestionsToInsert.length} total questions`);
+    
+    // Insert all questions
     for (const question of allQuestionsToInsert) {
-        if (question?.text && question?.perspective) {
-          try {
-              // Use the pre-assigned global order
-              await Question.create({ text: question.text, type: question.type || 'rating', category: question.category || 'General', perspective: question.perspective, required: question.required !== undefined ? question.required : true, order: question.order, templateId: template.id });
-              insertedCount++;
-              // Optional: Add more detailed logging if needed
-                if (question.perspective === 'external') {
-                    console.log(`[DB Insert] Inserted EXTERNAL question #${question.order} (Is Fallback: ${!!question.isFallback}): "${question.text.substring(0, 30)}..."`);
-                }
-          } catch (dbError) { console.error(`[DB Insert ERROR] Order ${question.order} (${question.perspective}): ${dbError.message}`); }
-        } else { console.warn("[DB Insert WARN] Skipping invalid question object:", question); }
+      await Question.create({
+        text: question.text,
+        type: question.type || 'rating',
+        category: question.category || 'General',
+        perspective: question.perspective,
+        required: question.required !== undefined ? question.required : true,
+        order: question.order,
+        templateId: template.id
+      });
     }
-    console.log(`[DB Insert] COMPLETED. Attempted: ${allQuestionsToInsert.length}, Inserted: ${insertedCount}.`);
 
-
-    // Link Source Documents & Update Status
+    // --- Link Source Documents ---
+    console.log('[analyzeDocumentsWithFluxAI] Linking source documents...');
+    
     for (const document of documents) {
-       if (document?.id) {
-          await SourceDocument.create({ fluxAiFileId: document.fluxAiFileId || null, documentId: document.id, templateId: template.id });
-          await Document.update({ status: 'analysis_complete', associatedTemplateId: template.id }, { where: { id: document.id } });
-       }
+      if (document?.id) {
+        await SourceDocument.create({
+          fluxAiFileId: document.fluxAiFileId || null,
+          documentId: document.id,
+          templateId: template.id
+        });
+      }
     }
-    console.log(`[Finalize] Linked and updated status for ${documents.length} documents.`);
 
-    console.log(`[analyzeDocumentsWithFluxAI] Process completed successfully for template ID: ${template.id}`);
-    return template; // Return the created template
+    // --- Update Document Status ---
+    console.log('[analyzeDocumentsWithFluxAI] Updating document status...');
+    
+    for (const document of documents) {
+      if (document?.id) {
+        await Document.update(
+          { 
+            status: 'analysis_complete', 
+            associatedTemplateId: template.id 
+          },
+          { where: { id: document.id } }
+        );
+      }
+    }
+
+    console.log(`[analyzeDocumentsWithFluxAI] Template generation complete: ${template.id}`);
+    return template;
 
   } catch (error) {
-    console.error('[analyzeDocumentsWithFluxAI] CRITICAL Error:', error);
-    // Attempt to create a fallback template
-    console.error('[analyzeDocumentsWithFluxAI] Analysis failed critically. Attempting fallback template.');
+    console.error('[analyzeDocumentsWithFluxAI] Error:', error);
+    
+    // Try to create a fallback template
     try {
-       const validDocuments = Array.isArray(documents) ? documents : [];
-       // Uses local createTemplateWithFallbackQuestions
-       const fallbackTemplate = await createTemplateWithFallbackQuestions(documentType, userId, validDocuments, templateInfo);
-       if (fallbackTemplate) {
-           console.log('[analyzeDocumentsWithFluxAI] Fallback template created successfully after CRITICAL error.');
-           return fallbackTemplate;
-       }
+      console.warn('[analyzeDocumentsWithFluxAI] Creating fallback template after error');
+      return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     } catch (fallbackError) {
-        console.error('[analyzeDocumentsWithFluxAI] CRITICAL: Failed to create fallback template:', fallbackError);
+      console.error('[analyzeDocumentsWithFluxAI] Error creating fallback template:', fallbackError);
+      
+      // Update document status to failed
+      for (const document of documents) {
+        if (document?.id) {
+          await Document.update(
+            { status: 'analysis_failed', analysisError: error.message },
+            { where: { id: document.id } }
+          );
+        }
+      }
+      
+      throw error;
     }
-    // Mark documents as failed if fallback didn't work
-    const docIdsToUpdate = Array.isArray(documents) ? documents.map(d => d?.id).filter(id => id) : [];
-    if (docIdsToUpdate.length > 0) {
-       await Document.update({ status: 'analysis_failed', analysisError: error.message }, { where: { id: docIdsToUpdate } });
-    }
-    throw error; // Re-throw original error
   }
 }
 
@@ -2598,37 +2798,37 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   if (perspective === 'manager') {
     candidates.push(
       {
-        text: `How effectively does this person develop and communicate a strategic vision?`,
+        text: `How effectively does this person develop and communicate a strategic vision${deptStr}${purposeStr}?`,
         type: "rating",
         category: "Strategic Vision"
       },
       {
-        text: `How well does this person build and maintain stakeholder engagement?`,
+        text: `How well does this person build and maintain stakeholder engagement${strategyStr}?`,
         type: "rating",
         category: "Stakeholder Engagement"
       },
       {
-        text: `How effectively does this person develop team members?`,
+        text: `How effectively does this person develop team members${purposeStr}?`,
         type: "rating",
         category: "Talent Development"
       },
       {
-        text: `How well does this person translate strategic goals into actionable plans$?`,
+        text: `How well does this person translate strategic goals into actionable plans${deptStr}?`,
         type: "rating",
         category: "Strategic Planning"
       },
       {
-        text: `How effectively does this person make decisions that support long-term objectives?`,
+        text: `How effectively does this person make decisions that support long-term objectives${strategyStr}?`,
         type: "rating",
         category: "Strategic Decision Making"
       },
       {
-        text: `How well does this person adapt team direction in response to market changes?`,
+        text: `How well does this person adapt team direction in response to market changes${deptStr}${purposeStr}?`,
         type: "rating",
         category: "Adaptability"
       },
       {
-        text: `What specific examples demonstrate this person's strategic leadership capabilities?`,
+        text: `What specific examples demonstrate this person's strategic leadership capabilities${purposeStr}?`,
         type: "open_ended",
         category: "Strategic Leadership"
       }
@@ -2636,32 +2836,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'peer') {
     candidates.push(
       {
-        text: `How effectively does this person collaborate across teams to support strategic initiatives$?`,
+        text: `How effectively does this person collaborate across teams to support strategic initiatives${purposeStr}?`,
         type: "rating",
         category: "Cross-team Collaboration"
       },
       {
-        text: `How well does this person communicate complex strategic concepts to peers?`,
+        text: `How well does this person communicate complex strategic concepts to peers${deptStr}?`,
         type: "rating",
         category: "Strategic Communication"
       },
       {
-        text: `How effectively does this person engage stakeholders in collaborative processes?`,
+        text: `How effectively does this person engage stakeholders in collaborative processes${strategyStr}?`,
         type: "rating",
         category: "Stakeholder Engagement"
       },
       {
-        text: `How would you rate this person's ability to balance short-term needs with long-term vision?`,
+        text: `How would you rate this person's ability to balance short-term needs with long-term vision${purposeStr}?`,
         type: "rating",
         category: "Strategic Balance"
       },
       {
-        text: `How well does this person share strategic insights and market intelligence?`,
+        text: `How well does this person share strategic insights and market intelligence${deptStr}?`,
         type: "rating",
         category: "Knowledge Sharing"
       },
       {
-        text: `What could this person improve in how they engage with peers on strategic initiatives?`,
+        text: `What could this person improve in how they engage with peers on strategic initiatives${strategyStr}?`,
         type: "open_ended",
         category: "Peer Collaboration"
       }
@@ -2669,32 +2869,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'direct_report') {
     candidates.push(
       {
-        text: `How effectively does this person communicate the team's strategic direction to you?`,
+        text: `How effectively does this person communicate the team's strategic direction to you${purposeStr}?`,
         type: "rating",
         category: "Vision Communication"
       },
       {
-        text: `How well does this person involve team members in strategic planning processes?`,
+        text: `How well does this person involve team members in strategic planning processes${deptStr}?`,
         type: "rating",
         category: "Inclusive Planning"
       },
       {
-        text: `How effectively does this person help you understand your role in achieving strategic goals?`,
+        text: `How effectively does this person help you understand your role in achieving strategic goals${strategyStr}?`,
         type: "rating",
         category: "Role Clarity"
       },
       {
-        text: `How well does this person balance focusing on strategy while providing operational support?`,
+        text: `How well does this person balance focusing on strategy while providing operational support${purposeStr}?`,
         type: "rating",
         category: "Operational Balance"
       },
       {
-        text: `How effectively does this person develop your capabilities to contribute to strategic initiatives?`,
+        text: `How effectively does this person develop your capabilities to contribute to strategic initiatives${deptStr}?`,
         type: "rating",
         category: "Capability Development"
       },
       {
-        text: `What specific actions could this person take to better engage you in the strategic direction?`,
+        text: `What specific actions could this person take to better engage you in the strategic direction${strategyStr}?`,
         type: "open_ended",
         category: "Team Engagement"
       }
@@ -2702,32 +2902,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'self') {
     candidates.push(
       {
-        text: `How effectively do you develop and communicate strategic vision?`,
+        text: `How effectively do you develop and communicate strategic vision${purposeStr}?`,
         type: "rating",
         category: "Strategic Vision"
       },
       {
-        text: `How well do you engage stakeholders in your strategic planning processes?`,
+        text: `How well do you engage stakeholders in your strategic planning processes${deptStr}?`,
         type: "rating",
         category: "Stakeholder Engagement"
       },
       {
-        text: `How effectively do you translate strategic goals into actionable plans for your team?`,
+        text: `How effectively do you translate strategic goals into actionable plans for your team${strategyStr}?`,
         type: "rating",
         category: "Strategic Planning"
       },
       {
-        text: `How well do you balance long-term strategic objectives with short-term needs?`,
+        text: `How well do you balance long-term strategic objectives with short-term needs${purposeStr}?`,
         type: "rating",
         category: "Strategic Balance"
       },
       {
-        text: `How effectively do you develop your team's capabilities to execute on strategic initiatives?`,
+        text: `How effectively do you develop your team's capabilities to execute on strategic initiatives${deptStr}?`,
         type: "rating",
         category: "Capability Development"
       },
       {
-        text: `What specifically do you do to maintain stakeholder engagement throughout strategic initiatives?`,
+        text: `What specifically do you do to maintain stakeholder engagement throughout strategic initiatives${strategyStr}?`,
         type: "open_ended",
         category: "Stakeholder Management"
       }
@@ -2735,32 +2935,32 @@ function addLeadershipModelFallbackQuestions(questions, perspective, startOrder,
   } else if (perspective === 'external') {
     candidates.push(
       {
-        text: `How effectively does this person represent the organization's strategic direction?`,
+        text: `How effectively does this person represent the organization's strategic direction${purposeStr}?`,
         type: "rating",
         category: "Strategic Representation"
       },
       {
-        text: `How well does this person engage with external stakeholders?`,
+        text: `How well does this person engage with external stakeholders${deptStr}?`,
         type: "rating",
         category: "Stakeholder Engagement"
       },
       {
-        text: `How effectively does this person communicate complex strategic concepts to external parties?`,
+        text: `How effectively does this person communicate complex strategic concepts to external parties${strategyStr}?`,
         type: "rating",
         category: "External Communication"
       },
       {
-        text: `How would you rate this person's ability to build strategic partnerships?`,
+        text: `How would you rate this person's ability to build strategic partnerships${purposeStr}?`,
         type: "rating",
         category: "Partnership Building"
       },
       {
-        text: `How well does this person understand external stakeholder needs and incorporate them into strategy?`,
+        text: `How well does this person understand external stakeholder needs and incorporate them into strategy${deptStr}?`,
         type: "rating",
         category: "Stakeholder Understanding"
       },
       {
-        text: `What could this person improve in how they engage with external stakeholders on strategic initiatives?`,
+        text: `What could this person improve in how they engage with external stakeholders on strategic initiatives${strategyStr}?`,
         type: "open_ended",
         category: "External Engagement"
       }
@@ -3235,6 +3435,217 @@ async function tryTwoStepQuestionGeneration(fileIds, documentType, templateInfo 
   } catch (error) {
     console.error('Error in two-step question generation:', error);
     return null;
+  }
+}
+
+// Add these helper functions for the fallback questions by document type
+// Place these functions after the generateFallbackQuestions function
+
+function addLeadershipModelFallbackQuestions(questions, perspective, startOrder, count, templateInfo = {}) {
+  const { department, purpose } = templateInfo || {};
+  const contextStr = department ? ` in the ${department} department` : '';
+  const roleContext = purpose ? ` related to ${purpose}` : '';
+  
+  let order = startOrder;
+  let questionsAdded = 0;
+  const candidates = [];
+  
+  if (perspective === 'manager') {
+    candidates.push(
+      {
+        text: `How effectively does this person demonstrate strategic thinking${contextStr}?`,
+        type: "rating",
+        category: "Strategic Thinking"
+      },
+      {
+        text: `How well does this person develop team members${contextStr}?`,
+        type: "rating",
+        category: "Talent Development"
+      },
+      {
+        text: `How effectively does this person make decisions${roleContext}?`,
+        type: "rating",
+        category: "Decision Making"
+      },
+      {
+        text: `How well does this person align team goals with organizational objectives${contextStr}?`,
+        type: "rating",
+        category: "Strategic Alignment"
+      },
+      {
+        text: `How effectively does this person handle complex challenges${contextStr}?`,
+        type: "rating",
+        category: "Problem Solving"
+      },
+      {
+        text: `How would you describe this person's leadership style and its impact${roleContext}?`,
+        type: "open_ended",
+        category: "Leadership Style"
+      }
+    );
+  } else if (perspective === 'peer') {
+    candidates.push(
+      {
+        text: `How well does this person collaborate across teams${contextStr}?`,
+        type: "rating",
+        category: "Collaboration"
+      },
+      {
+        text: `How would you rate this person's ability to influence without authority${contextStr}?`,
+        type: "rating",
+        category: "Influence"
+      },
+      {
+        text: `How effectively does this person handle conflicts${roleContext}?`,
+        type: "rating",
+        category: "Conflict Resolution"
+      },
+      {
+        text: `How well does this person share knowledge and resources${contextStr}?`,
+        type: "rating",
+        category: "Knowledge Sharing"
+      },
+      {
+        text: `How effectively does this person contribute to a positive team culture${contextStr}?`,
+        type: "rating",
+        category: "Team Culture"
+      },
+      {
+        text: `How could this person be a more effective peer collaborator${roleContext}?`,
+        type: "open_ended",
+        category: "Collaboration"
+      }
+    );
+  } else if (perspective === 'direct_report') {
+    candidates.push(
+      {
+        text: `How well does this person provide clear direction and guidance${roleContext}?`,
+        type: "rating",
+        category: "Direction Setting"
+      },
+      {
+        text: `How effectively does this person delegate tasks and empower you${contextStr}?`,
+        type: "rating",
+        category: "Delegation"
+      },
+      {
+        text: `How well does this person support your professional development${roleContext}?`,
+        type: "rating",
+        category: "Development Support"
+      },
+      {
+        text: `How effectively does this person provide constructive feedback${contextStr}?`,
+        type: "rating",
+        category: "Feedback"
+      },
+      {
+        text: `How well does this person recognize your achievements${roleContext}?`,
+        type: "rating",
+        category: "Recognition"
+      },
+      {
+        text: `What could this person do to be a more effective leader for you${contextStr}?`,
+        type: "open_ended", 
+        category: "Leadership Effectiveness"
+      }
+    );
+  } else if (perspective === 'self') {
+    candidates.push(
+      {
+        text: `How effectively do you communicate vision and strategy${contextStr}?`,
+        type: "rating",
+        category: "Vision"
+      },
+      {
+        text: `How well do you develop and empower your team members${roleContext}?`,
+        type: "rating",
+        category: "Team Development"
+      },
+      {
+        text: `How would you rate your ability to make difficult decisions${contextStr}?`,
+        type: "rating",
+        category: "Decision Making"
+      },
+      {
+        text: `How effectively do you lead through times of change${roleContext}?`,
+        type: "rating",
+        category: "Change Leadership"
+      },
+      {
+        text: `How well do you balance strategic thinking with tactical execution${contextStr}?`,
+        type: "rating",
+        category: "Strategic Execution"
+      },
+      {
+        text: `What leadership skills would you like to develop further${roleContext}?`,
+        type: "open_ended",
+        category: "Development Goals"
+      }
+    );
+  } else if (perspective === 'external') {
+    candidates.push(
+      {
+        text: `How effectively does this person represent the organization${contextStr}?`,
+        type: "rating",
+        category: "Representation"
+      },
+      {
+        text: `How well does this person build relationships with external stakeholders${roleContext}?`,
+        type: "rating",
+        category: "Relationship Building"
+      },
+      {
+        text: `How effectively does this person communicate the organization's vision${contextStr}?`,
+        type: "rating",
+        category: "External Communication"
+      },
+      {
+        text: `How would you rate this person's professionalism${contextStr}?`,
+        type: "rating",
+        category: "Professionalism"
+      },
+      {
+        text: `How well does this person understand your needs as an external stakeholder${roleContext}?`,
+        type: "rating",
+        category: "Stakeholder Understanding"
+      },
+      {
+        text: `What could this person do to improve their effectiveness in working with external stakeholders${contextStr}?`,
+        type: "open_ended",
+        category: "External Effectiveness"
+      }
+    );
+  }
+  
+  // Add questions up to the requested count
+  for (let i = 0; i < Math.min(count, candidates.length); i++) {
+    questions.push({
+      ...candidates[i],
+      perspective: perspective,
+      required: true,
+      order: order++
+    });
+    questionsAdded++;
+  }
+  
+  // If we still need more questions, cycle through candidates again
+  while (questionsAdded < count) {
+    const index = questionsAdded % candidates.length;
+    // Slightly modify the question to avoid exact duplicates
+    const modified = {...candidates[index]};
+    if (modified.text.startsWith("How ")) {
+      modified.text = modified.text.replace("How ", "To what extent ");
+    } else if (modified.text.startsWith("What ")) {
+      modified.text = modified.text.replace("What ", "Which ");
+    }
+    
+    questions.push({
+      ...modified,
+      perspective: perspective,
+      required: true,
+      order: order++
+    });
+    questionsAdded++;
   }
 }
 

@@ -41,16 +41,16 @@ function generateFallbackQuestions(perspective, count, documentType, existingAiQ
   for (const question of allCandidateQuestions) {
       const normalizedText = question.text.toLowerCase().replace(/[.,?!;:]/g, '').replace(/\s+/g, ' ').trim();
       if (!usedInternalTextsNorm.has(normalizedText)) {
-           let tooSimilarToInternal = false;
-           for(const uniqueTextNorm of usedInternalTextsNorm) {
-               if (calculateSimilarity(normalizedText, uniqueTextNorm) > 0.85) {
-                   tooSimilarToInternal = true; break;
-               }
-           }
-           if (!tooSimilarToInternal) {
-               uniqueInternalCandidates.push(question);
-               usedInternalTextsNorm.add(normalizedText);
-           }
+          let tooSimilarToInternal = false;
+          for(const uniqueTextNorm of usedInternalTextsNorm) {
+              if (calculateSimilarity(normalizedText, uniqueTextNorm) > 0.85) {
+                  tooSimilarToInternal = true; break;
+              }
+          }
+          if (!tooSimilarToInternal) {
+              uniqueInternalCandidates.push(question);
+              usedInternalTextsNorm.add(normalizedText);
+          }
       }
   }
   console.log(`Fallback Generator -> ${uniqueInternalCandidates.length} candidates remain after internal deduplication (exact & similarity > 0.85).`);

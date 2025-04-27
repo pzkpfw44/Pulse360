@@ -160,26 +160,17 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     }
     console.log('Starting AI Response Parsing...');
 
-    // --- ADD PRE-PROCESSING --- // Copied from last attempt
-    let processedResponse = aiResponse.trim();
-    // Attempt to remove common introductory phrases before the first real header
-    const firstHeaderMatch = processedResponse.match(/(?:===?\s*|\*{2}\s*)(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT/i);
-    if (firstHeaderMatch && firstHeaderMatch.index > 0) {
-        // Check if text before header is short and likely intro fluff
-        const textBeforeHeader = processedResponse.substring(0, firstHeaderMatch.index).trim();
-        if (textBeforeHeader.length < 100 && !textBeforeHeader.includes('Question:')) {
-                console.log(`Parser Pre-processing: Removing leading text: "${textBeforeHeader}"`);
-                processedResponse = processedResponse.substring(firstHeaderMatch.index);
-        }
-    }
-    // --- END PRE-PROCESSING ---
-
     // Define the patterns for splitting, including capturing the perspective name
     // Using a single, more robust pattern covering variations.
-    const sectionSplitPattern = /(?:^|\n)\s*(?:(?:===?\s*)|(?:\*{2}\s*))?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===?|\*{2})?\s*\n/i; // Use robust pattern
+    // It captures the perspective name (GROUP 1) right after the separator (=== or newline)
+    // It looks for MANAGER, PEER, DIRECT REPORT, SELF, or EXTERNAL STAKEHOLDER followed by ASSESSMENT
+    const sectionSplitPattern =
+        /(?:^|\n)\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i;
 
-    // Use processedResponse for splitting
-    const parts = processedResponse.split(sectionSplitPattern);
+    // Split the response by the pattern. The pattern captures the delimiter,
+    // so the resulting array will interleave content and perspective names.
+    // Example: [ content_before_first_header, header1, content_after_header1, header2, content_after_header2, ...]
+    const parts = aiResponse.split(sectionSplitPattern);
 
     console.log(`Split AI response into ${parts.length} parts.`);
 
@@ -224,8 +215,11 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
                     console.log(`  -> Added question [${currentPerspective}]: "${questionText.substring(0, 40)}..."`);
                 }
             }
+             // Optional: Reset perspective if content was processed, reduces risk of misattribution on messy formats
+             // currentPerspective = null;
         } else {
              console.log(`Skipping content part found before first recognized header or with unknown perspective: "${part.substring(0, 60)}..."`);
+             // This part might be intro text or content before the first valid header matched by the split
         }
     }
 
@@ -233,6 +227,7 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     const totalQuestionsFound = Object.values(questionsByPerspective).reduce((sum, qArr) => sum + qArr.length, 0);
     if (totalQuestionsFound === 0 && aiResponse.length > 0) {
         console.warn("Primary parsing failed to find any questions via section headers. Attempting global fallback search (if implemented)...");
+        // Implement keyword-based fallback here if needed, but the improved split should be preferred.
     }
 
     // --- Post-processing and Logging ---
@@ -248,10 +243,6 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     uniqueParsedQuestions.forEach(q => {
         if (uniqueQuestionsByPerspective[q.perspective]) {
             uniqueQuestionsByPerspective[q.perspective].push(q);
-        } else {
-             console.warn(`Parsed question has unknown perspective '${q.perspective}' during final count log. Text: "${q.text.substring(0,30)}..."`);
-             // Assign to a generic bucket or handle as needed
-             // For now, we'll ignore it in the final count log if the perspective key doesn't exist.
         }
     });
 
@@ -270,6 +261,8 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
 
     if (emptyPerspectives.length > 0) {
         console.error(`CRITICAL WARNING: No AI questions parsed for enabled perspectives: ${emptyPerspectives.join(', ')}. Fallback questions will be used by ensurePerspectiveQuestionCounts unless a second AI call is implemented.`);
+        // **IMPORTANT**: The calling service should check for this situation (e.g., by checking counts)
+        // *after* this function returns and potentially trigger a second AI call.
     }
 
     // Return the unique questions as a flat array, re-assigning order based on flat array index
@@ -284,43 +277,52 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
  * @returns {Array} - Deduplicated array of questions
  */
 function deduplicateQuestions(questions) {
+    // Function to deduplicate questions - remains the same as provided previously
     const uniqueQuestions = [];
     const textMap = new Map(); // Maps perspective to set of question texts
 
     for (const question of questions) {
-        const perspective = question.perspective || 'unknown'; // Handle missing perspective
+        const perspective = question.perspective || 'unknown';
 
+        // Initialize set for this perspective if it doesn't exist
         if (!textMap.has(perspective)) {
             textMap.set(perspective, new Set());
         }
 
-        const normalizedText = (question.text || '') // Handle missing text
+        // Normalize the question text for comparison (lowercase, no punctuation, trimmed)
+        const normalizedText = question.text
             .toLowerCase()
-            .replace(/[.,?!;:]/g, '')
-            .replace(/\s+/g, ' ')
+            .replace(/[.,?!;:]/g, '') // Remove common punctuation
+            .replace(/\s+/g, ' ') // Normalize whitespace
             .trim();
 
-        if (!normalizedText) continue; // Skip empty questions
-
+        // Check if this question is unique for its perspective
         const perspectiveSet = textMap.get(perspective);
+
         let isDuplicate = false;
 
+        // Check for exact match first
         if (perspectiveSet.has(normalizedText)) {
             isDuplicate = true;
+            // console.log(`Dedupe: Exact match found for perspective ${perspective}: "${question.text}"`);
         } else {
+             // If not exact match, check for high similarity with existing questions in this perspective
              for (const existingText of perspectiveSet) {
-                if (calculateSimilarity(normalizedText, existingText) > 0.85) {
+                // Use the calculateSimilarity function (assumed to be defined in this file)
+                if (calculateSimilarity(normalizedText, existingText) > 0.85) { // Using stricter threshold
                     isDuplicate = true;
+                    // console.log(`Dedupe: Similar match found for perspective ${perspective} (${calculateSimilarity(normalizedText, existingText).toFixed(2)}):\n  "${question.text}"\n  "${existingText}"`);
                     break;
                 }
             }
         }
 
         if (!isDuplicate) {
-            perspectiveSet.add(normalizedText);
-            uniqueQuestions.push(question);
+            perspectiveSet.add(normalizedText); // Add normalized text to prevent future duplicates
+            uniqueQuestions.push(question); // Add the original question object
         }
     }
+    // console.log(`Deduplication: Input ${questions.length}, Output ${uniqueQuestions.length}`);
     return uniqueQuestions;
 }
 
@@ -331,13 +333,17 @@ function deduplicateQuestions(questions) {
  * @returns {number} - Similarity score between 0 and 1
  */
 function calculateSimilarity(str1, str2) {
-    if (!str1 || !str2) return 0.0;
+    // Function to calculate similarity - remains the same as provided previously
+    if (!str1 || !str2) return 0.0; // Handle null/empty strings
     if (str1 === str2) return 1.0;
+
     const words1 = new Set(str1.split(' '));
     const words2 = new Set(str2.split(' '));
-    if (words1.size === 0 || words2.size === 0) return 0.0;
+
     const intersection = new Set([...words1].filter(word => words2.has(word)));
     const smallerSize = Math.min(words1.size, words2.size);
+
+    // Avoid division by zero if one string has no words after normalization
     return smallerSize === 0 ? 0.0 : intersection.size / smallerSize;
 }
 
@@ -345,81 +351,90 @@ function calculateSimilarity(str1, str2) {
 /**
  * Ensures we have the exact requested number of questions for each perspective
  * NOTE: This function calls the fallback generation if AI questions are insufficient.
- * @param {Object} questionsMap - Questions grouped by perspective { manager: [...], peer: [...], ... }
+ * @param {Object} questionsMap - Questions grouped by perspective (SHOULD contain UNIQUE AI questions from parser)
  * @param {Object} perspectiveSettings - Settings with question counts
  * @param {string} documentType - Type of document
- * @returns {Object} - Balanced questions map { manager: [...], peer: [...], ... }
+ * @returns {Object} - Balanced questions (grouped by perspective)
  */
 function ensurePerspectiveQuestionCounts(questionsMap, perspectiveSettings, documentType) {
-    console.log('Balancer (ensurePerspectiveQuestionCounts): Balancing questions...');
+    // Function to balance questions and call fallbacks - remains the same as provided previously
     let generateFallbackQuestions;
     try {
+        // Assuming fallback-questions.service is in the same directory or accessible path
         generateFallbackQuestions = require('./fallback-questions.service').generateFallbackQuestions;
          console.log("Balancer: Fallback question generator loaded.");
     } catch (error) {
-        console.error("Balancer CRITICAL: Failed to load fallback-questions.service.", error);
-        generateFallbackQuestions = (p, n, dt, existing) => { return []; }; // Dummy
+        console.error("Balancer CRITICAL: Failed to load fallback-questions.service. Fallback questions cannot be generated.", error);
+        generateFallbackQuestions = (p, n, dt, existing) => { // Provide dummy function
+            console.error(`Balancer: Cannot generate ${n} fallback questions for ${p} - service missing.`);
+            return []; // Return empty array if service fails to load
+        };
     }
 
-    const result = {};
-    const finalDeduplicatedResult = {}; // For final check
+    const result = {}; // Result will be a map grouped by perspective
 
+    // Process each perspective defined in the settings
     for (const perspective in perspectiveSettings) {
+        // Skip disabled perspectives
         if (!perspectiveSettings[perspective]?.enabled) {
             continue;
         }
 
-        const targetCount = perspectiveSettings[perspective]?.questionCount || 5;
+        const targetCount = perspectiveSettings[perspective]?.questionCount || 5; // Default target
+        // Ensure we are working with an array, even if the key was missing from the input map
         const availableAiQuestions = questionsMap[perspective] || [];
-        console.log(` -> Balancer Check [${perspective}]: Target=${targetCount}, Available AI=${availableAiQuestions.length}`);
+        console.log(`Balancer: Balancing questions for ${perspective}: Target=${targetCount}, AI Found=${availableAiQuestions.length}`);
 
         if (availableAiQuestions.length < targetCount) {
+            // Need to generate more questions using fallbacks
             const neededCount = targetCount - availableAiQuestions.length;
-            console.warn(` -> Balancer Action [${perspective}]: Generating ${neededCount} fallbacks.`);
+            console.warn(`Balancer: Generating ${neededCount} GENERIC fallback questions for ${perspective}. (AI questions were insufficient)`);
+            // Call the fallback generator, passing existing AI questions for this perspective
             const fallbackQuestions = generateFallbackQuestions(
-                perspective, neededCount, documentType, availableAiQuestions
+                perspective,
+                neededCount,
+                documentType,
+                availableAiQuestions // Pass existing AI questions to fallback service
             );
+
+            // Combine existing AI and new fallback questions
             result[perspective] = [...availableAiQuestions, ...fallbackQuestions];
+            console.log(`Balancer -> Total questions for ${perspective} after fallback: ${result[perspective].length}`);
         } else if (availableAiQuestions.length > targetCount) {
-            console.log(` -> Balancer Action [${perspective}]: Trimming AI from ${availableAiQuestions.length} to ${targetCount}.`);
+            // Need to select a subset of AI questions (simple slice for now)
+            console.log(`Balancer: Trimming AI questions for ${perspective} from ${availableAiQuestions.length} to ${targetCount}.`);
             result[perspective] = availableAiQuestions.slice(0, targetCount);
         } else {
-            console.log(` -> Balancer Action [${perspective}]: Using exact ${targetCount} AI questions.`);
-            result[perspective] = [...availableAiQuestions];
+            // We have exactly the right number of AI questions
+            console.log(`Balancer: Exact number of AI questions (${targetCount}) found and used for ${perspective}.`);
+            result[perspective] = availableAiQuestions;
         }
-
-         // Add final deduplication step within the loop, after potentially adding fallbacks
-         if (result[perspective]) {
-             const initialCount = result[perspective].length;
-             finalDeduplicatedResult[perspective] = deduplicateQuestions(result[perspective]);
-             if (finalDeduplicatedResult[perspective].length < initialCount) {
-                 console.log(` -> Balancer Dedupe [${perspective}]: Deduplicated from ${initialCount} to ${finalDeduplicatedResult[perspective].length}`);
-             }
-         } else {
-             finalDeduplicatedResult[perspective] = [];
-         }
     }
 
-    // Assign final order globally after all processing
-    let globalOrderIndex = 1;
-    const perspectiveOrder = ['manager', 'peer', 'direct_report', 'self', 'external'];
-    perspectiveOrder.forEach(p => {
-        if (finalDeduplicatedResult[p]) {
-             finalDeduplicatedResult[p] = finalDeduplicatedResult[p].map(q => ({ ...q, order: globalOrderIndex++ }));
+    // Ensure all enabled perspective keys exist in the result, even if empty (though fallbacks should fill them)
+    for (const perspective in perspectiveSettings) {
+        if (perspectiveSettings[perspective]?.enabled && !result[perspective]) {
+            result[perspective] = [];
         }
+    }
+
+    // Re-assign final order across all questions within each perspective
+    Object.keys(result).forEach(perspective => {
+        result[perspective] = result[perspective].map((q, index) => ({
+            ...q,
+            order: index + 1
+        }));
     });
 
 
-    const totalBalanced = Object.values(finalDeduplicatedResult).flat().length;
-    console.log(`Balancer: Balancing complete. Final total questions: ${totalBalanced}.`);
-    return finalDeduplicatedResult; // Return the final deduplicated and ordered map
+    return result; // Return the map
 }
 
 
 module.exports = {
-  parseQuestionsFromAiResponse,
-  sanitizeQuestionText, // Assuming used by parser or elsewhere
-  deduplicateQuestions,
-  ensurePerspectiveQuestionCounts,
-  calculateSimilarity
+  parseQuestionsFromAiResponse, // Updated function
+  sanitizeQuestionText,
+  deduplicateQuestions, // Make sure it's defined or imported if used
+  ensurePerspectiveQuestionCounts, // Make sure it's defined or imported if used
+  calculateSimilarity // Make sure it's defined or imported if used by deduplicateQuestions
 };
