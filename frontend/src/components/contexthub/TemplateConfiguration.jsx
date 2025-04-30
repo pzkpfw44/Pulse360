@@ -9,6 +9,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  // --- START: ADD questionMixPercentage TO INITIAL STATE ---
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -21,8 +22,10 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       direct_report: { enabled: true, questionCount: 10 },
       self: { enabled: true, questionCount: 10 },
       external: { enabled: false, questionCount: 5 }
-    }
+    },
+    questionMixPercentage: 75 // Default to 75% rating questions
   });
+  // --- END: ADD questionMixPercentage TO INITIAL STATE ---
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -35,11 +38,11 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
     try {
       setLoading(true);
       const response = await api.get('/documents');
-      
-      const availableDocs = (response.data.documents || []).filter(doc => 
+
+      const availableDocs = (response.data.documents || []).filter(doc =>
         ['uploaded', 'uploaded_to_ai', 'analysis_in_progress', 'analysis_complete'].includes(doc.status)
       );
-      
+
       console.log('Available documents for template:', availableDocs.length);
       setDocuments(availableDocs);
       setLoading(false);
@@ -56,6 +59,22 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
       // Reset form when opening
       setSelectedDocumentIds([]);
       setError(null);
+      // Reset form data including the mix percentage
+      setFormData({
+        name: '',
+        description: '',
+        purpose: '',
+        department: '',
+        documentType: '',
+        perspectiveSettings: {
+          manager: { enabled: true, questionCount: 10 },
+          peer: { enabled: true, questionCount: 10 },
+          direct_report: { enabled: true, questionCount: 10 },
+          self: { enabled: true, questionCount: 10 },
+          external: { enabled: false, questionCount: 5 }
+        },
+        questionMixPercentage: 75 // Reset to default
+      });
     }
   };
 
@@ -67,12 +86,22 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
     });
   };
 
+  // --- START: ADD handler for the new slider ---
+  const handleSliderChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: parseInt(value, 10) // Ensure value is stored as a number
+    });
+  };
+  // --- END: ADD handler for the new slider ---
+
   const handleDocumentSelection = (documentId) => {
     setSelectedDocumentIds(prev => {
       // If already selected, deselect
       if (prev.includes(documentId)) {
         const remainingDocs = prev.filter(id => id !== documentId);
-        
+
         // If no documents left, reset document type
         if (remainingDocs.length === 0) {
           setFormData(prevData => ({
@@ -81,38 +110,38 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
             name: ''
           }));
         }
-        
+
         return remainingDocs;
       }
-      
+
       // Prevent more than 3 selections
       if (prev.length >= 3) {
         setError('You can select up to 3 documents');
         return prev;
       }
-      
+
       const selectedDoc = documents.find(doc => doc.id === documentId);
-      
+
       // If no documents selected yet, set the type
       if (prev.length === 0) {
         setFormData(prevData => ({
           ...prevData,
           documentType: selectedDoc.documentType,
-          name: `${selectedDoc.documentType.split('_').map(word => 
+          name: `${selectedDoc.documentType.split('_').map(word =>
             word.charAt(0).toUpperCase() + word.slice(1)
           ).join(' ')} Template`
         }));
-        
+
         return [...prev, documentId];
       }
-      
+
       // Ensure same document type
       const firstDocType = documents.find(doc => doc.id === prev[0]).documentType;
       if (selectedDoc.documentType !== firstDocType) {
         setError('Please select documents of the same type');
         return prev;
       }
-      
+
       return [...prev, documentId];
     });
   };
@@ -132,30 +161,30 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
 
   const validateSettings = () => {
     let errors = [];
-    
+
     // Check template name
     if (!formData.name.trim()) {
       errors.push('Please provide a template name');
     }
-    
+
     // Check document selection
     if (selectedDocumentIds.length === 0) {
       errors.push('Please select at least one document');
     }
-    
+
     // Check document type
     if (!formData.documentType) {
       errors.push('Please select a document type');
     }
-    
+
     // Check that at least one perspective is enabled
     const enabledPerspectives = Object.values(formData.perspectiveSettings)
       .filter(settings => settings.enabled);
-      
+
     if (enabledPerspectives.length === 0) {
       errors.push('Please enable at least one perspective');
     }
-    
+
     // Check that enabled perspectives have reasonable question counts
     Object.entries(formData.perspectiveSettings).forEach(([perspective, settings]) => {
       if (settings.enabled) {
@@ -165,29 +194,35 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
         }
       }
     });
-    
+
+    // Validate question mix percentage (optional, but good practice)
+    if (formData.questionMixPercentage < 0 || formData.questionMixPercentage > 100) {
+        errors.push('Question Mix Percentage must be between 0 and 100.');
+    }
+
     return errors;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     const validationErrors = validateSettings();
-    
+
     if (validationErrors.length > 0) {
       setError(validationErrors.join('\n'));
       return;
     }
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       // First, show a generating message
       const generateStatus = document.createElement('div');
       generateStatus.innerHTML = '<div class="fixed top-0 left-0 right-0 bg-blue-600 text-white p-2 text-center z-50">Generating template... This may take a moment.</div>';
       document.body.appendChild(generateStatus);
-      
+
+      // --- START: INCLUDE questionMixPercentage IN SUBMITTED DATA ---
       // Log detailed formData for debugging
       console.log('Submitting template configuration:', {
         documentIds: selectedDocumentIds,
@@ -196,9 +231,10 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
         purpose: formData.purpose,
         department: formData.department,
         documentType: formData.documentType,
-        perspectiveSettings: formData.perspectiveSettings
+        perspectiveSettings: formData.perspectiveSettings,
+        questionMixPercentage: formData.questionMixPercentage // Add this line
       });
-      
+
       const response = await api.post('/templates/generate-configured', {
         documentIds: selectedDocumentIds,
         name: formData.name,
@@ -206,48 +242,50 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
         purpose: formData.purpose,
         department: formData.department,
         documentType: formData.documentType,
-        perspectiveSettings: formData.perspectiveSettings
+        perspectiveSettings: formData.perspectiveSettings,
+        questionMixPercentage: formData.questionMixPercentage // Add this line
       });
-      
+      // --- END: INCLUDE questionMixPercentage IN SUBMITTED DATA ---
+
       // Remove the status message
       document.body.removeChild(generateStatus);
-      
+
       // Reset the form
       setShowForm(false);
       setSelectedDocumentIds([]);
-      
+
       // Navigate to the template review page
       if (response.data && response.data.template) {
         // Show success message
         const successStatus = document.createElement('div');
         successStatus.innerHTML = '<div class="fixed top-0 left-0 right-0 bg-green-600 text-white p-2 text-center z-50">Template created successfully!</div>';
         document.body.appendChild(successStatus);
-        
+
         // Remove success message after 3 seconds
         setTimeout(() => {
           document.body.removeChild(successStatus);
         }, 3000);
-        
+
         navigate(`/contexthub/templates/${response.data.template.id}`);
       }
-      
+
       // Notify parent component
       if (onTemplateCreated) {
         onTemplateCreated();
       }
-      
+
     } catch (err) {
       console.error('Error generating template:', err);
       let errorMsg = 'Failed to generate template';
-      
+
       if (err.response?.data?.message) {
         errorMsg = err.response.data.message;
       } else if (err.message) {
         errorMsg = err.message;
       }
-      
+
       setError(errorMsg);
-      
+
       // Show detailed error in console for debugging
       console.log('Error details:', JSON.stringify(err.response?.data || err, null, 2));
     } finally {
@@ -267,8 +305,8 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
         <button
           onClick={handleToggleForm}
           className={`flex items-center px-4 py-2 rounded-md transition-colors ${
-            showForm 
-              ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' 
+            showForm
+              ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
               : 'bg-blue-600 text-white hover:bg-blue-700'
           }`}
         >
@@ -280,7 +318,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
           )}
         </button>
       </div>
-      
+
       {showForm && (
         <div className="p-5">
           {error && (
@@ -288,12 +326,12 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
               <p style={{ whiteSpace: 'pre-line' }}>{error}</p>
             </div>
           )}
-          
+
           <form onSubmit={handleSubmit}>
             {/* Document Selection */}
             <div className="mb-6">
               <h3 className="text-md font-medium mb-2">Select Documents</h3>
-              
+
               {loading ? (
                 <div className="flex justify-center items-center py-8">
                   <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
@@ -315,19 +353,19 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {documents.map(doc => (
-                    <div 
+                    <div
                       key={doc.id}
                       className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                        selectedDocumentIds.includes(doc.id) 
-                          ? 'border-blue-500 bg-blue-50' 
+                        selectedDocumentIds.includes(doc.id)
+                          ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-blue-300'
                       }`}
                       onClick={() => handleDocumentSelection(doc.id)}
                     >
                       <div className="flex items-start">
                         <div className={`flex-shrink-0 w-5 h-5 mt-0.5 rounded-full border flex items-center justify-center ${
-                          selectedDocumentIds.includes(doc.id) 
-                            ? 'bg-blue-500 border-blue-500 text-white' 
+                          selectedDocumentIds.includes(doc.id)
+                            ? 'bg-blue-500 border-blue-500 text-white'
                             : 'border-gray-300'
                         }`}>
                           {selectedDocumentIds.includes(doc.id) && <Check className="w-3 h-3" />}
@@ -344,7 +382,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                 </div>
               )}
             </div>
-            
+
             {/* Template Information */}
             <div className="mb-6">
               <h3 className="text-md font-medium mb-3">Template Information</h3>
@@ -363,7 +401,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                     required
                   />
                 </div>
-                
+
                 <div className="hidden">
                   <input
                     type="hidden"
@@ -371,14 +409,14 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                     value={formData.documentType}
                   />
                   <span className="block text-sm font-medium text-gray-500">
-                    Document Type: {formData.documentType 
-                      ? formData.documentType.split('_').map(word => 
+                    Document Type: {formData.documentType
+                      ? formData.documentType.split('_').map(word =>
                           word.charAt(0).toUpperCase() + word.slice(1)
                         ).join(' ')
                       : 'Not selected'}
                   </span>
                 </div>
-                
+
                 <div>
                   <label htmlFor="department" className="block text-sm font-medium text-gray-500 mb-1">
                     Department / Function
@@ -393,7 +431,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                     placeholder="e.g., Finance, Engineering, Marketing"
                   />
                 </div>
-                
+
                 <div className="md:col-span-2">
                   <label htmlFor="purpose" className="block text-sm font-medium text-gray-500 mb-1">
                     Template Purpose
@@ -408,7 +446,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                     rows={2}
                   />
                 </div>
-                
+
                 <div className="md:col-span-2">
                   <label htmlFor="description" className="block text-sm font-medium text-gray-500 mb-1">
                     Description
@@ -424,14 +462,14 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                 </div>
               </div>
             </div>
-            
+
             {/* Perspective Settings */}
             <div className="mb-6">
               <h3 className="text-md font-medium mb-3">Perspective Settings</h3>
               <p className="text-sm text-gray-500 mb-4">
                 Configure which perspectives to include and how many questions each should have.
               </p>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(formData.perspectiveSettings).map(([perspective, settings]) => (
                   <div key={perspective} className={`border rounded-lg p-4 ${!settings.enabled ? 'opacity-60' : ''}`}>
@@ -440,7 +478,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                         {perspective.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Assessment
                       </h4>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
+                        <input
                           type="checkbox"
                           className="sr-only peer"
                           checked={settings.enabled}
@@ -449,7 +487,7 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                         <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
-                    
+
                     <div>
                       <label htmlFor={`${perspective}-count`} className="block text-sm font-medium text-gray-500 mb-1">
                         Question Count
@@ -469,7 +507,37 @@ const TemplateConfiguration = ({ onTemplateCreated }) => {
                 ))}
               </div>
             </div>
-            
+
+            {/* --- START: ADD QUESTION MIX SLIDER --- */}
+            <div className="mb-6">
+              <h3 className="text-md font-medium mb-3">Question Type Mix</h3>
+              <p className="text-sm text-gray-500 mb-2">
+                Adjust the balance between rating scale questions (e.g., "How effective...") and open-ended questions (e.g., "Describe...").
+              </p>
+              <div>
+                <label htmlFor="questionMixPercentage" className="block text-sm font-medium text-gray-500 mb-1">
+                  Percentage of Rating Scale Questions: <span className="font-semibold text-blue-600">{formData.questionMixPercentage}%</span>
+                  <span className="text-gray-400"> ({100 - formData.questionMixPercentage}% Open-Ended)</span>
+                </label>
+                <input
+                  id="questionMixPercentage"
+                  name="questionMixPercentage"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5" // Allow adjustments in 5% increments
+                  value={formData.questionMixPercentage}
+                  onChange={handleSliderChange} // Use the new handler
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                 <div className="flex justify-between text-xs text-gray-500 mt-1">
+                   <span>0% (All Open-Ended)</span>
+                   <span>100% (All Rating Scale)</span>
+                 </div>
+              </div>
+            </div>
+            {/* --- END: ADD QUESTION MIX SLIDER --- */}
+
             {/* Submit Button */}
             <div className="flex justify-end">
               <button

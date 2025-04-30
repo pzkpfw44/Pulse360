@@ -154,6 +154,7 @@ const FeedbackAssessment = ({
         return {
           questionId: question.id,
           questionType: question.type,
+          category: question.category,
           rating: ratings[question.id] !== undefined ? ratings[question.id] : null, // Ensure null if undefined
           text: responses[question.id] || ''
         };
@@ -443,21 +444,40 @@ const FeedbackAssessment = ({
       {/* AI Feedback Results */}
       {formattedFeedback && (
         <div className={`mb-6 p-4 rounded-lg ${
-          formattedFeedback.quality === 'good' 
-            ? 'bg-green-50 text-green-800 border border-green-200' 
-            : formattedFeedback.quality === 'needs_improvement' 
+          formattedFeedback.quality === 'good'
+            ? 'bg-green-50 text-green-800 border border-green-200'
+            : formattedFeedback.quality === 'needs_improvement'
               ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
               : 'bg-red-50 text-red-800 border border-red-200'
         }`}>
           <h3 className="font-semibold mb-2">
-            AI Assistant Feedback {formattedFeedback.quality === 'good' && '✓'}
+            AI Assistant Feedback {formattedFeedback.quality === 'good' && <CheckCircle2 className="inline h-4 w-4 ml-1 text-green-600" />}
           </h3>
-          <p>{formattedFeedback.message}</p>
+          <p className="mb-3">{formattedFeedback.message}</p>
 
+          {/* Display Potential Inconsistencies if flagged */}
+          {formattedFeedback.observations?.ratingCommentCongruence && formattedFeedback.observations.ratingCommentCongruence !== 'good' && (
+            <div className="mb-3 p-3 bg-yellow-100 border border-yellow-300 rounded text-sm text-yellow-900 flex items-start">
+              <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+              <div>
+                <strong>Potential Rating/Comment Inconsistency:</strong> The AI noted a potential mismatch between your ratings and comments. Please review the suggestions or specific feedback below.
+              </div>
+            </div>
+          )}
+          {formattedFeedback.observations?.categoryConsistency && formattedFeedback.observations.categoryConsistency !== 'good' && (
+            <div className="mb-3 p-3 bg-yellow-100 border border-yellow-300 rounded text-sm text-yellow-900 flex items-start">
+               <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+               <div>
+                 <strong>Potential Category Inconsistency:</strong> The AI noted potentially conflicting ratings for related skills (e.g., "{formattedFeedback.observations.categoryConsistency}"). Please review the specific feedback or questions in that category to ensure this reflects your intended assessment.
+               </div>
+            </div>
+          )}
+
+          {/* Suggestions */}
           {formattedFeedback.suggestions && formattedFeedback.suggestions.length > 0 && (
-            <div className="mt-3">
+            <div className="mb-3">
               <p className="font-medium">Suggestions for improvement:</p>
-              <ul className="list-disc ml-5 mt-1">
+              <ul className="list-disc ml-5 mt-1 text-sm space-y-1">
                 {formattedFeedback.suggestions.map((suggestion, index) => (
                   <li key={index}>{suggestion}</li>
                 ))}
@@ -465,19 +485,23 @@ const FeedbackAssessment = ({
             </div>
           )}
 
+          {/* Question Specific Feedback (Only show if quality is not good) */}
           {formattedFeedback.quality !== 'good' && Object.keys(formattedFeedback.questionFeedback || {}).length > 0 && (
-            <div className="mt-3">
-              <p className="font-medium">Specific feedback on responses:</p>
-              <div className="mt-2 bg-white bg-opacity-50 rounded-md p-3">
+            <div className="mt-4 pt-3 border-t border-gray-300 border-opacity-50">
+              <p className="font-medium mb-2">Specific feedback on responses:</p>
+              <div className="space-y-3 bg-white bg-opacity-60 rounded-md p-3">
                 {questions.map((question, index) => {
                   const feedback = formattedFeedback.questionFeedback[question.id];
                   if (!feedback) return null;
-                  
+
                   return (
-                    <div key={question.id} className="mb-3 last:mb-0">
-                      <p className="font-medium">Question {index + 1}:</p>
-                      <p className="text-sm italic mb-1">"{question.text}"</p>
-                      <p className="text-sm bg-yellow-50 p-2 rounded">{feedback}</p>
+                    <div key={question.id} className="text-sm border-b border-gray-200 pb-2 last:border-b-0 last:pb-0">
+                      <p className="font-semibold">Question {index + 1} <span className="text-xs font-normal text-gray-500">({question.category || 'General'})</span>:</p>
+                      <p className="text-xs italic text-gray-600 mb-1">"{question.text}"</p>
+                      <div className="bg-yellow-100 p-2 rounded text-yellow-900 flex items-start">
+                         <AlertTriangle className="h-3 w-3 mr-1.5 mt-0.5 flex-shrink-0 text-yellow-600" />
+                         <span>{feedback}</span>
+                      </div>
                     </div>
                   );
                 })}

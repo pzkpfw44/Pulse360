@@ -7,8 +7,82 @@ const FormData = require('form-data');
 const { v4: uuidv4 } = require('uuid');
 const { Document, Template, Question, SourceDocument } = require('../models');
 const fluxAiConfig = require('../config/flux-ai');
-const { parseQuestionsFromAiResponse, sanitizeQuestionText } = require('../services/question-parser.service');
+const { parseQuestionsFromAiResponse, sanitizeQuestionText, ensurePerspectiveQuestionCounts } = require('../services/question-parser.service');
 const { makeAiChatRequest, uploadFileToFluxAi } = require('../services/flux-ai.service');
+
+
+/**
+ * Adjusts the types of questions within each perspective to match the desired mix percentage.
+ * @param {Array} questions - Flat array of all questions selected/generated for the template.
+ * @param {Object} perspectiveSettings - Settings object with target counts per perspective.
+ * @param {number} questionMixPercentage - The desired percentage of rating questions (0-100).
+ * @returns {Array} - The array of questions with adjusted types.
+ */
+function applyQuestionMix(questions, perspectiveSettings, questionMixPercentage) {
+  console.log(`Applying question mix. Target Rating Percentage: ${questionMixPercentage}%`);
+  const desiredRatingRatio = questionMixPercentage / 100;
+  const finalQuestions = [];
+  const perspectives = Object.keys(perspectiveSettings).filter(p => perspectiveSettings[p]?.enabled);
+
+  for (const perspective of perspectives) {
+      const targetCount = perspectiveSettings[perspective].questionCount;
+      const perspectiveQuestions = questions.filter(q => q.perspective === perspective);
+
+      if (perspectiveQuestions.length === 0 || targetCount === 0) {
+          finalQuestions.push(...perspectiveQuestions); // Add empty or skip if target is 0
+          continue;
+      }
+
+      const targetRatingCount = Math.round(targetCount * desiredRatingRatio);
+      const targetOpenEndedCount = targetCount - targetRatingCount;
+
+      let currentRatingCount = perspectiveQuestions.filter(q => q.type === 'rating').length;
+      let currentOpenEndedCount = perspectiveQuestions.filter(q => q.type === 'open_ended').length;
+
+      console.log(`Mixer (${perspective}): Target ${targetCount} questions. Ideal: ${targetRatingCount}R/${targetOpenEndedCount}O. Current: ${currentRatingCount}R/${currentOpenEndedCount}O.`);
+
+      // Adjust types
+      if (currentRatingCount > targetRatingCount) {
+          // Too many rating questions, change some to open_ended
+          let neededToChange = currentRatingCount - targetRatingCount;
+          console.log(`Mixer (${perspective}): Need to change ${neededToChange} rating to open_ended.`);
+          perspectiveQuestions.forEach(q => {
+              if (neededToChange > 0 && q.type === 'rating') {
+                  q.type = 'open_ended';
+                  neededToChange--;
+                  console.log(`Mixer (${perspective}): Changed question ID ${q.id || '(new)'} to open_ended.`);
+              }
+          });
+      } else if (currentOpenEndedCount > targetOpenEndedCount) {
+          // Too many open_ended questions, change some to rating
+          let neededToChange = currentOpenEndedCount - targetOpenEndedCount;
+          console.log(`Mixer (${perspective}): Need to change ${neededToChange} open_ended to rating.`);
+          perspectiveQuestions.forEach(q => {
+              if (neededToChange > 0 && q.type === 'open_ended') {
+                  q.type = 'rating';
+                  neededToChange--;
+                   console.log(`Mixer (${perspective}): Changed question ID ${q.id || '(new)'} to rating.`);
+              }
+          });
+      } else {
+           console.log(`Mixer (${perspective}): Current mix already matches target counts.`);
+      }
+
+      // Add the (potentially modified) questions for this perspective to the final list
+      finalQuestions.push(...perspectiveQuestions);
+  }
+
+   // Log final counts for verification
+   console.log("Final Mix after adjustments:");
+   for (const perspective of perspectives) {
+      const finalPerspectiveQuestions = finalQuestions.filter(q => q.perspective === perspective);
+      const finalRating = finalPerspectiveQuestions.filter(q => q.type === 'rating').length;
+      const finalOpen = finalPerspectiveQuestions.filter(q => q.type === 'open_ended').length;
+      console.log(` -> ${perspective}: Rating=${finalRating}, OpenEnded=${finalOpen}, Total=${finalPerspectiveQuestions.length}`);
+   }
+
+  return finalQuestions; // Return the flat array with adjusted types
+}
 
 // Upload document(s)
 exports.uploadDocuments = async (req, res) => {
@@ -727,115 +801,95 @@ function generateMockQuestionsForDocumentType(documentType) {
 // Updated startDocumentAnalysis function
 async function startDocumentAnalysis(documents, documentType, userId, templateInfo = {}) {
   try {
-    console.log('Starting document analysis for documents:', documents.length);
-    
+    console.log('[startDocumentAnalysis] Starting analysis for documents:', documents.length);
+    console.log('[startDocumentAnalysis] Template Info received:', JSON.stringify(templateInfo)); // Log received info
+
     // Skip processing if no valid documents
     if (!documents || documents.length === 0) {
-      console.error('No documents provided for analysis');
-      return;
+      console.error('[startDocumentAnalysis] No documents provided for analysis');
+      // Optionally return a fallback or throw an error
+      return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
-    
-    // Build the URL from config
-    const uploadUrl = `${fluxAiConfig.baseUrl}${fluxAiConfig.endpoints.files}`;
 
+    // Check Flux AI configuration first
+    if (!fluxAiConfig.isConfigured()) {
+        console.warn('[startDocumentAnalysis] Flux AI is not configured. Generating fallback questions.');
+        return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+
+    // --- Upload files to Flux AI if they don't have a fluxAiFileId ---
     const fileUploadPromises = documents.map(async (document) => {
-      const filePath = document.path;
-      
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        console.error(`File not found at path: ${filePath}`);
-        await document.update({
-          status: 'analysis_failed',
-          analysisError: 'File not found on server'
-        });
-        return null;
-      }
-      
-      // Check file extension
-      const ext = path.extname(filePath).toLowerCase();
-      const allowedTypes = ['.pdf', '.txt', '.doc', '.docx']; // Expanded supported types
-      
-      if (!allowedTypes.includes(ext)) {
-        console.error(`Unsupported file type: ${ext}. Only ${allowedTypes.join(', ')} are supported.`);
-        await document.update({
-          status: 'analysis_failed',
-          analysisError: `Unsupported file type: ${ext}. Only ${allowedTypes.join(', ')} are supported.`
-        });
-        return null;
-      }
-      
-      const formData = new FormData();
-      console.log('Uploading file:', filePath);
-  
-      // IMPORTANT: Use "files" (plural) as the key name
-      formData.append('files', fs.createReadStream(filePath));
-      formData.append('tags', JSON.stringify([documentType, 'pulse360']));
-  
-      try {
-        // Use X-API-KEY header as per documentation
-        const response = await axios.post(uploadUrl, formData, {
-          headers: {
-            ...formData.getHeaders(),
-            'X-API-KEY': fluxAiConfig.apiKey
-          }
-        });
-    
-        console.log('File upload response:', response.data);
-    
-        if (response.data.success && response.data.data && response.data.data.length > 0) {
-          const uploadedFile = response.data.data[0];
-          
-          // Check if the specific file had an error
-          if (!uploadedFile.success) {
-            console.error(`File upload failed: ${uploadedFile.error}`);
+        // If file already has an ID, skip upload
+        if (document.fluxAiFileId) {
+            console.log(`[startDocumentAnalysis] Document ${document.id} already has FluxAI ID: ${document.fluxAiFileId}`);
+            return document.fluxAiFileId;
+        }
+
+        const filePath = document.path;
+        // Basic validation (exists, type)
+        if (!fs.existsSync(filePath)) {
+            console.error(`[startDocumentAnalysis] File not found: ${filePath}`);
+            await document.update({ status: 'analysis_failed', analysisError: 'File not found' });
+            return null;
+        }
+        const ext = path.extname(filePath).toLowerCase();
+        const allowedTypes = ['.pdf', '.txt', '.doc', '.docx'];
+        if (!allowedTypes.includes(ext)) {
+            console.error(`[startDocumentAnalysis] Unsupported file type: ${ext}`);
+            await document.update({ status: 'analysis_failed', analysisError: `Unsupported file type: ${ext}` });
+            return null;
+        }
+
+        // Upload the file
+        console.log(`[startDocumentAnalysis] Uploading file: ${filePath}`);
+        const uploadResult = await uploadFileToFluxAi(filePath); // Use the service function
+
+        if (uploadResult.success && uploadResult.data?.id) {
+            console.log(`[startDocumentAnalysis] File uploaded successfully, FluxAI ID: ${uploadResult.data.id}`);
             await document.update({
-              status: 'analysis_failed',
-              analysisError: uploadedFile.error || 'File upload failed'
+                fluxAiFileId: uploadResult.data.id,
+                status: 'uploaded_to_ai' // Update status after successful upload
+            });
+            return uploadResult.data.id;
+        } else {
+            console.error(`[startDocumentAnalysis] File upload failed for ${document.filename}:`, uploadResult.error || 'Unknown upload error');
+            await document.update({
+                status: 'analysis_failed',
+                analysisError: uploadResult.error || 'File upload failed'
             });
             return null;
-          }
-          
-          await document.update({
-            fluxAiFileId: uploadedFile.id,
-            status: 'uploaded_to_ai'
-          });
-          return uploadedFile.id;
-        } else {
-          console.error('Unexpected file upload response:', response.data);
-          throw new Error('No file ID received from Flux AI');
         }
-      } catch (uploadError) {
-        console.error('Error uploading file to Flux AI:', uploadError);
-        await document.update({
-          status: 'analysis_failed',
-          analysisError: uploadError.message
-        });
-        return null;
-      }
     });
-    
-    const fileIds = await Promise.all(fileUploadPromises);
-    const validFileIds = fileIds.filter(id => id !== null);
-    console.log('Valid File IDs:', validFileIds);
-    
-    if (validFileIds.length > 0) {
-      // Pass template information to the analysis function
-      return await analyzeDocumentsWithFluxAI(validFileIds, documentType, userId, documents, templateInfo);
+
+    const fileIds = (await Promise.all(fileUploadPromises)).filter(id => id !== null); // Filter out nulls from failed uploads
+    console.log('[startDocumentAnalysis] Valid FluxAI File IDs for analysis:', fileIds);
+
+    if (fileIds.length > 0) {
+      // Call the main analysis function with valid file IDs and templateInfo
+      return await analyzeDocumentsWithFluxAI(fileIds, documentType, userId, documents, templateInfo);
     } else {
-      console.error('No valid file IDs for analysis');
+      console.error('[startDocumentAnalysis] No valid files could be prepared for AI analysis.');
+      // Update status for all documents attempted
+      const documentIds = documents.map(doc => doc.id);
       await Document.update(
-        { status: 'analysis_failed', analysisError: 'No files uploaded successfully' },
-        { where: { id: documents.map(doc => doc.id) } }
+        { status: 'analysis_failed', analysisError: 'No files were successfully uploaded/prepared for analysis' },
+        { where: { id: documentIds } }
       );
-      return null;
+       // Return a fallback template if no files are ready
+       console.warn('[startDocumentAnalysis] Creating fallback template as no files are ready for AI.');
+       return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
   } catch (error) {
-    console.error('Error in startDocumentAnalysis:', error);
-    await Document.update(
-      { status: 'analysis_failed', analysisError: error.message },
-      { where: { id: documents.map(doc => doc.id) } }
-    );
-    return null;
+    console.error('[startDocumentAnalysis] Error:', error);
+    // Update document status on error
+    const documentIds = documents.map(doc => doc.id);
+     await Document.update(
+       { status: 'analysis_failed', analysisError: error.message },
+       { where: { id: documentIds } }
+     );
+     // Attempt fallback creation on error
+     console.warn('[startDocumentAnalysis] Creating fallback template due to error.');
+     return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
   }
 }
 
@@ -2312,6 +2366,14 @@ ONLY generate questions for these perspectives: ${insufficientPerspectives.map(p
         });
       }
     }
+
+    console.log(`[analyzeDocumentsWithFluxAI] Applying question type mix before insertion...`);
+    // Overwrite allQuestionsToInsert with the result of the mixer function
+    const finalMixedQuestions = applyQuestionMix(
+        allQuestionsToInsert, // Pass the list we just created
+        perspectiveSettings, // Pass the settings used earlier
+        templateInfo.questionMixPercentage // Pass the percentage
+    );
     
     console.log(`[analyzeDocumentsWithFluxAI] Inserting ${allQuestionsToInsert.length} total questions`);
     

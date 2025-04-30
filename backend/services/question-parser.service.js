@@ -1,5 +1,7 @@
 // backend/services/question-parser.service.js
 
+// --- (Keep sanitizeQuestionText, parseQuestionsFromAiResponse, deduplicateQuestions, calculateSimilarity, and parsing helpers unchanged) ---
+
 /**
  * Sanitizes question text by removing department/template references
  * @param {string} text - The question text to sanitize
@@ -166,10 +168,10 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     const formatPatterns = [
         // Classic format with === ===
         /(?:^|\n)\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i,
-        
+
         // Numbered format (e.g., "1. === MANAGER ASSESSMENT ===")
         /(?:^|\n)\s*\d+\.\s*(?:===?\s*)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT\s*(?:[:.]|===)?\s*\n/i,
-        
+
         // Simple bolded/starred format (e.g., "**MANAGER ASSESSMENT**")
         /(?:^|\n)\s*(?:\*\*|__)?(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*ASSESSMENT(?:\*\*|__)?\s*\n/i,
     ];
@@ -181,7 +183,7 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
 
     for (const pattern of formatPatterns) {
         parts = aiResponse.split(pattern);
-        
+
         // If we got more than just the original string, this pattern worked
         if (parts.length > 1) {
             formatPattern = pattern;
@@ -214,7 +216,7 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
                 // This part is content following a known perspective header
                 console.log(`Processing content for perspective: ${currentPerspective}`);
                 const sectionContent = part;
-                
+
                 // Parse questions from this section
                 parseQuestionsFromSection(sectionContent, currentPerspective, questionsByPerspective);
             } else {
@@ -224,11 +226,11 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
     } else {
         // No sections found, try alternative parsing approaches
         console.log("No clear section headers found. Trying alternative parsing approaches...");
-        
+
         // Try to find numbered question blocks (e.g., "1. Question: How effectively...")
         if (tryParseNumberedQuestions(aiResponse, questionsByPerspective)) {
             console.log("Successfully parsed questions using numbered format");
-        } 
+        }
         // If still no questions, try a more aggressive fallback approach
         else if (tryParseFallbackFormat(aiResponse, questionsByPerspective, perspectiveSettings)) {
             console.log("Successfully parsed questions using fallback format parser");
@@ -242,12 +244,12 @@ function parseQuestionsFromAiResponse(aiResponse, perspectiveSettings = {}) {
 
     // Count total questions found across all perspectives
     const totalQuestionsFound = Object.values(questionsByPerspective).reduce((sum, qArr) => sum + qArr.length, 0);
-    
+
     if (totalQuestionsFound === 0) {
         console.error("Failed to parse any questions from the AI response using all parsing methods.");
         return questionsByPerspective; // Return empty map
     }
-    
+
     console.log(`Successfully parsed ${totalQuestionsFound} questions from AI response.`);
 
     // Deduplicate questions within each perspective
@@ -297,13 +299,18 @@ function parseQuestionsFromSection(sectionText, perspective, questionsByPerspect
 
     while ((qMatch = questionRegex.exec(sectionText)) !== null) {
         const questionText = qMatch[1]?.trim();
-        const questionType = (qMatch[2]?.trim() || 'rating').toLowerCase();
+        // Default to 'rating' if type is missing or invalid
+        let questionType = (qMatch[2]?.trim() || 'rating').toLowerCase();
+        if (questionType !== 'rating' && questionType !== 'open_ended') {
+            questionType = 'rating';
+        }
+
         const category = qMatch[3]?.trim() || 'General';
 
         if (questionText && questionsByPerspective[perspective]) {
             questionsByPerspective[perspective].push({
                 text: questionText,
-                type: questionType === 'open_ended' ? 'open_ended' : 'rating',
+                type: questionType, // Use validated type
                 category: category,
                 perspective: perspective,
                 required: true, // Assuming required unless specified otherwise
@@ -314,6 +321,7 @@ function parseQuestionsFromSection(sectionText, perspective, questionsByPerspect
     }
 }
 
+
 /**
  * Try to parse a numbered question format (1. Question:... 2. Question:...)
  * @param {string} aiResponse - The full AI response text
@@ -323,42 +331,42 @@ function parseQuestionsFromSection(sectionText, perspective, questionsByPerspect
 function tryParseNumberedQuestions(aiResponse, questionsByPerspective) {
     // Look for perspective headers with numbers
     const perspectiveHeaderRegex = /\b(\d+)[\.\)]\s*(MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*(?:ASSESSMENT|QUESTIONS|PERSPECTIVE)?\s*:/i;
-    
+
     // Split by numbered headers like "1. MANAGER ASSESSMENT:"
     const sections = aiResponse.split(/\n\s*\d+[\.\)]\s*(?:MANAGER|PEER|DIRECT REPORT|SELF|EXTERNAL STAKEHOLDER)\s*(?:ASSESSMENT|QUESTIONS|PERSPECTIVE)?\s*:/i);
-    
+
     if (sections.length <= 1) {
         // No numbered perspective sections found
         return false;
     }
-    
+
     console.log(`Found ${sections.length - 1} numbered perspective sections`);
-    
+
     // The first section is before any headers, so skip it
     let currentPerspective = null;
-    
+
     // Process each section
     for (let i = 1; i < sections.length; i++) {
         // Get the header from the previous section split
         const headerMatch = aiResponse.match(perspectiveHeaderRegex);
-        
+
         if (headerMatch) {
             // Extract the perspective from the header
             const perspectiveName = headerMatch[2].toUpperCase();
-            
+
             if (perspectiveName === 'DIRECT REPORT') currentPerspective = 'direct_report';
             else if (perspectiveName === 'EXTERNAL STAKEHOLDER') currentPerspective = 'external';
             else currentPerspective = perspectiveName.toLowerCase();
-            
+
             console.log(`Found numbered section for perspective: ${currentPerspective}`);
-            
+
             // Process the questions in this section
             if (currentPerspective && questionsByPerspective[currentPerspective]) {
                 parseQuestionsFromSection(sections[i], currentPerspective, questionsByPerspective);
             }
         }
     }
-    
+
     // Check if we found any questions
     const totalFound = Object.values(questionsByPerspective).reduce((sum, arr) => sum + arr.length, 0);
     return totalFound > 0;
@@ -374,29 +382,29 @@ function tryParseNumberedQuestions(aiResponse, questionsByPerspective) {
 function tryParseFallbackFormat(aiResponse, questionsByPerspective, perspectiveSettings) {
     // Try to detect blocks that might represent different perspectives
     const paragraphs = aiResponse.split(/\n\s*\n/);
-    
+
     // Check if we have roughly the right number of paragraphs for the perspectives
     const enabledPerspectives = Object.entries(perspectiveSettings)
         .filter(([_, settings]) => settings?.enabled)
         .map(([perspective]) => perspective);
-    
+
     // If we don't have roughly the right number of paragraphs, this approach won't work
     if (paragraphs.length < enabledPerspectives.length) {
         return false;
     }
-    
+
     console.log(`Attempting fallback parsing with ${paragraphs.length} paragraphs for ${enabledPerspectives.length} perspectives`);
-    
+
     // For each paragraph, try to guess which perspective it belongs to
     for (let i = 0; i < paragraphs.length; i++) {
         const paragraph = paragraphs[i];
-        
+
         // Skip short paragraphs (likely headers or explanations)
         if (paragraph.length < 50) continue;
-        
+
         // Try to detect which perspective this paragraph is for
         let detectedPerspective = null;
-        
+
         // Look for strong perspective indicators
         if (/\bmanager['s]?\b|\bsupervisor['s]?\b/i.test(paragraph)) {
             detectedPerspective = 'manager';
@@ -409,18 +417,19 @@ function tryParseFallbackFormat(aiResponse, questionsByPerspective, perspectiveS
         } else if (/\bexternal\b|\bclient['s]?\b|\bcustomer['s]?\b|\bpartner['s]?\b|\bstakeholder['s]?\b/i.test(paragraph)) {
             detectedPerspective = 'external';
         }
-        
+
         // If we detected a perspective, parse questions from this paragraph
         if (detectedPerspective && questionsByPerspective[detectedPerspective]) {
             console.log(`Detected ${detectedPerspective} perspective in paragraph ${i+1}`);
             parseQuestionsFromSection(paragraph, detectedPerspective, questionsByPerspective);
         }
     }
-    
+
     // Check if we found any questions
     const totalFound = Object.values(questionsByPerspective).reduce((sum, arr) => sum + arr.length, 0);
     return totalFound > 0;
 }
+
 
 /**
  * Last resort: parse any question from anywhere in the text
@@ -432,26 +441,30 @@ function parseGlobalQuestions(aiResponse, questionsByPerspective) {
     const globalQuestionRegex = /Question:\s*(.*?)(?:\r?\n|\r|$)(?:Type:\s*(.*?)(?:\r?\n|\r|$))?(?:Category:\s*(.*?)(?:\r?\n|\r|$))?/gis;
     let gMatch;
     const defaultPerspective = 'peer'; // If we can't determine perspective, use peer as default
-    
+
     while ((gMatch = globalQuestionRegex.exec(aiResponse)) !== null) {
         const questionText = gMatch[1]?.trim();
-        const questionType = (gMatch[2]?.trim() || 'rating').toLowerCase();
+        // Default to 'rating' if type is missing or invalid
+        let questionType = (gMatch[2]?.trim() || 'rating').toLowerCase();
+        if (questionType !== 'rating' && questionType !== 'open_ended') {
+            questionType = 'rating';
+        }
         const category = gMatch[3]?.trim() || 'General';
-        
+
         if (questionText) {
             // Try to guess the perspective from surrounding context (100 chars before)
             const beforeContext = aiResponse.substring(Math.max(0, gMatch.index - 100), gMatch.index).toLowerCase();
             let guessedPerspective = defaultPerspective;
-            
+
             if (beforeContext.includes('manager')) guessedPerspective = 'manager';
             else if (beforeContext.includes('peer')) guessedPerspective = 'peer';
             else if (beforeContext.includes('direct report')) guessedPerspective = 'direct_report';
             else if (beforeContext.includes('self')) guessedPerspective = 'self';
             else if (beforeContext.includes('external')) guessedPerspective = 'external';
-            
+
             questionsByPerspective[guessedPerspective].push({
                 text: questionText,
-                type: questionType === 'open_ended' ? 'open_ended' : 'rating',
+                type: questionType, // Use validated type
                 category: category,
                 perspective: guessedPerspective,
                 required: true,
@@ -493,7 +506,7 @@ function deduplicateQuestions(questions) {
                     .replace(/[.,?!;:]/g, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-                
+
                 // Use the calculateSimilarity function
                 if (calculateSimilarity(normalizedText, existingText) > 0.85) { // Using stricter threshold
                     isDuplicate = true;
@@ -532,73 +545,124 @@ function calculateSimilarity(str1, str2) {
 }
 
 
+// --- START: MODIFIED ensurePerspectiveQuestionCounts function ---
 /**
- * Ensures we have the exact requested number of questions for each perspective
- * NOTE: This function calls the fallback generation if AI questions are insufficient.
+ * Ensures we have the exact requested number of questions for each perspective,
+ * attempting to match the desired question type mix.
+ * Calls fallback generation if AI questions are insufficient or don't match the mix well enough.
  * @param {Object} questionsMap - Questions grouped by perspective (SHOULD contain UNIQUE AI questions from parser)
- * @param {Object} perspectiveSettings - Settings with question counts
- * @param {string} documentType - Type of document
+ * @param {Object} perspectiveSettings - Settings with question counts per perspective
+ * @param {string} documentType - Type of document (for fallback context)
+ * @param {Object} templateInfo - Contains additional info like questionMixPercentage
  * @returns {Object} - Balanced questions (grouped by perspective)
  */
-function ensurePerspectiveQuestionCounts(questionsMap, perspectiveSettings, documentType) {
-    // Function to balance questions and call fallbacks - remains the same as provided previously
+function ensurePerspectiveQuestionCounts(questionsMap, perspectiveSettings, documentType, templateInfo = {}) {
     let generateFallbackQuestions;
     try {
-        // Assuming fallback-questions.service is in the same directory or accessible path
         generateFallbackQuestions = require('./fallback-questions.service').generateFallbackQuestions;
-         console.log("Balancer: Fallback question generator loaded.");
+        console.log("Balancer: Fallback question generator loaded.");
     } catch (error) {
-        console.error("Balancer CRITICAL: Failed to load fallback-questions.service. Fallback questions cannot be generated.", error);
-        generateFallbackQuestions = (p, n, dt, existing) => { // Provide dummy function
+        console.error("Balancer CRITICAL: Failed to load fallback-questions.service.", error);
+        generateFallbackQuestions = (p, n, dt, existing) => {
             console.error(`Balancer: Cannot generate ${n} fallback questions for ${p} - service missing.`);
-            return []; // Return empty array if service fails to load
+            return [];
         };
     }
 
-    const result = {}; // Result will be a map grouped by perspective
+    // Extract the desired mix percentage from templateInfo, default to 75% rating if missing
+    const desiredRatingPercentage = templateInfo?.questionMixPercentage !== undefined
+        ? templateInfo.questionMixPercentage / 100
+        : 0.75; // Default to 75% rating
+
+    console.log(`Balancer: Target Rating Percentage = ${desiredRatingPercentage * 100}%`);
+
+    const result = {}; // Result map grouped by perspective
 
     // Process each perspective defined in the settings
     for (const perspective in perspectiveSettings) {
-        // Skip disabled perspectives
         if (!perspectiveSettings[perspective]?.enabled) {
-            continue;
+            continue; // Skip disabled perspectives
         }
 
-        const targetCount = perspectiveSettings[perspective]?.questionCount || 5; // Default target
-        // Ensure we are working with an array, even if the key was missing from the input map
-        const availableAiQuestions = questionsMap[perspective] || [];
-        console.log(`Balancer: Balancing questions for ${perspective}: Target=${targetCount}, AI Found=${availableAiQuestions.length}`);
+        const targetTotalCount = perspectiveSettings[perspective]?.questionCount || 5; // Total questions needed
+        const availableAiQuestions = questionsMap[perspective] || []; // AI questions for this perspective
 
-        if (availableAiQuestions.length < targetCount) {
-            // Need to generate more questions using fallbacks
-            const neededCount = targetCount - availableAiQuestions.length;
-            console.warn(`Balancer: Generating ${neededCount} GENERIC fallback questions for ${perspective}. (AI questions were insufficient)`);
-            // Call the fallback generator, passing existing AI questions for this perspective
+        console.log(`Balancer: Balancing questions for ${perspective}: Target=${targetTotalCount}, AI Found=${availableAiQuestions.length}`);
+
+        // Separate available AI questions by type
+        const aiRatingQuestions = availableAiQuestions.filter(q => q.type === 'rating');
+        const aiOpenEndedQuestions = availableAiQuestions.filter(q => q.type === 'open_ended');
+        console.log(`Balancer: -> AI Rating: ${aiRatingQuestions.length}, AI OpenEnded: ${aiOpenEndedQuestions.length}`);
+
+        // Calculate the ideal number of each type based on the percentage
+        const targetRatingCount = Math.round(targetTotalCount * desiredRatingPercentage);
+        const targetOpenEndedCount = targetTotalCount - targetRatingCount;
+        console.log(`Balancer: -> Target Mix: Rating=${targetRatingCount}, OpenEnded=${targetOpenEndedCount}`);
+
+        let selectedQuestions = [];
+
+        // 1. Select rating questions up to the target count for rating
+        selectedQuestions.push(...aiRatingQuestions.slice(0, targetRatingCount));
+
+        // 2. Select open-ended questions up to the target count for open-ended
+        selectedQuestions.push(...aiOpenEndedQuestions.slice(0, targetOpenEndedCount));
+
+        console.log(`Balancer: -> Selected based on ideal mix: ${selectedQuestions.length} questions`);
+
+        // 3. If we still need more questions (because AI didn't provide enough of one type), fill with the *other* type if available
+        let neededMore = targetTotalCount - selectedQuestions.length;
+        if (neededMore > 0) {
+            console.log(`Balancer: -> Need ${neededMore} more questions to reach target ${targetTotalCount}. Trying to fill gaps.`);
+            // Check remaining rating questions
+            const remainingRating = aiRatingQuestions.slice(selectedQuestions.filter(q => q.type === 'rating').length);
+            const fillWithRating = remainingRating.slice(0, neededMore);
+            selectedQuestions.push(...fillWithRating);
+            neededMore -= fillWithRating.length;
+            console.log(`Balancer: -> Filled ${fillWithRating.length} from remaining rating.`);
+
+            // Check remaining open-ended questions if still needed
+            if (neededMore > 0) {
+                const remainingOpenEnded = aiOpenEndedQuestions.slice(selectedQuestions.filter(q => q.type === 'open_ended').length);
+                const fillWithOpenEnded = remainingOpenEnded.slice(0, neededMore);
+                selectedQuestions.push(...fillWithOpenEnded);
+                neededMore -= fillWithOpenEnded.length;
+                console.log(`Balancer: -> Filled ${fillWithOpenEnded.length} from remaining open-ended.`);
+            }
+        }
+
+        console.log(`Balancer: -> Selected after filling gaps: ${selectedQuestions.length} questions`);
+
+        // 4. If we *still* don't have enough questions, generate fallbacks
+        const finalNeededCount = targetTotalCount - selectedQuestions.length;
+        if (finalNeededCount > 0) {
+            console.warn(`Balancer: Generating ${finalNeededCount} GENERIC fallback questions for ${perspective}. (AI questions insufficient even after filling gaps)`);
+            // Pass the *already selected* AI questions to the fallback generator to help avoid duplicates
             const fallbackQuestions = generateFallbackQuestions(
                 perspective,
-                neededCount,
+                finalNeededCount,
                 documentType,
-                availableAiQuestions // Pass existing AI questions to fallback service
+                selectedQuestions // Pass selected AI questions
             );
 
-            // Combine existing AI and new fallback questions
-            result[perspective] = [...availableAiQuestions, ...fallbackQuestions];
-            console.log(`Balancer -> Total questions for ${perspective} after fallback: ${result[perspective].length}`);
-        } else if (availableAiQuestions.length > targetCount) {
-            // Need to select a subset of AI questions (simple slice for now)
-            console.log(`Balancer: Trimming AI questions for ${perspective} from ${availableAiQuestions.length} to ${targetCount}.`);
-            result[perspective] = availableAiQuestions.slice(0, targetCount);
-        } else {
-            // We have exactly the right number of AI questions
-            console.log(`Balancer: Exact number of AI questions (${targetCount}) found and used for ${perspective}.`);
-            result[perspective] = availableAiQuestions;
+             // Combine selected AI and new fallback questions
+            result[perspective] = [...selectedQuestions, ...fallbackQuestions];
+             console.log(`Balancer -> Total questions for ${perspective} after fallback: ${result[perspective].length}`);
+        } else if (selectedQuestions.length > targetTotalCount) {
+            // Should ideally not happen with the logic above, but as a safeguard, trim excess
+            console.log(`Balancer: Trimming selected questions for ${perspective} from ${selectedQuestions.length} to ${targetTotalCount}.`);
+            result[perspective] = selectedQuestions.slice(0, targetTotalCount);
+        }
+         else {
+            // We have exactly the right number after selection and gap filling
+            console.log(`Balancer: Exact number of questions (${targetTotalCount}) selected for ${perspective} from AI output.`);
+            result[perspective] = selectedQuestions;
         }
     }
 
-    // Ensure all enabled perspective keys exist in the result, even if empty (though fallbacks should fill them)
+    // Ensure all enabled perspective keys exist in the result
     for (const perspective in perspectiveSettings) {
         if (perspectiveSettings[perspective]?.enabled && !result[perspective]) {
-            result[perspective] = [];
+            result[perspective] = []; // Should be filled by fallback if needed, but ensures key exists
         }
     }
 
@@ -606,19 +670,27 @@ function ensurePerspectiveQuestionCounts(questionsMap, perspectiveSettings, docu
     Object.keys(result).forEach(perspective => {
         result[perspective] = result[perspective].map((q, index) => ({
             ...q,
-            order: index + 1
+            order: index + 1 // Ensure order is sequential within the final list for the perspective
         }));
+    });
+
+    // Log final counts per type for verification
+    Object.keys(result).forEach(perspective => {
+        const finalRating = result[perspective].filter(q => q.type === 'rating').length;
+        const finalOpen = result[perspective].filter(q => q.type === 'open_ended').length;
+        console.log(`Balancer: Final Count for ${perspective}: Rating=${finalRating}, OpenEnded=${finalOpen}, Total=${result[perspective].length}`);
     });
 
 
     return result; // Return the map
 }
+// --- END: MODIFIED ensurePerspectiveQuestionCounts function ---
 
 
 module.exports = {
   parseQuestionsFromAiResponse,
   sanitizeQuestionText,
   deduplicateQuestions,
-  ensurePerspectiveQuestionCounts,
+  ensurePerspectiveQuestionCounts, // Export the modified function
   calculateSimilarity
 };

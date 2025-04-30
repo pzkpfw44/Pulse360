@@ -31,12 +31,13 @@ class InsightsAiService {
 
       // Make API call to Flux AI
       const response = await axios.post(
-        fluxAiConfig.getEndpointUrl('chat/completions'), // Ensure this endpoint is correct
+        fluxAiConfig.getEndpointUrl('chat'), // Use the correct endpoint key 'chat'
         {
+          model: fluxAiConfig.model, // Explicitly set the model from config
           messages: [
             {
               role: 'system',
-              content: 'You are an expert in organizational psychology and professional development. Your task is to analyze 360-degree feedback data and generate comprehensive, structured insights for employee development.'
+              content: 'You are an expert Talent Development Director with deep experience in organizational psychology. Your task is to critically analyze 360-degree feedback data (ratings and comments, including self-assessment) to generate insightful, nuanced, and actionable development insights. Apply professional judgment, identify underlying behavioral patterns, and consider implications for self-awareness and professional maturity. Your output MUST be structured JSON.'
             },
             {
               role: 'user',
@@ -44,6 +45,7 @@ class InsightsAiService {
             }
           ],
           stream: false,
+          // You might consider adding temperature if needed, e.g., temperature: 0.7
         },
         {
           headers: {
@@ -328,111 +330,123 @@ Keep each section brief but insightful. Focus on generally applicable profession
    * @returns {String} - Formatted prompt for AI
    */
   prepareGrowthBlueprintPrompt(feedbackData, employee, campaign) {
-    // --- Start: Original Code (Kept) ---
     const employeeName = `${employee?.firstName || 'Employee'} ${employee?.lastName || 'Name'}`;
     const employeePosition = employee?.jobTitle || 'Team Member';
 
-    // Process feedback data into a summarized format for the prompt
-    const ratingsByType = {};
-    const textResponsesByType = {};
+    // --- Start: Enhanced Data Summarization (Keep Existing Logic) ---
+    let feedbackSummary = 'Summary of 360-Degree Feedback:\n';
+    let hasRatings = false;
+    let hasComments = false;
 
-    // Extract key feedback data by relationship type
     Object.entries(feedbackData.byRelationshipType || {}).forEach(([type, data]) => {
-      if (data.ratings) {
-        const allRatings = [];
-        Object.values(data.ratings).forEach(rating => {
-          if (rating.values && rating.values.length) {
-            allRatings.push(...rating.values);
-          }
-        });
+      const respondentCount = data?.count ?? 0;
+      if (respondentCount === 0) return;
 
-        ratingsByType[type] = {
-          count: allRatings.length,
-          average: allRatings.length > 0
-            ? (allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(1)
-            : 'N/A'
-        };
+      const typeTitle = type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ');
+      let typeSection = `\n--- ${typeTitle} Feedback (${respondentCount} respondent(s)) ---\n`;
+      let sectionHasData = false;
+
+      // Average Rating for the type
+      const typeRatings = Object.values(data?.ratings || {});
+      if (typeRatings.length > 0) {
+          const allValues = typeRatings.flatMap(r => r?.values || []);
+          if (allValues.length > 0) {
+            const avg = (allValues.reduce((a, b) => a + b, 0) / allValues.length).toFixed(1);
+            typeSection += `Average Rating: ${avg}/5\n`;
+            hasRatings = true;
+            sectionHasData = true;
+          }
       }
 
-      // Collect text responses
-      if (data.textResponses) {
-        textResponsesByType[type] = [];
-        Object.values(data.textResponses).forEach(responses => {
-          if (responses && responses.length) {
-            textResponsesByType[type].push(...responses);
-          }
+      // Key Themes from Text Comments (limited)
+      const textResponses = Object.values(data?.textResponses || {}).flat();
+      if (textResponses.length > 0) {
+        typeSection += `Key Comments:\n`;
+        const significantComments = textResponses
+            .filter(t => t && t.length > 10)
+            .sort((a, b) => b.length - a.length)
+            .slice(0, 5);
+
+        significantComments.forEach(comment => {
+          const truncated = comment.substring(0, 150) + (comment.length > 150 ? '...' : '');
+          typeSection += `- "${truncated.replace(/"/g, '\\"')}"\n`;
         });
+        hasComments = true;
+        sectionHasData = true;
+      } else {
+         typeSection += `(No text comments provided)\n`;
+         sectionHasData = true;
+      }
+
+
+      if (sectionHasData) {
+        feedbackSummary += typeSection;
       }
     });
 
-    // Create a prompt that includes relevant feedback data
-    let prompt = `Generate a comprehensive development insight for ${employeeName}, who works as a ${employeePosition}. This should be based on 360-degree feedback data from their colleagues.
-
-  Here's a summary of the feedback data:
-  `;
-
-    // Add rating statistics
-    prompt += `\nRating Summaries (on a scale of 1-5):`;
-    for (const [type, data] of Object.entries(ratingsByType)) {
-      prompt += `\n- ${type.charAt(0).toUpperCase() + type.slice(1)} feedback: Average rating ${data.average} from ${data.count} responses`;
+    if (!hasRatings && !hasComments) {
+      feedbackSummary = "No detailed feedback data was available for summary.";
     }
+    // --- End: Enhanced Data Summarization ---
 
-    // Add text response samples (truncated for prompt length)
-    prompt += `\n\nSelected Feedback Comments:`;
-    for (const [type, responses] of Object.entries(textResponsesByType)) {
-      if (responses.length > 0) {
-        prompt += `\n${type.charAt(0).toUpperCase() + type.slice(1)} feedback:`;
 
-        // Include up to 3 responses per type, limited to 100 chars each
-        for (let i = 0; i < Math.min(3, responses.length); i++) {
-          const truncatedResponse = responses[i].substring(0, 100) + (responses[i].length > 100 ? '...' : '');
-          prompt += `\n- "${truncatedResponse}"`;
-        }
-      }
-    }
+    // --- Start: Enhanced Prompt Instructions (Syntax Corrected) ---
+    // Define the prompt string using a template literal
+    const prompt = `You are an expert and highly discerning Talent Development Director with deep experience in organizational psychology. Your task is to perform a critical and insightful analysis of the following 360-degree feedback summary for ${employeeName}, who works as a ${employeePosition}. Interpret the data with professional judgment.
 
-    // Request specific sections for the insight with a clear JSON structure
-    prompt += `\n\nI need you to generate a detailed developmental insight with specific sections that have visibility levels for different audiences.
+**Feedback Summary:**
+${feedbackSummary}
 
-  Your response MUST be a valid JSON object with the following sections:
+**Your Task:** Generate a comprehensive "Growth Blueprint" report. Go beyond surface-level observations. Provide nuanced analysis. The tone must remain constructive and development-focused.
 
-  {
-    "strengthsSummary": {
-      "content": "Detailed analysis of key strengths identified in the feedback",
-      "visibility": "employeeVisible"
-    },
-    "growthAreas": {
-      "content": "Specific areas for development with actionable points",
-      "visibility": "employeeVisible"
-    },
-    "impactAnalysis": {
-      "content": "Analysis of the employee's impact based on feedback",
-      "visibility": "employeeVisible"
-    },
-    "recommendedActions": {
-      "content": "4-5 specific, actionable development recommendations",
-      "visibility": "employeeVisible"
-    },
-    "feedbackPatterns": {
-      "content": "Patterns and trends identified in the feedback",
-      "visibility": "managerOnly"
-    },
-    "leadershipInsights": {
-      "content": "Insights for managers on how to support this employee's development",
-      "visibility": "managerOnly"
-    },
-    "talentDevelopmentNotes": {
-      "content": "Observations on potential career paths and development trajectory",
-      "visibility": "hrOnly"
-    }
+**Output Format:** CRITICAL REQUIREMENT: Your entire response MUST be ONLY a single, valid JSON object. Do NOT include ANY introductory text, concluding text, explanations, apologies, or markdown formatting (like \`\`\`json) before or after the JSON block. Ensure all string values within the JSON content are properly escaped according to JSON standards (e.g., newlines must be represented as '\\n', double quotes as '\\"'). Use the following structure precisely:
+
+{
+  "strengthsSummary": {
+    "content": "Analyze 2-3 core strengths confirmed by multiple feedback sources (peers, manager, etc.) and supported by both ratings and specific comment examples. Explain the positive impact. Critically evaluate potential downsides. Provide ONLY the analysis text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "employeeVisible"
+  },
+  "growthAreas": {
+    "content": "Identify 2-3 critical areas for development based on lower ratings, comments, or discrepancies. Analyze root causes and potential impact. Address self-awareness. Phrase constructively but directly. Provide ONLY the analysis text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "employeeVisible"
+  },
+  "impactAnalysis": {
+    "content": "Provide a balanced analysis of ${employeeName}'s overall impact, integrating evidence from comments and ratings across groups. Discuss positive contributions and areas needing improvement. Provide ONLY the analysis text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "employeeVisible"
+  },
+  "recommendedActions": {
+    "content": "Provide 4-5 concrete, actionable, personalized development recommendations tied to growth areas and strengths. Justify each action. Provide ONLY the recommendation text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "employeeVisible"
+  },
+  "feedbackPatterns": {
+    "content": "Critically analyze patterns, trends, consistencies, and contradictions across feedback sources. Highlight differences in perception/ratings. Identify potential 'blind spots'. Analyze comment language/tone. Provide ONLY the analysis text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "managerOnly"
+  },
+  "leadershipInsights": {
+    "content": "Provide specific, actionable insights for ${employeeName}'s manager on coaching and support. Suggest conversation starters, techniques, and assignments. Mention potential challenges. Provide ONLY the insight text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "managerOnly"
+  },
+  "talentDevelopmentNotes": {
+    "content": "From an HR/Talent perspective, assess potential, readiness, and trajectory based strictly on feedback. Note risks and strengths. Suggest programs or focus areas. Provide ONLY the notes text here, without any Markdown formatting (like **) and without mentioning the visibility level.",
+    "visibility": "hrOnly"
   }
+}
 
-  Make all content sections detailed and specific to ${employeeName}. Each section should be 2-3 paragraphs. Do NOT include section names or headings in the content itself - these will be added by the UI.
+**Critical Analysis Guidelines:**
+- **Act as an expert:** Adopt the persona of a discerning, experienced Talent Development Director.
+- **Analyze Language:** Pay close attention to the wording of comments. Interpret statements critically.
+- **Compare Sources:** Explicitly compare and contrast feedback from different relationship types.
+- **Integrate Data:** Base analysis on *both* quantitative (ratings) and qualitative (comments) data.
+- **Identify Blind Spots:** Address gaps between self-perception and feedback from others.
+- **Depth over Breadth:** Focus on deep analysis.
+- **Constructive Tone:** Maintain a professional and supportive tone.
+- **JSON VALIDITY IS PARAMOUNT:** The entire response MUST be only the JSON object specified. No extra text. All strings inside the JSON must be correctly escaped.
+- **NO MARKDOWN IN CONTENT:** Do NOT use any Markdown formatting (like \`**\`, \`*\`, \`#\`, lists) within the text generated for the 'content' fields. Plain text only.
+- **CONTENT ONLY:** Ensure the text within each 'content' field contains ONLY the requested analysis/recommendations, not descriptions of the JSON structure itself (like 'Visibility: ...').`;
+    // --- End: Enhanced Prompt Instructions ---
 
-  DO NOT include any text outside of the JSON structure. Your entire response should be parseable as JSON.`;
-
+    // Return the constructed prompt string
     return prompt;
-    // --- End: Original Code ---
   }
 
   /**

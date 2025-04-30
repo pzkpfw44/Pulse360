@@ -8,6 +8,7 @@
  * @returns {string} - The sanitized question text
  */
 function sanitizeQuestionText(text, departmentName = 'General') {
+  // --- (Keep the existing sanitizeQuestionText function unchanged) ---
   if (!text || typeof text !== 'string') return '';
 
   // console.log(`Sanitizing: "${text}" with dept: "${departmentName}"`); // Uncomment for intense debugging
@@ -15,27 +16,22 @@ function sanitizeQuestionText(text, departmentName = 'General') {
   let cleanedText = text.trim();
 
   // --- PRIORITY: Replace incorrect AI usage of "General" ---
-  // This needs to happen BEFORE department/template replacements
   const isGeneralInput = departmentName && departmentName.toLowerCase() === 'general';
 
   if (isGeneralInput) {
-      // More specific phrases first to avoid accidental replacements in valid contexts
+      // More specific phrases first
       cleanedText = cleanedText.replace(/How would you rate the General's ability/gi, "How would you rate this person's ability");
       cleanedText = cleanedText.replace(/What are some areas where the General excels/gi, "What are some areas where this person excels");
       cleanedText = cleanedText.replace(/What are some areas where the General could improve/gi, "What are some areas where this person could improve");
       cleanedText = cleanedText.replace(/How does the General demonstrate/gi, "How does this person demonstrate");
-      cleanedText = cleanedText.replace(/the General's/gi, "this person's"); // Possessive
-      cleanedText = cleanedText.replace(/the General\b/gi, "this person");   // Word boundary to avoid replacing "general" in other contexts
-      // Add more specific replacements if other patterns emerge
+      cleanedText = cleanedText.replace(/the General's/gi, "this person's");
+      cleanedText = cleanedText.replace(/the General\b/gi, "this person");
   }
-  // --- END Priority Replacement ---
 
-
-  // Handle standard leader/person references (apply AFTER specific "General" fix)
+  // Handle standard leader/person references
   cleanedText = cleanedText.replace(/the leader in the (.*?) Department/gi, 'this person');
-  cleanedText = cleanedText.replace(/the leader/gi, 'this person'); // Replace "the leader" broadly
-  cleanedText = cleanedText.replace(/this person's/gi, 'this person\'s'); // Ensure possessive apostrophe is correct
-
+  cleanedText = cleanedText.replace(/the leader/gi, 'this person');
+  cleanedText = cleanedText.replace(/this person's/gi, 'this person\'s');
 
   // Handle "General Department" references specifically
   const generalDeptPatterns = [
@@ -44,7 +40,7 @@ function sanitizeQuestionText(text, departmentName = 'General') {
       { regex: /of the General Department/gi, replacement: ' of the team' },
       { regex: /within the General Department/gi, replacement: ' within the organization' },
       { regex: /the General Department's/gi, replacement: 'this role\'s' },
-      { regex: /General Department/gi, replacement: 'team' }, // Broader replacement last
+      { regex: /General Department/gi, replacement: 'team' },
       // lowercase versions
       { regex: /for the general department/gi, replacement: ' for this role' },
       { regex: /in the general department/gi, replacement: ' in this role' },
@@ -57,33 +53,30 @@ function sanitizeQuestionText(text, departmentName = 'General') {
       cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
   });
 
-
   // Handle Specific Department Name (if provided and not "General")
   if (departmentName && departmentName.toLowerCase() !== 'general') {
-      const escapedDeptName = departmentName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'); // Escape special regex characters
+      const escapedDeptName = departmentName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
       const specificDeptPatterns = [
-          // Patterns including "Department"
+          // Patterns including "Department" / "department"
           { regex: new RegExp(`for the ${escapedDeptName} Department`, 'gi'), replacement: ' for this role' },
           { regex: new RegExp(`in the ${escapedDeptName} Department`, 'gi'), replacement: ' in this role' },
           { regex: new RegExp(`of the ${escapedDeptName} Department`, 'gi'), replacement: ' of the team' },
           { regex: new RegExp(`within the ${escapedDeptName} Department`, 'gi'), replacement: ' within the organization' },
           { regex: new RegExp(`the ${escapedDeptName} Department's`, 'gi'), replacement: 'this role\'s' },
-          { regex: new RegExp(`${escapedDeptName} Department`, 'gi'), replacement: 'team' }, // Broader replacement last
-          // Patterns including lowercase "department"
+          { regex: new RegExp(`${escapedDeptName} Department`, 'gi'), replacement: 'team' },
           { regex: new RegExp(`for the ${escapedDeptName.toLowerCase()} department`, 'gi'), replacement: ' for this role' },
           { regex: new RegExp(`in the ${escapedDeptName.toLowerCase()} department`, 'gi'), replacement: ' in this role' },
           { regex: new RegExp(`of the ${escapedDeptName.toLowerCase()} department`, 'gi'), replacement: ' of the team' },
           { regex: new RegExp(`within the ${escapedDeptName.toLowerCase()} department`, 'gi'), replacement: ' within the organization' },
           { regex: new RegExp(`the ${escapedDeptName.toLowerCase()} department's`, 'gi'), replacement: 'this role\'s' },
-          { regex: new RegExp(`${escapedDeptName.toLowerCase()} department`, 'gi'), replacement: 'team' }, // Broader replacement last
-          // Patterns with just the department name (use word boundaries) - replace with generic term
+          { regex: new RegExp(`${escapedDeptName.toLowerCase()} department`, 'gi'), replacement: 'team' },
+          // Just the department name
           { regex: new RegExp(`\\b${escapedDeptName}\\b`, 'gi'), replacement: 'the team' },
       ];
       specificDeptPatterns.forEach(pattern => {
           cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
       });
   }
-
 
   // Handle template-specific references
   const templatePatterns = [
@@ -96,24 +89,21 @@ function sanitizeQuestionText(text, departmentName = 'General') {
       { regex: /\s+in the general use template/g, replacement: '' },
       { regex: /\s+for the general use template/g, replacement: '' },
       { regex: /\s+general purpose/gi, replacement: '' },
-      { regex: /\s+in general\b/gi, replacement: '' } // remove dangling "in general"
+      { regex: /\s+in general\b/gi, replacement: '' }
   ];
   templatePatterns.forEach(pattern => {
       cleanedText = cleanedText.replace(pattern.regex, pattern.replacement);
   });
 
-
   // Final cleanup
   cleanedText = cleanedText
-      // .replace(/the leader/gi, 'this person') // Covered by earlier replacements now
       .replace(/achieve the goals\?/gi, 'achieve goals?')
-      .replace(/ ,/g, ',') // Fix space before comma
-      .replace(/ \./g, '.') // Fix space before period
-      .replace(/ \?/g, '?') // Fix space before question mark
-      .replace(/\s{2,}/g, ' ') // Remove multiple spaces
+      .replace(/ ,/g, ',')
+      .replace(/ \./g, '.')
+      .replace(/ \?/g, '?')
+      .replace(/\s{2,}/g, ' ')
       .trim();
 
-  // Ensure the first letter is capitalized if the text is not empty
     if (cleanedText.length > 0) {
         cleanedText = cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1);
     }
@@ -125,45 +115,45 @@ function sanitizeQuestionText(text, departmentName = 'General') {
 /**
 * Creates a prompt for analyzing documents and generating questions
 * @param {string} documentType - Type of document
-* @param {object} templateInfo - Template information { name, description, purpose, department, perspectiveSettings }
+* @param {object} templateInfo - Template information { name, description, purpose, department, perspectiveSettings, questionMixPercentage }
 * @returns {string} - Formatted prompt
 */
+// --- START: MODIFY createAnalysisPrompt TO USE templateInfo ---
 function createAnalysisPrompt(documentType, templateInfo = {}) {
-  const perspectiveSettings = templateInfo.perspectiveSettings || {};
-  const purpose = templateInfo.purpose || 'Leadership assessment';
-  const department = templateInfo.department || 'General';
-  const description = templateInfo.description || 'General feedback';
+  // Destructure properties from templateInfo, providing defaults
+  const {
+      perspectiveSettings = {},
+      purpose = 'Leadership assessment',
+      department = 'General',
+      description = 'General feedback',
+      questionMixPercentage = 75 // Default mix if not provided
+  } = templateInfo;
+
+  // Calculate the open-ended percentage
+  const openEndedPercentage = 100 - questionMixPercentage;
 
   // Calculate the required question counts string for enabled perspectives
-  // REQUEST BUFFER: Ask for more questions than needed to ensure we have enough
   const buffer = 5; // Extra questions to request per perspective
-  
   const countsArray = Object.entries(perspectiveSettings)
-    .filter(([_, settings]) => settings?.enabled) // Add safety check for settings object
+    .filter(([_, settings]) => settings?.enabled)
     .map(([perspective, settings]) => {
       let perspectiveName = perspective.toUpperCase();
       if (perspective === 'direct_report') perspectiveName = 'DIRECT REPORT';
       if (perspective === 'external') perspectiveName = 'EXTERNAL STAKEHOLDER';
-      
-      // Ensure questionCount is a number, default if missing
+
       const actualCount = typeof settings?.questionCount === 'number' ? settings.questionCount : 5;
-      
-      // Request more questions than needed - we'll trim down later
-      const requestCount = actualCount + buffer;
-      
+      const requestCount = actualCount + buffer; // Request more than needed
+
       return `${perspectiveName}: ${requestCount} questions (we'll select the best ${actualCount})`;
     });
-
-   const counts = countsArray.join(', ');
+  const counts = countsArray.join(', ');
 
   // Determine if external is enabled
   const externalEnabled = perspectiveSettings.external?.enabled;
-  const externalCount = typeof perspectiveSettings.external?.questionCount === 'number' 
-    ? perspectiveSettings.external.questionCount + buffer // Apply buffer to external as well
-    : 0;
+  // No need for externalCount calculation here unless used later in the prompt
 
-// Construct the prompt using template literals
-return `Analyze the attached document(s) and generate unique questions for a 360-degree feedback assessment.
+  // Construct the prompt using template literals
+  return `Analyze the attached document(s) and generate unique questions for a 360-degree feedback assessment.
 
 CONTEXT FOR ASSESSMENT:
 Document Type: ${documentType.replace(/_/g, ' ')}
@@ -202,7 +192,7 @@ Category: [Category name]
 ` : ''}
 
 IMPORTANT GUIDELINES:
-1. **FORMAT REQUIREMENTS:** 
+1. **FORMAT REQUIREMENTS:**
    - Each section MUST start with "=== PERSPECTIVE ASSESSMENT ===" (using exact === symbols)
    - Each question MUST use the "Question:", "Type:", "Category:" format exactly
    - DO NOT number questions or add extra formatting
@@ -212,15 +202,16 @@ IMPORTANT GUIDELINES:
 
 3. **SUBJECT REFERENCES:** Refer to the person being assessed as "this person" for manager/peer/direct report/external. Use "you/your" for self-assessment.
 
-4. **QUESTION TYPES:** Mix 'rating' questions (e.g., "How effectively...") and 'open_ended' questions (e.g., "Describe how...").
+4. **QUESTION TYPE MIX:** Generate approximately **${questionMixPercentage}% 'rating'** questions (e.g., "How effectively...") and **${openEndedPercentage}% 'open_ended'** questions (e.g., "Describe how..."). Distribute this mix across all requested perspectives.
 
 5. **AVOID REFERENCES:** DO NOT include specific department names (like "${department} Department") in questions. Use generic phrases like "in this role", "within the team", etc.
 
 6. **STRICTLY ADHERE TO FORMAT:** Do not add any introductions, explanations, notes, or conclusions. ONLY include the specified sections and question format.
 
-Remember: The EXACT format with "===" section headers and proper indentation is critical for automated processing.
+Remember: The EXACT format with "===" section headers and proper indentation is critical for automated processing. Adherence to the QUESTION TYPE MIX is also very important.
 `;
-} // End of createAnalysisPrompt function
+}
+// --- END: MODIFY createAnalysisPrompt TO USE templateInfo ---
 
 // Ensure both functions are exported
 module.exports = {

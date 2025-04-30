@@ -7,6 +7,7 @@ const { generateFallbackQuestions } = require('../services/fallback-questions.se
 const { createAnalysisPrompt } = require('../services/prompt-helper.service');
 const { makeAiChatRequest } = require('../services/flux-ai.service');
 const fluxAiConfig = require('../config/flux-ai');
+const documentController = require('./documents.controller');
 
 
 // Get all templates
@@ -603,7 +604,8 @@ exports.generateConfiguredTemplate = async (req, res) => {
       purpose,
       department,
       documentType,
-      perspectiveSettings
+      perspectiveSettings,
+      questionMixPercentage
     } = req.body;
 
     // Validate required fields
@@ -624,6 +626,7 @@ exports.generateConfiguredTemplate = async (req, res) => {
       department,
       documentType,
       perspectiveSettings,
+      questionMixPercentage,
       userId: req.user.id
     });
 
@@ -649,13 +652,14 @@ exports.generateConfiguredTemplate = async (req, res) => {
       description,
       purpose,
       department,
-      perspectiveSettings: perspectiveSettings || {
+      perspectiveSettings: perspectiveSettings || { // Keep existing default
         manager: { questionCount: 10, enabled: true },
         peer: { questionCount: 10, enabled: true },
         direct_report: { questionCount: 10, enabled: true },
         self: { questionCount: 10, enabled: true },
         external: { questionCount: 5, enabled: false }
-      }
+      },
+      questionMixPercentage: questionMixPercentage !== undefined ? questionMixPercentage : 75 // Pass the mix, default to 75 if undefined
     };
 
     console.log('Starting analysis with configured settings');
@@ -737,6 +741,7 @@ async function createDevelopmentModeTemplate(documents, documentType, userId, te
       purpose: templateInfo.purpose || '',
       department: templateInfo.department || '',
       documentType,
+      // Use perspectiveSettings from templateInfo
       perspectiveSettings: templateInfo.perspectiveSettings || {
         manager: { questionCount: 10, enabled: true },
         peer: { questionCount: 10, enabled: true },
@@ -744,7 +749,9 @@ async function createDevelopmentModeTemplate(documents, documentType, userId, te
         self: { questionCount: 10, enabled: true },
         external: { questionCount: 5, enabled: false }
       },
-      generatedBy: 'flux_ai',
+      // Store the question mix percentage if needed, although it won't affect fallback generation directly
+      // questionMixPercentage: templateInfo.questionMixPercentage, // Optional: store if you want to display it later
+      generatedBy: 'dev_mode_fallback', // Indicate fallback generation
       createdBy: userId,
       status: 'pending_review'
     });
@@ -1776,382 +1783,300 @@ async function createTemplateWithFallbackQuestions(documentType, userId, documen
 
 
 async function startDocumentAnalysis(documents, documentType, userId, templateInfo = {}) {
-try {
-  console.log('Starting document analysis for documents:', documents.length);
+  // --- Make sure necessary services and models are required AT THE TOP ---
+  const { Template, Question, SourceDocument, Document } = require('../models');
+  const fluxAiConfig = require('../config/flux-ai');
+  const { parseQuestionsFromAiResponse, ensurePerspectiveQuestionCounts, deduplicateQuestions } = require('../services/question-parser.service');
+  const { createAnalysisPrompt, sanitizeQuestionText } = require('../services/prompt-helper.service');
+  const { makeAiChatRequest } = require('../services/flux-ai.service');
+  // Assuming createTemplateWithFallbackQuestions might be needed from documents.controller
+  // Note: This creates a potential circular dependency if documents.controller also requires templates.controller
+  // It might be better to move createTemplateWithFallbackQuestions to a shared service if possible.
+  // For now, let's keep it, but be aware.
+  const { createTemplateWithFallbackQuestions } = require('./documents.controller');
 
-  // --- Check FluxAI configuration ---
-  if (!fluxAiConfig.isConfigured()) {
-    console.warn('Flux AI is not configured. Generating fallback questions.');
-    return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-  }
+  try {
+    console.log('Starting document analysis for documents:', documents.length);
 
-  // --- Gather File IDs ---
-  const fileIds = [];
-  for (const document of documents) {
-      if (document.fluxAiFileId) {
-          console.log(`Using existing FluxAI ID ${document.fluxAiFileId} for document ${document.id}`);
-          fileIds.push(document.fluxAiFileId);
-      } else {
-          // NOTE: The original controller had upload logic here using 'uploadFileToFluxAi'
-          // If documents might not have fluxAiFileId, you need that logic here.
-          // For this fix, assuming IDs exist or upload happens elsewhere/before.
-          console.warn(`Document ${document.id} is missing fluxAiFileId. AI analysis might fail if file wasn't uploaded.`);
-          // Optionally: Attempt upload here if needed, or remove doc from analysis / use fallback.
-      }
-  }
-
-  if (fileIds.length === 0) {
-      console.warn('No valid Flux AI file IDs available for analysis. Generating fallback questions.');
+    // --- Check FluxAI configuration ---
+    if (!fluxAiConfig.isConfigured()) {
+      console.warn('Flux AI is not configured. Generating fallback questions.');
       return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-  }
-  console.log('Using FluxAI File IDs:', fileIds);
-
-  // --- Create Prompt ---
-  const promptContent = createAnalysisPrompt(documentType, templateInfo);
-  console.log("Prompt content (first 100 chars):", promptContent.substring(0, 100));
-
-  // --- Make AI Request ---
-  const analysisRequest = {
-    model: fluxAiConfig.model.trim(),
-    messages: [
-      { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
-      { role: 'user', content: promptContent }
-    ],
-    temperature: 0.3,
-    attachments: { files: fileIds, tags: [documentType, "feedback"] },
-    mode: 'rag'
-  };
-
-  console.log('Making AI request with model:', analysisRequest.model);
-  const analysisResponse = await makeAiChatRequest(analysisRequest);
-
-  if (!analysisResponse || !analysisResponse.choices || analysisResponse.choices.length === 0) {
-     console.error('No valid response choices from AI analysis. Generating fallback questions.');
-     return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-  }
-
-  const aiResponseText = analysisResponse.choices[0].message?.content; // Use optional chaining
-
-  if (!aiResponseText) {
-     console.error('No valid content in AI response message. Generating fallback questions.');
-     return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-  }
-
-   // Check for "can't see document" messages
-   if (aiResponseText.toLowerCase().includes("don't see any attached document") || aiResponseText.toLowerCase().includes("i cannot access the document")) {
-     console.warn('AI reported it could not see the document. Generating fallback questions.');
-     return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
-   }
-
-  console.log('AI response received successfully.');
-  console.log('AI response sample (first 300 chars):', aiResponseText.substring(0, 300));
-
-  // --- Parse & Sanitize ---
-  console.log('Parsing AI Response...');
-  // Pass perspective settings if your parser uses them
-  const parsedQuestionsMap = parseQuestionsFromAiResponse(aiResponseText, templateInfo.perspectiveSettings);
-  const totalParsed = Object.values(parsedQuestionsMap).reduce((sum, arr) => sum + arr.length, 0);
-  console.log(`Parsed ${totalParsed} questions (includes internal deduplication).`);
-
-  const departmentName = templateInfo.department || 'General';
-  const sanitizedQuestionsMap = {};
-   Object.keys(parsedQuestionsMap).forEach(perspective => {
-       // Default to empty array if perspective is missing from parsed results
-       const questionsForPerspective = parsedQuestionsMap[perspective] || [];
-       sanitizedQuestionsMap[perspective] = questionsForPerspective.map(question => ({
-           ...question,
-           text: sanitizeQuestionText(question.text, departmentName)
-       }));
-   });
-   console.log(`Sanitized questions using department: ${departmentName}`);
-
-  // Check if we need secondary AI calls for any perspectives with insufficient questions
-  const enabledPerspectives = Object.keys(perspectiveSettings)
-    .filter(p => perspectiveSettings[p]?.enabled);
-
-  // Identify perspectives with missing or insufficient questions
-  const missingPerspectives = [];
-  const insufficientPerspectives = [];
-
-  enabledPerspectives.forEach(perspective => {
-    const targetCount = perspectiveSettings[perspective].questionCount || 5;
-    const availableCount = sanitizedQuestionsMap[perspective]?.length || 0;
-    
-    if (availableCount === 0) {
-      missingPerspectives.push(perspective);
-    } else if (availableCount < targetCount) {
-      insufficientPerspectives.push({
-        perspective, 
-        available: availableCount,
-        needed: targetCount - availableCount
-      });
     }
-  });
 
-  // Handle completely missing perspectives first (like external stakeholder)
-  if (missingPerspectives.length > 0) {
-    console.log(`Making secondary AI call for completely missing perspectives: ${missingPerspectives.join(', ')}`);
-    
-    // Create a focused prompt specifically for missing perspectives
-    const secondaryPrompt = `
-    I need 360-degree feedback assessment questions ONLY for these specific perspectives:
-    ${missingPerspectives.map(p => `- ${p.replace('_', ' ')}: ${perspectiveSettings[p].questionCount} questions`).join('\n')}
-
-    Based on the document which is a ${documentType.replace('_', ' ')}, please generate appropriate questions.
-
-    Format each question as:
-    Question: [Question text]
-    Type: [rating or open_ended]
-    Category: [relevant category]
-
-    ${missingPerspectives.includes('external') ? `
-    CRITICAL INSTRUCTIONS FOR EXTERNAL STAKEHOLDER QUESTIONS:
-    1. External stakeholder questions evaluate how the person interacts with people OUTSIDE the organization.
-    2. These include clients, vendors, partners, regulators, industry peers, etc.
-    3. Focus on relationship building, communication with externals, professionalism, and reputation.
-    4. Example questions:
-      - "How effectively does this person represent the organization in external interactions?"
-      - "How well does this person build relationships with external stakeholders?"
-      - "How would you rate this person's responsiveness to external requests?"
-    ` : ''}
-
-    IMPORTANT: Please ONLY create questions for these specific perspectives:
-    ${missingPerspectives.join(', ')}
-    `;
-
-    try {
-      // Make a secondary AI request
-      const secondaryRequest = {
-        model: fluxAiConfig.model.trim(),
-        messages: [
-          { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
-          { role: 'user', content: secondaryPrompt }
-        ],
-        temperature: 0.3,
-        attachments: { files: fileIds, tags: [documentType, "feedback"] },
-        mode: 'rag'
-      };
-      
-      const secondaryResponse = await makeAiChatRequest(secondaryRequest);
-      
-      if (secondaryResponse && secondaryResponse.choices && secondaryResponse.choices.length > 0) {
-        const secondaryAiText = secondaryResponse.choices[0].message?.content;
-        
-        if (secondaryAiText) {
-          console.log('Secondary AI response received for missing perspectives');
-          
-          // Parse the secondary response
-          const secondaryQuestionsMap = parseQuestionsFromAiResponse(secondaryAiText, perspectiveSettings);
-          
-          // Add the new questions to our sanitizedQuestionsMap
-          for (const perspective of missingPerspectives) {
-            if (secondaryQuestionsMap[perspective] && secondaryQuestionsMap[perspective].length > 0) {
-              console.log(`Found ${secondaryQuestionsMap[perspective].length} questions for ${perspective} in secondary AI response`);
-              
-              // Initialize the array if needed
-              if (!sanitizedQuestionsMap[perspective]) {
-                sanitizedQuestionsMap[perspective] = [];
-              }
-              
-              // Add sanitized questions
-              const departmentName = templateInfo.department || 'General';
-              const newQuestions = secondaryQuestionsMap[perspective].map(question => ({
-                ...question,
-                text: sanitizeQuestionText(question.text, departmentName)
-              }));
-              
-              sanitizedQuestionsMap[perspective].push(...newQuestions);
-            }
-          }
+    // --- Gather File IDs ---
+    // (Keep the existing File ID gathering logic here - unchanged from previous version)
+    const fileIds = [];
+    for (const document of documents) {
+        if (document.fluxAiFileId) {
+            console.log(`Using existing FluxAI ID ${document.fluxAiFileId} for document ${document.id}`);
+            fileIds.push(document.fluxAiFileId);
+        } else {
+            console.warn(`Document ${document.id} is missing fluxAiFileId. AI analysis might fail if file wasn't uploaded.`);
         }
-      }
-    } catch (secondaryError) {
-      console.warn('Error in secondary AI call for missing perspectives:', secondaryError.message);
-      console.log('Will proceed with fallback questions for missing perspectives');
     }
-  }
-
-  // Handle perspectives with insufficient questions
-  if (insufficientPerspectives.length > 0) {
-    console.log(`Making tertiary AI call for perspectives with insufficient questions: 
-      ${insufficientPerspectives.map(p => `${p.perspective} (${p.available}/${perspectiveSettings[p.perspective].questionCount})`).join(', ')}`);
-    
-    // Create a focused prompt specifically for additional questions
-    const tertiaryPrompt = `
-  I need ADDITIONAL 360-degree feedback assessment questions for these perspectives:
-  ${insufficientPerspectives.map(p => `- ${p.perspective.replace('_', ' ')}: ${p.needed} more questions`).join('\n')}
-
-  Based on the document which is a ${documentType.replace('_', ' ')}, please generate more questions.
-  These questions should be DIFFERENT from existing questions and complement them.
-
-  Format each question as:
-  Question: [Question text]
-  Type: [rating or open_ended]
-  Category: [relevant category]
-
-  IMPORTANT: Please generate ONLY the specified number of NEW questions for each perspective.
-  `;
-
-    try {
-      // Make a tertiary AI request
-      const tertiaryRequest = {
-        model: fluxAiConfig.model.trim(),
-        messages: [
-          { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
-          { role: 'user', content: tertiaryPrompt }
-        ],
-        temperature: 0.5, // Slightly higher temperature for diverse questions
-        attachments: { files: fileIds, tags: [documentType, "feedback"] },
-        mode: 'rag'
-      };
-      
-      const tertiaryResponse = await makeAiChatRequest(tertiaryRequest);
-      
-      if (tertiaryResponse && tertiaryResponse.choices && tertiaryResponse.choices.length > 0) {
-        const tertiaryAiText = tertiaryResponse.choices[0].message?.content;
-        
-        if (tertiaryAiText) {
-          console.log('Tertiary AI response received for additional questions');
-          
-          // Parse the tertiary response
-          const tertiaryQuestionsMap = parseQuestionsFromAiResponse(tertiaryAiText, perspectiveSettings);
-          
-          // Add the new questions to our sanitizedQuestionsMap
-          for (const { perspective } of insufficientPerspectives) {
-            if (tertiaryQuestionsMap[perspective] && tertiaryQuestionsMap[perspective].length > 0) {
-              console.log(`Found ${tertiaryQuestionsMap[perspective].length} additional questions for ${perspective}`);
-              
-              // Add sanitized questions
-              const departmentName = templateInfo.department || 'General';
-              const additionalQuestions = tertiaryQuestionsMap[perspective].map(question => ({
-                ...question,
-                text: sanitizeQuestionText(question.text, departmentName)
-              }));
-              
-              // Filter out any duplicate questions based on text similarity
-              const existingTexts = new Set(sanitizedQuestionsMap[perspective].map(q => q.text.toLowerCase().trim()));
-              const uniqueAdditionalQuestions = additionalQuestions.filter(q => {
-                const normalizedText = q.text.toLowerCase().trim();
-                if (existingTexts.has(normalizedText)) {
-                  return false;
-                }
-                existingTexts.add(normalizedText);
-                return true;
-              });
-              
-              sanitizedQuestionsMap[perspective].push(...uniqueAdditionalQuestions);
-              console.log(`Added ${uniqueAdditionalQuestions.length} unique additional questions for ${perspective}`);
-            }
-          }
-        }
-      }
-    } catch (tertiaryError) {
-      console.warn('Error in tertiary AI call for additional questions:', tertiaryError.message);
-      console.log('Will proceed with available AI questions plus fallbacks as needed');
+    if (fileIds.length === 0) {
+        console.warn('No valid Flux AI file IDs available for analysis. Generating fallback questions.');
+        return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
     }
-  }
+    console.log('Using FluxAI File IDs:', fileIds);
 
-  // --- Balance Questions & Add Fallbacks ---
-   const perspectiveSettings = templateInfo.perspectiveSettings || { /* default settings */ };
-   console.log('Balancing questions per perspective settings...');
-   const balancedQuestionsMap = ensurePerspectiveQuestionCounts(
-       sanitizedQuestionsMap,
-       perspectiveSettings,
-       documentType
-   );
+    // --- Create Prompt ---
+    const promptContent = createAnalysisPrompt(documentType, templateInfo);
+    console.log("Prompt content (first 100 chars):", promptContent.substring(0, 100));
 
-   // --- Flatten list for Insertion (NO final deduplication here) ---
-   const allQuestionsToInsert = Object.values(balancedQuestionsMap).flat();
-   const finalCount = allQuestionsToInsert.length;
-   console.log(`Final list prepared for insertion: ${finalCount} questions.`); // THIS SHOULD BE 45
+    // --- Make PRIMARY AI Request ---
+    // (Keep the existing Primary AI Request logic here - unchanged from previous version)
+    const analysisRequest = {
+      model: fluxAiConfig.model.trim(),
+      messages: [
+        { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') },
+        { role: 'user', content: promptContent }
+      ],
+      temperature: 0.3,
+      attachments: { files: fileIds, tags: [documentType, "feedback"] },
+      mode: 'rag'
+    };
+    console.log('Making PRIMARY AI request with model:', analysisRequest.model);
+    const analysisResponse = await makeAiChatRequest(analysisRequest);
 
-   // --- Create Template in Database ---
-    const template = await Template.create({
-        name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
-        description: templateInfo.description || 'Generated from document analysis',
-        purpose: templateInfo.purpose || '',
-        department: templateInfo.department || '', // Storing the original department name
-        documentType,
-        generatedBy: 'flux_ai', // Mark as AI generated
-        status: 'pending_review',
-        perspectiveSettings: perspectiveSettings,
-        createdBy: userId,
-        lastAnalysisDate: new Date()
+    // --- Process PRIMARY AI Response ---
+    // (Keep the existing Primary AI Response processing logic here - unchanged from previous version)
+    if (!analysisResponse || !analysisResponse.choices || analysisResponse.choices.length === 0) {
+       console.error('No valid response choices from PRIMARY AI analysis. Generating fallback questions.');
+       return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+    const aiResponseText = analysisResponse.choices[0].message?.content;
+    if (!aiResponseText) {
+       console.error('No valid content in PRIMARY AI response message. Generating fallback questions.');
+       return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+    }
+     if (aiResponseText.toLowerCase().includes("don't see any attached document") || aiResponseText.toLowerCase().includes("i cannot access the document")) {
+       console.warn('PRIMARY AI reported it could not see the document. Generating fallback questions.');
+       return await createTemplateWithFallbackQuestions(documentType, userId, documents, templateInfo);
+     }
+    console.log('PRIMARY AI response received successfully.');
+    console.log('PRIMARY AI response sample (first 300 chars):', aiResponseText.substring(0, 300));
+
+    // --- Parse & Sanitize PRIMARY Response ---
+    console.log('Parsing PRIMARY AI Response...');
+    const perspectiveSettings = templateInfo.perspectiveSettings || { /* default settings */ };
+    const parsedQuestionsMap = parseQuestionsFromAiResponse(aiResponseText, perspectiveSettings);
+    console.log('Initial parsed counts (directly from parser):', JSON.stringify(Object.keys(parsedQuestionsMap).reduce((acc, key) => { acc[key] = parsedQuestionsMap[key].length; return acc; }, {})));
+
+    const departmentName = templateInfo.department || 'General';
+    const sanitizedQuestionsMap = {};
+     Object.keys(parsedQuestionsMap).forEach(perspective => {
+         const questionsForPerspective = parsedQuestionsMap[perspective] || [];
+         sanitizedQuestionsMap[perspective] = questionsForPerspective.map(question => ({
+             ...question,
+             text: sanitizeQuestionText(question.text, departmentName)
+         }));
+     });
+     console.log(`Sanitized questions using department: ${departmentName}`);
+     console.log('Initial SANITIZED counts (before secondary/tertiary calls):', JSON.stringify(Object.keys(sanitizedQuestionsMap).reduce((acc, key) => { acc[key] = sanitizedQuestionsMap[key].length; return acc; }, {})));
+
+    // --- Check for Missing/Insufficient Perspectives ---
+    const enabledPerspectives = Object.keys(perspectiveSettings)
+      .filter(p => perspectiveSettings[p]?.enabled);
+
+    let missingPerspectives = []; // Use let to allow modification
+    let insufficientPerspectives = []; // Use let
+
+    enabledPerspectives.forEach(perspective => {
+      const targetCount = perspectiveSettings[perspective]?.questionCount || 5; // Use questionCount
+      const availableCount = sanitizedQuestionsMap[perspective]?.length || 0;
+
+      console.log(`[Check Phase] Perspective: ${perspective}, Target: ${targetCount}, Available: ${availableCount}`); // Add check log
+
+      if (availableCount === 0 && targetCount > 0) { // Also check target > 0
+        missingPerspectives.push(perspective);
+      } else if (availableCount < targetCount) {
+        insufficientPerspectives.push({
+          perspective,
+          available: availableCount,
+          needed: targetCount - availableCount
+        });
+      }
     });
-    console.log(`Template DB record created with ID: ${template.id}`);
 
-   // --- Insert Questions into Database ---
-   let orderIndex = 1;
-   for (const question of allQuestionsToInsert) {
-      // Ensure question object is valid before creating
-       if (question && question.text && question.perspective) {
-         await Question.create({
-           text: question.text,
-           type: question.type || 'rating',
-           category: question.category || 'General',
-           perspective: question.perspective,
-           required: question.required !== undefined ? question.required : true,
-           order: orderIndex++, // Assign sequential order based on final balanced list
-           templateId: template.id
-         });
-       } else {
-           console.warn("Skipping invalid question object during insertion:", question);
-       }
-   }
-   console.log(`Inserted ${orderIndex - 1} questions into the database for template ${template.id}.`); // Log actual inserted count
+    console.log(`[Check Phase] Missing Perspectives Identified: ${missingPerspectives.join(', ') || 'None'}`);
+    console.log(`[Check Phase] Insufficient Perspectives Identified: ${insufficientPerspectives.map(p=>p.perspective).join(', ') || 'None'}`);
 
-  // --- Link Source Documents ---
-  for (const document of documents) {
-       if (document && document.id) {
-          await SourceDocument.create({
-              fluxAiFileId: document.fluxAiFileId || null, // Handle potentially missing ID
-              documentId: document.id,
-              templateId: template.id
-          });
-       }
-  }
-  console.log(`Linked ${documents.length} source documents to template ${template.id}.`);
+    // --- Secondary & Tertiary Call Section ---
+    console.log('[Attempting Follow-up Calls] Checking if secondary/tertiary calls are needed...'); // <-- LOG BEFORE THE IFS
 
-  // --- Update Document Status ---
-  for (const document of documents) {
-       if (document && document.id) {
-          await Document.update(
-              { status: 'analysis_complete', associatedTemplateId: template.id },
-              { where: { id: document.id } }
-          );
-       }
-  }
-  console.log(`Updated status for ${documents.length} documents.`);
+    try { // Wrap the whole follow-up section in a try-catch
+      if (missingPerspectives.length > 0) {
+        console.log(`[Secondary Call EXECUTION] Triggering secondary AI call for: ${missingPerspectives.join(', ')}`);
 
-  console.log(`Template generation process completed successfully for template ID: ${template.id}`);
-  return template; // Return the created template object
+        const secondaryPrompt = `
+        I need 360-degree feedback assessment questions ONLY for these specific perspectives:
+        ${missingPerspectives.map(p => `- ${p.replace('_', ' ')}: ${perspectiveSettings[p].questionCount} questions`).join('\n')}
+        Based on the document which is a ${documentType.replace('_', ' ')}, please generate appropriate questions.
+        Format each question as:
+        Question: [Question text]
+        Type: [rating or open_ended]
+        Category: [relevant category]
+        ${missingPerspectives.includes('external') ? `
+        CRITICAL INSTRUCTIONS FOR EXTERNAL STAKEHOLDER QUESTIONS:
+        1. External stakeholder questions evaluate interactions OUTSIDE the organization (clients, partners, etc.).
+        2. Focus on relationship building, external communication, professionalism, responsiveness.
+        3. Example: "Question: How effectively does this person represent the organization externally?\\nType: rating\\nCategory: Representation"
+        ` : ''}
+        IMPORTANT: Please ONLY create questions for these specific perspectives: ${missingPerspectives.join(', ')}
+        `;
+        console.log(`[Secondary Call LOG] Secondary Prompt (sample): ${secondaryPrompt.substring(0, 200)}...`);
 
-} catch (error) {
-  console.error('Error during startDocumentAnalysis:', error);
-   // Attempt to create a fallback template on critical failure
-    console.error('Document analysis failed. Attempting to create fallback template.');
-    try {
-      // Make sure documents is an array here
-       const validDocuments = Array.isArray(documents) ? documents : [];
-       const fallbackTemplate = await createTemplateWithFallbackQuestions(documentType, userId, validDocuments, templateInfo);
-       if (fallbackTemplate) {
-           console.log('Fallback template created successfully after analysis error.');
-           return fallbackTemplate; // Return fallback if successful
-       }
-    } catch (fallbackError) {
-        console.error('Failed to create fallback template after analysis error:', fallbackError);
+        const secondaryRequest = { /* ... (same as before) ... */
+          model: fluxAiConfig.model.trim(),
+          messages: [ { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') }, { role: 'user', content: secondaryPrompt } ],
+          temperature: 0.3, attachments: { files: fileIds, tags: [documentType, "feedback"] }, mode: 'rag'
+        };
+        const secondaryResponse = await makeAiChatRequest(secondaryRequest);
+
+        if (secondaryResponse && secondaryResponse.choices && secondaryResponse.choices.length > 0) {
+            const secondaryAiText = secondaryResponse.choices[0].message?.content;
+            console.log(`[Secondary Call LOG] Secondary AI Response received (length: ${secondaryAiText?.length || 0}). Sample: ${secondaryAiText ? secondaryAiText.substring(0, 150) : 'N/A'}`);
+            if (secondaryAiText) {
+                const secondaryQuestionsMap = parseQuestionsFromAiResponse(secondaryAiText, perspectiveSettings);
+                for (const perspective of missingPerspectives) {
+                    if (secondaryQuestionsMap[perspective] && secondaryQuestionsMap[perspective].length > 0) {
+                        console.log(`[Secondary Call MERGE] Found ${secondaryQuestionsMap[perspective].length} questions for ${perspective} in secondary response.`);
+                        if (!sanitizedQuestionsMap[perspective]) sanitizedQuestionsMap[perspective] = [];
+                        const newQuestions = secondaryQuestionsMap[perspective].map(q => ({ ...q, text: sanitizeQuestionText(q.text, departmentName) }));
+                        sanitizedQuestionsMap[perspective].push(...newQuestions);
+                        console.log(`[Secondary Call MERGE] Merged ${newQuestions.length} for ${perspective}. New count: ${sanitizedQuestionsMap[perspective].length}`);
+                    } else {
+                       console.log(`[Secondary Call MERGE] No questions found for ${perspective} in secondary response map.`);
+                    }
+                }
+            } else { console.log('[Secondary Call LOG] Secondary AI response has no content.'); }
+        } else { console.log('[Secondary Call LOG] No valid choices in secondary AI response.'); }
+
+      } else {
+        console.log('[Secondary Call EXECUTION] Skipping secondary call - No missing perspectives.');
+      }
+
+      if (insufficientPerspectives.length > 0) {
+         console.log(`[Tertiary Call EXECUTION] Triggering tertiary AI call for: ${insufficientPerspectives.map(p => `${p.perspective}(${p.needed})`).join(', ')}`);
+
+         const tertiaryPrompt = `
+         I need ADDITIONAL 360-degree feedback questions for these perspectives:
+         ${insufficientPerspectives.map(p => `- ${p.perspective.replace('_', ' ')}: ${p.needed} more questions`).join('\n')}
+         Based on the document which is a ${documentType.replace('_', ' ')}, please generate NEW questions DIFFERENT from typical ones.
+         Format each question as: Question: [Question text]\\nType: [rating or open_ended]\\nCategory: [relevant category]
+         IMPORTANT: Generate ONLY the specified number of NEW questions per perspective.
+         `;
+         console.log(`[Tertiary Call LOG] Tertiary Prompt (sample): ${tertiaryPrompt.substring(0, 200)}...`);
+
+         const tertiaryRequest = { /* ... (same as before) ... */
+           model: fluxAiConfig.model.trim(),
+           messages: [ { role: 'system', content: fluxAiConfig.getSystemPrompt('document_analysis') }, { role: 'user', content: tertiaryPrompt } ],
+           temperature: 0.5, attachments: { files: fileIds, tags: [documentType, "feedback"] }, mode: 'rag'
+         };
+         const tertiaryResponse = await makeAiChatRequest(tertiaryRequest);
+
+         if (tertiaryResponse && tertiaryResponse.choices && tertiaryResponse.choices.length > 0) {
+             const tertiaryAiText = tertiaryResponse.choices[0].message?.content;
+             console.log(`[Tertiary Call LOG] Tertiary AI Response received (length: ${tertiaryAiText?.length || 0}). Sample: ${tertiaryAiText ? tertiaryAiText.substring(0, 150) : 'N/A'}`);
+             if (tertiaryAiText) {
+                 const tertiaryQuestionsMap = parseQuestionsFromAiResponse(tertiaryAiText, perspectiveSettings);
+                 for (const { perspective } of insufficientPerspectives) {
+                      if (tertiaryQuestionsMap[perspective] && tertiaryQuestionsMap[perspective].length > 0) {
+                         console.log(`[Tertiary Call MERGE] Found ${tertiaryQuestionsMap[perspective].length} additional questions for ${perspective}`);
+                         if (!sanitizedQuestionsMap[perspective]) sanitizedQuestionsMap[perspective] = [];
+                         const additionalQuestions = tertiaryQuestionsMap[perspective].map(q => ({ ...q, text: sanitizeQuestionText(q.text, departmentName) }));
+                         const existingTexts = new Set(sanitizedQuestionsMap[perspective].map(q => q.text.toLowerCase().trim()));
+                         const uniqueAdditionalQuestions = additionalQuestions.filter(q => !existingTexts.has(q.text.toLowerCase().trim()));
+                         sanitizedQuestionsMap[perspective].push(...uniqueAdditionalQuestions);
+                         console.log(`[Tertiary Call MERGE] Merged ${uniqueAdditionalQuestions.length} unique additional for ${perspective}. New count: ${sanitizedQuestionsMap[perspective].length}`);
+                      } else {
+                         console.log(`[Tertiary Call MERGE] No additional questions found for ${perspective} in tertiary response map.`);
+                      }
+                 }
+             } else { console.log('[Tertiary Call LOG] Tertiary AI response has no content.'); }
+         } else { console.log('[Tertiary Call LOG] No valid choices in tertiary AI response.'); }
+
+      } else {
+        console.log('[Tertiary Call EXECUTION] Skipping tertiary call - No insufficient perspectives.');
+      }
+
+    } catch (followUpError) {
+        console.error('[Follow-up Calls ERROR] Error during secondary/tertiary calls:', followUpError.message);
+        // Continue execution, fallbacks will be handled later if needed
     }
 
-   // If fallback fails or isn't returned, ensure documents are marked as failed
-   const docIdsToUpdate = Array.isArray(documents) ? documents.map(d => d?.id).filter(id => id) : [];
-   if (docIdsToUpdate.length > 0) {
-       await Document.update(
-           { status: 'analysis_failed', analysisError: error.message },
-           { where: { id: docIdsToUpdate } } // Update only the relevant documents
-        );
-   }
-   throw error; // Re-throw the original error
-}
+    // --- Balance Questions & Add Fallbacks ---
+     console.log('[Balancer LOG] Final question map counts BEFORE balancing:', JSON.stringify(Object.keys(sanitizedQuestionsMap).reduce((acc, key) => { acc[key] = (sanitizedQuestionsMap[key] || []).length; return acc; }, {})));
+     const balancedQuestionsMap = ensurePerspectiveQuestionCounts(
+         sanitizedQuestionsMap, // Pass the potentially updated map
+         perspectiveSettings,
+         documentType
+     );
+
+     // --- Flatten list for Insertion ---
+     const allQuestionsToInsert = Object.values(balancedQuestionsMap).flat();
+     const finalCount = allQuestionsToInsert.length;
+     console.log(`Final list prepared for insertion: ${finalCount} questions.`);
+
+     // --- Create Template in Database ---
+      const template = await Template.create({ /* ... (same as before) ... */
+          name: templateInfo.name || `${documentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} Template`,
+          description: templateInfo.description || 'Generated from document analysis',
+          purpose: templateInfo.purpose || '', department: departmentName, documentType, generatedBy: 'flux_ai',
+          status: 'pending_review', perspectiveSettings: perspectiveSettings, createdBy: userId, lastAnalysisDate: new Date()
+      });
+      console.log(`Template DB record created with ID: ${template.id}`);
+
+     // --- Insert Questions into Database ---
+     // (Keep the existing DB insertion logic here - unchanged from previous version)
+     let orderIndex = 1;
+     for (const question of allQuestionsToInsert) {
+         if (question && question.text && question.perspective) {
+           await Question.create({
+             text: question.text, type: question.type || 'rating', category: question.category || 'General', perspective: question.perspective,
+             required: question.required !== undefined ? question.required : true, order: orderIndex++, templateId: template.id
+           });
+         } else { console.warn("Skipping invalid question object during insertion:", question); }
+     }
+     console.log(`Inserted ${orderIndex - 1} questions into the database for template ${template.id}.`);
+
+    // --- Link Source Documents & Update Status ---
+    // (Keep the existing logic for linking/updating documents - unchanged from previous version)
+    for (const document of documents) {
+         if (document && document.id) {
+            await SourceDocument.create({ fluxAiFileId: document.fluxAiFileId || null, documentId: document.id, templateId: template.id });
+            await Document.update( { status: 'analysis_complete', associatedTemplateId: template.id }, { where: { id: document.id } });
+         }
+    }
+    console.log(`Linked and updated status for ${documents.length} documents.`);
+
+    console.log(`Template generation process completed successfully for template ID: ${template.id}`);
+    return template;
+
+  } catch (error) { // Catch errors from the main try block
+    console.error('CRITICAL Error during startDocumentAnalysis:', error);
+     // Attempt to create a fallback template on critical failure
+      console.error('Document analysis failed critically. Attempting to create fallback template.');
+      try {
+         const validDocuments = Array.isArray(documents) ? documents : [];
+         const fallbackTemplate = await createTemplateWithFallbackQuestions(documentType, userId, validDocuments, templateInfo);
+         if (fallbackTemplate) {
+             console.log('Fallback template created successfully after CRITICAL analysis error.');
+             return fallbackTemplate;
+         }
+      } catch (fallbackError) {
+          console.error('CRITICAL: Failed to create fallback template after analysis error:', fallbackError);
+      }
+
+     // If fallback fails or isn't returned, ensure documents are marked as failed
+     const docIdsToUpdate = Array.isArray(documents) ? documents.map(d => d?.id).filter(id => id) : [];
+     if (docIdsToUpdate.length > 0) {
+         await Document.update( { status: 'analysis_failed', analysisError: error.message }, { where: { id: docIdsToUpdate } });
+     }
+     throw error; // Re-throw the original error
+  }
 }
 
 // Export the function (keep this at the end of the file)

@@ -12,7 +12,7 @@ class AiFeedbackService {
       baseUrl: process.env.FLUX_AI_BASE_URL || 'https://ai.runonflux.com',
       apiKey: process.env.FLUX_AI_API_KEY,
       model: process.env.FLUX_AI_MODEL || 'DeepSeek R1 Distill Qwen 32B',
-      
+
       endpoints: {
         balance: '/v1/balance',
         llms: '/v1/llms',
@@ -20,7 +20,7 @@ class AiFeedbackService {
         files: '/v1/files'
       }
     };
-    
+
     console.log(`FluxAI configured with baseUrl: ${this.fluxAiConfig.baseUrl}`);
     console.log(`FluxAI model: ${this.fluxAiConfig.model}`);
   }
@@ -31,7 +31,7 @@ class AiFeedbackService {
   async evaluateFeedback(responses, assessorType, targetEmployeeId) {
     try {
       console.log('Evaluating feedback using FluxAI');
-      
+
       // IMPORTANT: First perform our own rule-based check for clearly inappropriate content
       // This ensures we catch obvious issues even if AI fails
       const quickAnalysis = this.analyzeFeedback(responses);
@@ -39,22 +39,22 @@ class AiFeedbackService {
         console.log('Rule-based pre-check found offensive content - skipping AI evaluation');
         return this.fallbackEvaluation(responses, assessorType);
       }
-      
+
       // Check if API key is configured
       if (!this.fluxAiConfig.apiKey) {
         console.warn('FluxAI API key not configured. Falling back to rule-based evaluation.');
         return this.fallbackEvaluation(responses, assessorType);
       }
-      
+
       // Format the feedback in a simple text format
       const formattedFeedback = this.formatFeedbackForAI(responses, assessorType);
       console.log('Formatted feedback (sample):', formattedFeedback.substring(0, 200) + '...');
-      
+
       // Create a detailed, structured prompt for analysis
       const prompt = this.createAIPrompt(responses, assessorType);
-      
+
       console.log('Calling FluxAI API with improved structured prompt...');
-      
+
       try {
         // Create the request data
         const requestData = {
@@ -66,12 +66,12 @@ class AiFeedbackService {
           ],
           stream: false
         };
-        
+
         // Include model if specified
         if (this.fluxAiConfig.model) {
           requestData.model = this.fluxAiConfig.model;
         }
-        
+
         // Make the API call with proper headers
         const response = await axios({
           method: 'POST',
@@ -82,15 +82,15 @@ class AiFeedbackService {
           },
           data: requestData
         });
-        
+
         // Log information for debugging
         console.log('FluxAI API status code:', response.status);
-        
+
         if (response.data && response.data.choices && response.data.choices.length > 0) {
           // Extract the content from the response, handling different possible formats
           let aiContent = null;
           const choice = response.data.choices[0];
-          
+
           if (typeof choice.message === 'object' && choice.message.content) {
             // Standard format: choice.message is an object with content property
             aiContent = choice.message.content;
@@ -104,56 +104,61 @@ class AiFeedbackService {
             // If we can't find content in expected places, try to extract from choice as a string
             aiContent = JSON.stringify(choice);
           }
-          
+
           if (aiContent) {
             console.log('AI response content:', aiContent);
-            
+
             // Check for refusal patterns or very short responses - these often indicate the AI detected inappropriate content
             if (aiContent.includes('**QUALITY:') || aiContent.includes('QUALITY:')) {
               console.log('AI provided a proper structured analysis');
-              
+
               // Extract structured information from AI response
+              // ***MODIFICATION POINT*** Quality extraction now considers specificity
               const quality = this.extractQualityFromAIResponse(aiContent);
               const suggestions = this.extractSuggestionsFromAIResponse(aiContent);
               const questionFeedback = this.extractQuestionFeedbackFromAIResponse(aiContent, responses);
               
+
               // Generate appropriate message based on quality assessment
-              const message = this.generateMessageFromQuality(quality);
-              
+              // ***MODIFICATION POINT*** Message generation might be refined based on quality
+              const message = this.generateMessageFromQuality(quality, aiContent); // Pass aiContent for context
+
               return {
                 quality,
                 message,
                 suggestions,
                 questionFeedback,
-                analysisDetails: { 
+                analysisDetails: {
                   aiResponse: aiContent,
                   extractedQuality: quality,
                   usedAI: true
                 }
               };
-            } 
+            }
             // Only fall back if the response is very short or contains explicit refusal language
-            else if (aiContent.length < 50 || 
+            else if (aiContent.length < 50 ||
                      aiContent.match(/i (cannot|can't|am unable to) (analyze|evaluate|review|provide)/i) ||
                      aiContent.match(/would not be (appropriate|ethical|responsible)/i)) {
               console.log('AI likely refused to analyze the content');
               return this.fallbackEvaluation(responses, assessorType);
             }
-            
-            // Extract structured information from AI response
+
+            // Extract structured information from AI response (even if QUALITY tag missing, attempt analysis)
+             // ***MODIFICATION POINT*** Quality extraction now considers specificity
             const quality = this.extractQualityFromAIResponse(aiContent);
             const suggestions = this.extractSuggestionsFromAIResponse(aiContent);
             const questionFeedback = this.extractQuestionFeedbackFromAIResponse(aiContent, responses);
-            
+
             // Generate appropriate message based on quality assessment
-            const message = this.generateMessageFromQuality(quality);
-            
+            // ***MODIFICATION POINT*** Message generation might be refined based on quality
+            const message = this.generateMessageFromQuality(quality, aiContent); // Pass aiContent for context
+
             return {
               quality,
               message,
               suggestions,
               questionFeedback,
-              analysisDetails: { 
+              analysisDetails: {
                 aiResponse: aiContent,
                 extractedQuality: quality,
                 usedAI: true
@@ -166,681 +171,799 @@ class AiFeedbackService {
         } else {
           console.warn('No choices in API response:', JSON.stringify(response.data, null, 2));
         }
-        
+
         // If we reach this point, something went wrong with parsing the response
         console.warn('Could not properly parse FluxAI response. Falling back to rule-based evaluation.');
         return this.fallbackEvaluation(responses, assessorType);
-        
+
       } catch (apiError) {
         console.error('Error calling FluxAI API:', apiError.message);
-        
+
         if (apiError.response) {
           console.error('FluxAI API error status:', apiError.response.status);
           console.error('FluxAI API error data:', JSON.stringify(apiError.response.data, null, 2));
         }
-        
+
         if (apiError.request) {
           console.error('Request was made but no response received');
         }
-        
+
         return this.fallbackEvaluation(responses, assessorType);
       }
-      
+
     } catch (error) {
       console.error('Error in feedback evaluation:', error.message);
       return this.fallbackEvaluation(responses, assessorType);
     }
   }
-  
+
   // Create a more improved prompt for AI analysis
   createAIPrompt(responses, assessorType) {
+    // Use the *modified* formatFeedbackForAI which includes categories
     const formattedFeedback = this.formatFeedbackForAI(responses, assessorType);
-    
-    return `You are a feedback analysis expert. Review this 360-degree feedback carefully and provide a high-quality assessment:
+  
+    // Calculate average rating for incongruence check context
+    const ratingResponses = responses.filter(r => r.questionType === 'rating' && typeof r.rating === 'number');
+    let averageRating = null;
+    if (ratingResponses.length > 0) {
+        const sum = ratingResponses.reduce((acc, r) => acc + r.rating, 0);
+        averageRating = (sum / ratingResponses.length).toFixed(1);
+    }
+  
+    return `You are an expert 360 Feedback Coach. Your goal is to help the assessor provide feedback that is specific, fair, balanced, actionable, and professional, ultimately aiding the recipient's development. Review the following 360-degree feedback provided by a ${assessorType}:
 
 ${formattedFeedback}
 
-Please analyze this feedback for ALL of the following aspects and be specific:
-1. QUALITY: Is the overall feedback quality 'good', 'needs_improvement', or 'poor'?
-2. SPECIFICITY: Does the feedback include specific examples or is it too general?
-3. BALANCE: Is there a good balance of positive and constructive feedback?
-4. PROFESSIONALISM: Is the language professional and respectful?
-5. LENGTH: Are responses appropriately detailed (not too short or too long)?
-6. ACTIONABILITY: Does the feedback provide actionable advice?
-7. CONFIDENTIALITY: Does the feedback avoid sharing confidential or overly specific information?
+Critically evaluate the feedback based on ALL the following dimensions:
 
-Please provide:
-- Overall assessment of the feedback quality
-- 2-3 specific recommendations for improvement
-- Any issues with individual responses (identify by question number)
+QUALITY: Overall assessment ('good', 'needs_improvement', 'poor'). Base this on the combined evaluation of other dimensions. Downgrade quality if Specificity, Actionability, or Congruence are poor.
+SPECIFICITY: Are claims and ratings supported by concrete examples or behavioral descriptions? ('good', 'needs_improvement', 'poor'). High ratings (4/5) or low ratings (1/2) require specific justification in the comments. General statements without examples indicate poor specificity.
+ACTIONABILITY: Does constructive feedback suggest clear, actionable steps or areas for focus? ('good', 'needs_improvement', 'poor'). Vague criticisms are not actionable.
+BALANCE: Is there a fair mix of strengths and areas for development, or is it overwhelmingly positive or negative? ('good', 'needs_improvement', 'poor').
+PROFESSIONALISM: Is the language respectful, objective, and constructive? ('good', 'needs_improvement', 'poor'). Avoids personal attacks, insults, or overly casual language.
+CONGRUENCE (Rating vs. Comment): Do the numerical ratings align with the sentiment and content of the written comments? ('good', 'needs_improvement', 'poor'). Check for mismatches (e.g., average rating is ${averageRating}/5, but comments are overwhelmingly positive/negative, or vice-versa). Explicitly state if a mismatch is detected.
+CONGRUENCE (Category Consistency): Review ratings within the same category. Are there potentially contradictory ratings (e.g., 1 and 5) for closely related skills within a category that might warrant review? ('good', 'questionable', 'poor'). Only flag 'questionable' or 'poor' if contradictions seem significant. It's okay if ratings differ somewhat.
+BEHAVIOR vs. TRAIT: Does the feedback focus on observable behaviors (good) rather than fixed personality traits (less helpful)? ('good', 'needs_improvement', 'poor'). E.g., "Did not meet deadline" (behavior) vs. "Is lazy" (trait).
+IMPACT: Does the feedback explain the impact of the behaviors mentioned (e.g., "When deadlines are missed, it delays the project kickoff")? ('good', 'needs_improvement', 'poor').
+CONFIDENTIALITY: Avoids mentioning specific confidential projects, salaries, or personal issues? ('good', 'needs_improvement', 'poor').
+Provide your analysis in the following EXACT format:
 
-FORMAT your response like this:
-"QUALITY: [your assessment]
-SPECIFICITY: [your assessment]
-BALANCE: [your assessment]
-PROFESSIONALISM: [your assessment]
-LENGTH: [your assessment]
-ACTIONABILITY: [your assessment]
-CONFIDENTIALITY: [your assessment]
+OVERALL ASSESSMENT
 
-OVERALL: [brief overall assessment]
+QUALITY: [good | needs_improvement | poor]
+SPECIFICITY: [good | needs_improvement | poor]
+ACTIONABILITY: [good | needs_improvement | poor]
+BALANCE: [good | needs_improvement | poor]
+PROFESSIONALISM: [good | needs_improvement | poor]
+CONGRUENCE (Rating vs. Comment): [good | needs_improvement | poor] - [Brief comment, e.g., "Aligns well" or "Significant mismatch detected: low ratings but positive text."]
+CONGRUENCE (Category Consistency): [good | questionable | poor] - [Brief comment, e.g., "Consistent" or "Ratings in 'Category X' vary significantly (e.g., 1 vs 5). Consider reviewing."]
+BEHAVIOR vs. TRAIT: [good | needs_improvement | poor] - [Brief comment if improvement needed]
+IMPACT: [good | needs_improvement | poor] - [Brief comment if improvement needed]
+CONFIDENTIALITY: [good | needs_improvement | poor] - [Brief comment if improvement needed]
 
-RECOMMENDATIONS:
-1. [recommendation 1]
-2. [recommendation 2]
-3. [recommendation 3]
+SUMMARY: [Your concise overall summary (1-2 sentences) highlighting key strengths and weaknesses of the feedback provided.]
 
-QUESTION-SPECIFIC FEEDBACK:
-Question X: [specific feedback]
-Question Y: [specific feedback]"`;
+RECOMMENDATIONS FOR IMPROVEMENT
+
+[Specific recommendation 1, focusing on the most critical areas based on the assessment above. Suggest using the STAR method (Situation, Task, Action, Result) for examples if specificity is poor.]
+[Specific recommendation 2]
+[Optional specific recommendation 3]
+QUESTION-SPECIFIC FEEDBACK
+
+[Provide feedback ONLY for questions with notable issues, keyed by "Question X:". Focus on lack of specificity for ratings, generic comments, potential incongruence, behavior/trait issues, etc. Be concise.]
+Question X: [e.g., Rating 5/5 lacks supporting examples in comments.]
+Question Y: [e.g., Comment focuses on personality ("not creative") rather than observable behavior.]
+Question Z: [e.g., Ratings for Q-Z (Category C) and Q-W (Category C) seem contradictory (1 vs 5). Is this intended?]`;
   }
-  
-  // Extract quality assessment from AI response
+
+  // Extract quality assessment from AI response - MODIFIED
   extractQualityFromAIResponse(aiResponse) {
-    // Look for a structured quality assessment first
-    const qualityMatch = aiResponse.match(/\*\*QUALITY:\s*(\w+)\*\*/i) || 
-                         aiResponse.match(/QUALITY:\s*(\w+)/i);
-    
-    if (qualityMatch && qualityMatch[1]) {
-      const explicitQuality = qualityMatch[1].toLowerCase().trim();
-      console.log(`AI explicitly rated quality as: ${explicitQuality}`);
-      
-      // Map the AI's quality assessment to our quality levels
-      if (explicitQuality === 'poor' || explicitQuality === 'bad') {
-        return 'poor';
-      } else if (explicitQuality === 'needs_improvement' || 
-                 explicitQuality === 'needs improvement' || 
-                 explicitQuality === 'fair' ||
-                 explicitQuality === 'average') {
-        return 'needs_improvement';
-      } else if (explicitQuality === 'good' || 
-                 explicitQuality === 'excellent' || 
-                 explicitQuality === 'great') {
-        return 'good';
+      let determinedQuality = 'good'; // Default assumption
+
+      // Look for the main structured quality assessment first
+      const qualityMatch = aiResponse.match(/\*\*QUALITY:\s*(good|needs_improvement|poor)\*\*/i) ||
+                          aiResponse.match(/QUALITY:\s*(good|needs_improvement|poor)/i);
+
+      if (qualityMatch && qualityMatch[1]) {
+          determinedQuality = qualityMatch[1].toLowerCase().trim();
+          console.log(`AI explicitly rated quality as: ${determinedQuality}`);
+      } else {
+          // Fallback text analysis (keep existing logic here if needed)
+          // ... (existing fallback logic based on keywords like 'offensive', 'needs improvement')
+          console.warn('Could not find structured QUALITY tag. Attempting fallback analysis.');
+          // Basic fallback based on keywords - less reliable
+          const lowerResponse = aiResponse.toLowerCase();
+          if (lowerResponse.includes('poor') || lowerResponse.includes('offensive') || lowerResponse.includes('unprofessional') || lowerResponse.includes('significant revision')) {
+              determinedQuality = 'poor';
+          } else if (lowerResponse.includes('needs improvement') || lowerResponse.includes('lacks specific') || lowerResponse.includes('too general') || lowerResponse.includes('unbalanced') || lowerResponse.includes('vague')) {
+              determinedQuality = 'needs_improvement';
+          }
       }
-    }
-    
-    // Fallback to text analysis if no structured quality found
-    const lowerResponse = aiResponse.toLowerCase();
-    
-    // Check for AI refusal patterns which indicate inappropriate content
-    if (lowerResponse.includes('cannot provide') || 
-        lowerResponse.includes('cannot analyze') || 
-        lowerResponse.includes('cannot review') ||
-        lowerResponse.includes('cannot evaluate') ||
-        lowerResponse.includes('i cannot') ||
-        lowerResponse.includes('unable to') ||
-        lowerResponse.includes('would not be appropriate')) {
-      console.log('AI refused to analyze feedback - treating as poor quality');
-      return 'poor';
-    }
-    
-    // Explicit checks for feedback quality indicators
-    if (lowerResponse.includes('offensive') || 
-        lowerResponse.includes('inappropriate') || 
-        lowerResponse.includes('unprofessional') ||
-        lowerResponse.includes('derogatory') ||
-        lowerResponse.includes('lack of specificity') ||
-        lowerResponse.includes('lacks specificity') ||
-        lowerResponse.includes('too general')) {
-      return 'poor';
-    } else if (lowerResponse.includes('needs improvement') || 
-               lowerResponse.includes('could be more') || 
-               lowerResponse.includes('lacks detail') ||
-               lowerResponse.includes('too brief')) {
-      return 'needs_improvement';
-    } else {
-      // If we can't determine quality from the content, default to good
-      return 'good';
-    }
+
+      // **Crucial Override Logic:** Even if AI says 'good', downgrade if other critical factors are poor.
+      // The prompt *asks* the AI to do this, but this adds a safety net.
+      if (determinedQuality === 'good') {
+          const specificityMatch = aiResponse.match(/\*\*SPECIFICITY:\s*(needs_improvement|poor)\*\*/i) || aiResponse.match(/SPECIFICITY:\s*(needs_improvement|poor)/i);
+          const actionabilityMatch = aiResponse.match(/\*\*ACTIONABILITY:\s*(needs_improvement|poor)\*\*/i) || aiResponse.match(/ACTIONABILITY:\s*(needs_improvement|poor)/i);
+          const ratingCongruenceMatch = aiResponse.match(/\*\*CONGRUENCE \(Rating vs\. Comment\):\s*(needs_improvement|poor)\*\*/i) || aiResponse.match(/CONGRUENCE \(Rating vs\. Comment\):\s*(needs_improvement|poor)/i);
+          const categoryCongruenceMatch = aiResponse.match(/\*\*CONGRUENCE \(Category Consistency\):\s*(questionable|poor)\*\*/i) || aiResponse.match(/CONGRUENCE \(Category Consistency\):\s*(questionable|poor)/i);
+
+          if (specificityMatch || actionabilityMatch || ratingCongruenceMatch || categoryCongruenceMatch ) {
+              console.log(`Overriding AI quality to 'needs_improvement' due to issues in specificity, actionability, or congruence.`);
+              determinedQuality = 'needs_improvement';
+          }
+      }
+
+      // Check for outright refusal
+      if (determinedQuality !== 'poor') {
+          const lowerResponse = aiResponse.toLowerCase();
+          if (lowerResponse.includes('cannot provide') ||
+              lowerResponse.includes('cannot analyze') ||
+              lowerResponse.includes('cannot review') ||
+              lowerResponse.includes('cannot evaluate') ||
+              lowerResponse.includes('i cannot') ||
+              lowerResponse.includes('unable to') ||
+              lowerResponse.includes('would not be appropriate')) {
+            console.log('AI refused to analyze feedback - treating as poor quality');
+            determinedQuality = 'poor';
+          }
+      }
+
+
+      console.log(`Final determined quality: ${determinedQuality}`);
+      return determinedQuality;
   }
   
-  // Extract suggestions from AI response
+  // Extract suggestions from AI response - (No changes needed here, logic seems robust enough)
   extractSuggestionsFromAIResponse(aiResponse) {
-    const suggestions = [];
-    
-    // Look for recommendations or suggestions section
-    let recommendationsSection = "";
-    const recSectionMatches = aiResponse.match(/recommendations for improvement:[\s\S]*?((?=\*\*action plan|\*\*specific|$))/i);
-    if (recSectionMatches && recSectionMatches[0]) {
-      recommendationsSection = recSectionMatches[0];
+     const suggestions = [];
+
+    // Enhanced Regex to find Recommendations section more reliably
+    const recSectionMatch = aiResponse.match(/recommendations?:?\s*([\s\S]*?)(?=\n\n\*\*?question-specific feedback|\n\n\*\*?\w+|\n\n$)/i);
+    const sectionToSearch = recSectionMatch ? recSectionMatch[1] : aiResponse; // Search within section or whole response
+
+    // Regex to find numbered or bulleted list items
+    const bulletRegex = /^\s*(?:[\*\-\•]|\d+\.?)\s+(.+)/gm; // Matches lines starting with bullets or numbers
+    let match;
+
+    while ((match = bulletRegex.exec(sectionToSearch)) !== null) {
+        if (match[1]) {
+            let suggestion = match[1].trim()
+                .replace(/\*\*/g, '') // Remove markdown bold
+                .replace(/\[|\]/g, ''); // Remove potential leftover brackets
+
+            // Basic filtering for meaningful suggestions
+            if (suggestion.length > 15 && suggestion.split(' ').length > 3) {
+                 // Capitalize first letter
+                 suggestion = suggestion.charAt(0).toUpperCase() + suggestion.slice(1);
+                 suggestions.push(suggestion);
+            }
+        }
     }
 
-    // Find numbered or bulleted items in the recommendations section
-    const bulletRegex = /(?:\d+\.\s*|\*\*?\s*|\•\s*)([^•\*\d\n][^\n]+)/gi;
-    let match;
-    
-    const sectionToSearch = recommendationsSection || aiResponse;
-    while ((match = bulletRegex.exec(sectionToSearch)) !== null) {
-      if (match[1]) {
-        // Clean up the suggestion text
-        let suggestion = match[1].trim()
-          // Remove markdown formatting
-          .replace(/\*\*/g, '')
-          .replace(/\*/g, '')
-          // Remove any trailing periods, colons, or numbers
-          .replace(/[:.]$/, '')
-          .replace(/\d+\.?$/, '')
-          .replace(/following:$/, '')
-          .replace(/following:?\s*\d*\.?$/, '')
-          .trim();
-        
-        // Only add if it's not too short and makes sense as a complete suggestion
-        if (suggestion.length > 10 && suggestion.split(' ').length > 3 && !(/^\d+$/.test(suggestion))) {
-          suggestions.push(suggestion);
-        }
-      }
-    }
-    
-    // If no good suggestions found from bullet points, try to extract from paragraph text
+    // Fallback if no structured suggestions found
     if (suggestions.length === 0) {
-      // Look for suggestions after phrases like "suggestions:" or "recommendations:"
-      const suggestionPatterns = [
-        /suggestions?:([^.]*\.)/gi,
-        /recommendations?:([^.]*\.)/gi,
-        /improvements?:([^.]*\.)/gi,
-        /could improve by([^.]*\.)/gi
-      ];
-      
-      for (const pattern of suggestionPatterns) {
-        const matches = aiResponse.matchAll(pattern);
-        for (const match of matches) {
-          if (match[1] && match[1].trim().length > 0) {
-            // Clean markdown formatting
-            const cleanSuggestion = match[1].trim()
-              .replace(/\*\*/g, '')
-              .replace(/\*/g, '')
-              .replace(/\d+\.?$/, '')
-              .replace(/following:$/, '')
-              .replace(/following:?\s*\d*\.?$/, '')
-              .trim();
-            
-            if (cleanSuggestion.length > 10 && cleanSuggestion.split(' ').length > 3) {
-              suggestions.push(cleanSuggestion);
+        const fallbackPatterns = [
+            /consider\s+(.*?)\./gi,
+            /suggest\s+(.*?)\./gi,
+            /recommend\s+(.*?)\./gi,
+            /improve by\s+(.*?)\./gi,
+            /needs to\s+(.*?)\./gi,
+            /should focus on\s+(.*?)\./gi
+        ];
+
+        for (const pattern of fallbackPatterns) {
+            const fallbackMatches = aiResponse.matchAll(pattern);
+            for (const fm of fallbackMatches) {
+                if (fm[1] && fm[1].trim().length > 15) {
+                    let cleanSuggestion = fm[1].trim().replace(/\*\*/g, '');
+                    cleanSuggestion = cleanSuggestion.charAt(0).toUpperCase() + cleanSuggestion.slice(1);
+                    if (!suggestions.includes(cleanSuggestion)) { // Avoid duplicates
+                        suggestions.push(cleanSuggestion);
+                    }
+                }
             }
-          }
+            if (suggestions.length >= 2) break; // Stop if we have enough fallbacks
         }
-      }
     }
-    
-    // If still no suggestions, add generic ones based on quality
+
+    // Final fallback based on quality if still no suggestions
     if (suggestions.length === 0) {
-      const quality = this.extractQualityFromAIResponse(aiResponse);
-      if (quality === 'poor') {
-        suggestions.push('Offer specific, actionable suggestions for improvement, rather than dismissive comments');
-        suggestions.push('Focus on professional and respectful language');
-      } else if (quality === 'needs_improvement') {
-        suggestions.push('Provide more specific examples and actionable advice');
-        suggestions.push('Balance critical feedback with recognition of strengths');
-      } else {
-        suggestions.push('Continue to provide balanced and specific feedback');
-        suggestions.push('Include concrete examples to illustrate your points');
-      }
+        const quality = this.extractQualityFromAIResponse(aiResponse); // Re-assess quality if needed
+        if (quality === 'poor') {
+            suggestions.push('Revise feedback to be constructive and professional, avoiding harsh language.');
+            suggestions.push('Focus on specific behaviors and provide actionable suggestions.');
+        } else if (quality === 'needs_improvement') {
+            suggestions.push('Provide specific examples to support your ratings and comments.');
+            suggestions.push('Ensure feedback is balanced, including both strengths and areas for development.');
+        } else {
+            // Even for 'good' feedback, a reminder can be useful
+             suggestions.push('Continue providing specific, balanced, and actionable feedback.');
+        }
     }
-    
-    return suggestions;
+
+    // Limit to max 3 suggestions
+    return suggestions.slice(0, 3);
   }
-  
+
+
   /**
    * Extract question-specific feedback from AI response
    */
   extractQuestionFeedbackFromAIResponse(aiResponse, responses) {
     const questionFeedback = {};
-    
-    // Look for question-specific feedback section
-    const questionFeedbackSection = aiResponse.match(/question[\s\-]specific feedback:[\s\S]*?(?=(\n\n|\n\*\*|\n#|$))/i);
-    
-    if (questionFeedbackSection && questionFeedbackSection[0]) {
-      // Extract individual question feedback using regex
-      const feedbackLines = questionFeedbackSection[0].match(/question\s+\d+:?\s*([^\n]+)/gi);
-      
-      if (feedbackLines && feedbackLines.length > 0) {
-        feedbackLines.forEach(line => {
-          // Extract question number and feedback
-          const match = line.match(/question\s+(\d+):?\s*(.*)/i);
-          if (match && match[1] && match[2]) {
-            const questionNumber = parseInt(match[1]);
-            const feedbackText = match[2].trim();
-            
-            // Find the question ID corresponding to this number
-            const targetQuestion = responses.find((r, index) => index + 1 === questionNumber);
-            if (targetQuestion && targetQuestion.questionId) {
-              questionFeedback[targetQuestion.questionId] = feedbackText;
+    const aiProvidedFeedbackFor = new Set(); // Track questions AI already commented on
+
+    console.log("Starting robust AI Question-Specific Feedback extraction (v3)...");
+
+    // --- Step 1: Parse AI's Explicit Question-Specific Feedback using Block Matching ---
+
+    // Simplified Regex: Find the section and capture everything after it until the end (or maybe until next known major header)
+    // We will capture everything from "QUESTION-SPECIFIC FEEDBACK" onwards for now.
+    const questionFeedbackSectionMatch = aiResponse.match(/QUESTION-SPECIFIC FEEDBACK([\s\S]*)/i); // Capture everything after the header
+
+    if (questionFeedbackSectionMatch && questionFeedbackSectionMatch[1]) {
+      // IMPORTANT: We might capture too much here (like subsequent log lines if they exist in aiResponse).
+      // We rely on the block splitting logic below to only process relevant parts.
+      const feedbackSectionText = questionFeedbackSectionMatch[1].trim();
+
+      // Split the section into potential blocks based on "Question X" patterns
+      // This regex looks for "Question" followed by number(s) and potentially "and" at the START of a line (using \n or ^)
+      const feedbackBlocks = feedbackSectionText.split(/\s+(?=Question\s+\d+(?:\s+and\s+\d+)*:?)/i);
+
+      console.log(`Found ${feedbackBlocks.length} potential feedback blocks after splitting.`);
+
+      feedbackBlocks.forEach((block, index) => {
+        const currentBlock = block.trim(); // Trim whitespace for clean processing
+        if (!currentBlock) {
+             console.log(`Block ${index + 1} is empty, skipping.`);
+             return;
+        }
+        console.log(`Processing Block ${index + 1}: ${currentBlock.substring(0, 100)}...`);
+
+        // Extract question numbers mentioned at the start of the block
+        // Ensure it matches the absolute beginning of the processed block string
+        const questionNumberMatch = currentBlock.match(/^Question\s+(\d+(?:\s+and\s+\d+)*):?/i);
+        if (!questionNumberMatch || !questionNumberMatch[1]) {
+           console.log(`Block ${index + 1} does not start with expected 'Question X:' pattern.`);
+           return; // Skip block if it doesn't start as expected
+        }
+
+        const numbersStr = questionNumberMatch[1]; // e.g., "1", "4", "2 and 3"
+        // Get the text AFTER the "Question X:" prefix in the current block
+        const feedbackTextRaw = currentBlock.substring(questionNumberMatch[0].length).trim();
+
+        // Extract the actual feedback (might be after question text)
+        const lines = feedbackTextRaw.split('\n').map(l => l.trim()).filter(l => l);
+        let feedbackText = feedbackTextRaw; // Default
+
+        if (lines.length > 1) {
+            const firstLineLower = lines[0].toLowerCase();
+            // Check if first line looks like a known question
+             const matchedQuestion = responses.find(resp => {
+                 if (!resp.questionText) return false;
+                 const respTextLower = resp.questionText.toLowerCase();
+                 // More robust check: Does the first line contain multiple keywords from the question?
+                 const questionWords = respTextLower.split(/\s+/).filter(w => w.length > 3); // Get significant words
+                 const lineWords = firstLineLower.split(/\s+/);
+                 const commonWords = questionWords.filter(qw => lineWords.includes(qw));
+                 // Heuristic: If >50% of significant question words are in the first line, assume it's the question text
+                 return questionWords.length > 0 && (commonWords.length / questionWords.length > 0.5);
+             });
+
+            if (matchedQuestion) {
+                feedbackText = lines.slice(1).join('\n').trim();
+                console.log(`Block ${index + 1}: Identified first line as question text, taking feedback from line 2 onwards.`);
+            } else {
+                 feedbackText = lines.join('\n').trim();
+                 console.log(`Block ${index + 1}: Assuming all lines are feedback text.`);
             }
+        } else if (lines.length === 1) {
+            // If only one line, it's likely the feedback itself
+            feedbackText = lines[0];
+        } else {
+             console.log(`Block ${index + 1}: No text content found after 'Question X:'.`);
+             feedbackText = ''; // Set to empty if no lines
+        }
+
+
+        if (!feedbackText || feedbackText.length < 10) {
+            console.log(`Block ${index + 1}: No meaningful feedback text found after filtering (Text: "${feedbackText}").`);
+            return; // Skip if no actual feedback content
+        }
+
+        // Get all numbers mentioned (e.g., "1", "4", "2", "3")
+        const questionNumbers = numbersStr.match(/\d+/g).map(Number);
+
+        questionNumbers.forEach(qNum => {
+          if (qNum > 0 && qNum <= responses.length) {
+            const targetQuestion = responses[qNum - 1]; // Map number to question object
+            if (targetQuestion && targetQuestion.questionId) {
+              const questionId = targetQuestion.questionId;
+              const cleanFeedback = feedbackText.replace(/\*\*/g, ''); // Clean markdown
+              // Append feedback if multiple blocks target the same question (less likely with new split)
+              questionFeedback[questionId] = (questionFeedback[questionId] ? questionFeedback[questionId] + "\n" : "") + (cleanFeedback.charAt(0).toUpperCase() + cleanFeedback.slice(1));
+              aiProvidedFeedbackFor.add(questionId); // Mark as processed
+              console.log(`AI Feedback extracted for Q${qNum} (ID: ${questionId}): "${questionFeedback[questionId].substring(0,50)}..."`);
+            } else {
+               console.log(`Warning: Could not find valid question object for Q${qNum}`);
+            }
+          } else {
+             console.log(`Warning: Invalid question number ${qNum} encountered.`);
           }
         });
-      }
-    }
-    
-    // If no question-specific feedback was found in the AI response,
-    // check for issues in the responses and generate targeted feedback
-    if (Object.keys(questionFeedback).length === 0) {
-      responses.forEach(response => {
-        if (!response.questionId) return;
-        
-        const text = (response.text || '').toLowerCase();
-        const questionText = (response.questionText || '').toLowerCase();
-        
-        // Check for offensive language
-        const offensiveTerms = ['moron', 'idiot', 'stupid', 'incompetent', 'useless', 'hopeless', 'beyond hope'];
-        for (const term of offensiveTerms) {
-          if (text.includes(term)) {
-            questionFeedback[response.questionId] = 'Consider using more professional language in this response.';
-            break;
-          }
-        }
-        
-        // Check for very short responses on open-ended questions
-        if (response.questionType === 'open_ended' && text && text.split(/\s+/).length < 5) {
-          questionFeedback[response.questionId] = 'This response is brief. Consider providing more details or examples.';
-        }
-        
-        // Check for non-constructive suggestions
-        const nonConstructivePatterns = ['change company', 'quit', 'resign', 'find another job'];
-        for (const pattern of nonConstructivePatterns) {
-          if (text.includes(pattern)) {
-            questionFeedback[response.questionId] = 'Focus on actionable improvements within their current role.';
-            break;
-          }
-        }
       });
+
+    } else {
+        console.log("No 'QUESTION-SPECIFIC FEEDBACK' header found in AI response.");
     }
-    
+    // --- END Step 1 ---
+
+    console.log(`AI provided specific feedback for question IDs: [${[...aiProvidedFeedbackFor].join(', ')}]`);
+
+
+    // --- Step 2: Augment with Local Checks ONLY if AI didn't already provide feedback ---
+    console.log("Starting local augmentation checks...");
+    responses.forEach((response, index) => {
+      if (!response.questionId) return;
+      const questionId = response.questionId;
+
+      // A. Check for high/low ratings lacking justification (only if AI didn't mention this question)
+      if (response.questionType === 'rating' && (response.rating >= 4 || response.rating <= 2)) {
+          if (aiProvidedFeedbackFor.has(questionId)) {
+             console.log(`Skipping local rating check for ${questionId} - AI already provided feedback.`);
+          }
+
+          let associatedCommentText = '';
+          let associatedCommentQuestionId = null;
+          const openEndedInCategory = responses.filter(r => r.questionId !== questionId && r.questionType === 'open_ended' && r.category === response.category && r.text);
+          openEndedInCategory.forEach(r => {
+              associatedCommentText += (r.text || '') + ' ';
+              if(aiProvidedFeedbackFor.has(r.questionId)) { associatedCommentQuestionId = r.questionId; }
+          });
+          const nextQuestion = responses[index + 1];
+          if (nextQuestion && nextQuestion.questionType === 'open_ended' && nextQuestion.text && nextQuestion.category === response.category) {
+              if (!openEndedInCategory.find(r => r.questionId === nextQuestion.questionId)){
+                  associatedCommentText += (nextQuestion.text || '') + ' ';
+                  if(aiProvidedFeedbackFor.has(nextQuestion.questionId)) { associatedCommentQuestionId = nextQuestion.questionId; }
+              }
+          }
+
+           if (associatedCommentQuestionId) {
+               console.log(`Skipping local rating check for ${questionId} - Justified by AI feedback on associated question ${associatedCommentQuestionId}.`);
+           }
+
+          const commentWordCount = associatedCommentText.trim().split(/\s+/).filter(Boolean).length;
+          if (commentWordCount < 5) {
+              const ratingType = response.rating >= 4 ? 'High' : 'Low';
+              const message = `${ratingType} rating (${response.rating}/5) should be supported by specific examples or comments.`;
+              if (!questionFeedback[questionId]) {
+                questionFeedback[questionId] = message;
+                console.log(`Local check added: '${message}' to rating question ${questionId}`);
+           } else {
+               // Log why we are not adding the local check message again
+               if (aiProvidedFeedbackFor.has(questionId)) {
+                    console.log(`Local rating check message NOT added for ${questionId} - AI already provided specific feedback.`);
+               } else {
+                    console.log(`Local rating check message NOT added for ${questionId} - Message already exists (likely from a previous local check iteration, though this shouldn't happen often). Existing: ${questionFeedback[questionId]}`);
+               }
+           }
+          }
+      }
+
+      // B. Check for very short open-ended answers (only if AI didn't mention this question)
+      if (response.questionType === 'open_ended' && response.text) {
+           if (aiProvidedFeedbackFor.has(questionId)) {
+               console.log(`Skipping local brevity check for ${questionId} - AI already provided feedback.`);
+               return;
+           }
+          const wordCount = response.text.trim().split(/\s+/).filter(Boolean).length;
+          if (wordCount > 0 && wordCount < 5) {
+              const message = 'This response is very brief. Consider adding more detail.';
+               if (!questionFeedback[questionId]) {
+                   questionFeedback[questionId] = message;
+                   console.log(`Local check added: '${message}' to open-ended question ${questionId}`);
+               } else {
+                    console.log(`Local check skipped for ${questionId} - feedback already exists: ${questionFeedback[questionId]}`);
+               }
+          }
+      }
+    });
+     // --- END Step 2 ---
+
+    console.log("Final Question Feedback Object:", JSON.stringify(questionFeedback, null, 2));
     return questionFeedback;
   }
-  
-  // Generate a message based on extracted quality
-  generateMessageFromQuality(quality) {
+
+
+  // Generate a message based on extracted quality - MODIFIED
+  generateMessageFromQuality(quality, aiContent = '') {
     switch (quality) {
       case 'poor':
-        return 'Your feedback contains language that may be inappropriate. Please revise to ensure it is respectful and constructive.';
+        // Check for refusal
+        const refused = /cannot provide|cannot analyze|cannot review|cannot evaluate|i cannot|unable to|would not be appropriate/i.test(aiContent);
+        if (refused) { return 'The AI assistant could not process the feedback due to potentially inappropriate content. Please revise.'; }
+        // Check for offensive language
+        const offensive = /offensive|inappropriate|unprofessional|derogatory/i.test(aiContent);
+        if (offensive) { return 'Your feedback contains language flagged as unprofessional or inappropriate. Please revise for respect and constructiveness.'; }
+        // Check for major congruence issues if explicitly mentioned
+        const majorMismatch = /Significant mismatch detected/i.test(aiContent);
+        if (majorMismatch) { return 'Your feedback needs significant revision. There seems to be a major inconsistency between ratings and comments. Please review suggestions.'; }
+        return 'Your feedback needs significant revision. Please review the suggestions for improvement.';
+  
       case 'needs_improvement':
-        return 'Your feedback could be more effective with additional details and specific examples.';
+        // Check if downgraded due to specificity
+        const specificityIssue = /SPECIFICITY:\s*(needs_improvement|poor)/i.test(aiContent) || /lack of specific|lacks specific|too general|no examples provided/i.test(aiContent);
+        if (specificityIssue) { return 'Your feedback is generally okay, but lacks specific examples, especially for ratings. Please add more detail using methods like STAR.'; }
+         // Check for rating/comment congruence issues
+         const ratingCongruenceIssue = /CONGRUENCE \(Rating vs\. Comment\):\s*(needs_improvement|poor)/i.test(aiContent);
+         if (ratingCongruenceIssue) { return 'Your feedback could be more effective. Consider if your ratings fully align with the tone and content of your comments.'; }
+         // Check for category congruence issues
+         const categoryCongruenceIssue = /CONGRUENCE \(Category Consistency\):\s*(questionable|poor)/i.test(aiContent);
+         if (categoryCongruenceIssue) { return 'Your feedback could be more effective. The AI noticed potentially inconsistent ratings within related categories. Please review the specific suggestions.'; }
+        return 'Your feedback could be more effective. Please review the suggestions for improvement.';
+  
       case 'good':
-        return 'Your feedback is well-balanced and provides constructive insights.';
+        return 'Your feedback looks good! It seems specific, balanced, and actionable.'; // More positive reinforcement
       default:
         return 'Thank you for your feedback.';
     }
   }
-  
-  // Format feedback in a simplified format for AI analysis
+
+
+  // Format feedback in a simplified format for AI analysis - (No changes needed)
   formatFeedbackForAI(responses, assessorType) {
     let result = `Assessor Type: ${assessorType}\n\n`;
-    
-    // Process rating questions
-    const ratingQuestions = responses.filter(r => r.questionType === 'rating');
-    if (ratingQuestions.length > 0) {
-      result += "RATINGS:\n";
-      ratingQuestions.forEach((response, index) => {
-        result += `- Question ${index + 1}: ${response.questionText}\n  Rating: ${response.rating || 'Not provided'}/5\n`;
-      });
-      result += "\n";
+  
+    // Map questions to their original index/number for consistent referencing
+    const questionNumberMap = {};
+    responses.forEach((r, index) => {
+        if (r.questionId) {
+            questionNumberMap[r.questionId] = index + 1;
+        }
+    });
+  
+    // Group by category first for better context
+    const responsesByCategory = responses.reduce((acc, response) => {
+        const category = response.category || 'General'; // Default category if none provided
+        if (!acc[category]) {
+            acc[category] = [];
+        }
+        acc[category].push(response);
+        return acc;
+    }, {});
+  
+    result += "FEEDBACK DETAILS:\n";
+  
+    for (const category in responsesByCategory) {
+        result += `\n--- Category: ${category} ---\n`;
+        const categoryResponses = responsesByCategory[category];
+  
+        categoryResponses.forEach(response => {
+            const qNum = questionNumberMap[response.questionId] || '?';
+            result += `Question ${qNum}: ${response.questionText}\n`;
+            if (response.questionType === 'rating') {
+                result += `  Rating: ${response.rating || 'Not provided'}/5\n`;
+            }
+            if (response.questionType === 'open_ended') {
+                 // Ensure response.text is treated as a string, even if null/undefined
+                 const responseText = typeof response.text === 'string' ? response.text : '';
+                result += `  Response: "${responseText || 'Not provided'}"\n`;
+            }
+        });
     }
-    
-    // Process open-ended questions
-    const openEndedQuestions = responses.filter(r => r.questionType === 'open_ended');
-    if (openEndedQuestions.length > 0) {
-      result += "COMMENTS:\n";
-      openEndedQuestions.forEach((response, index) => {
-        const questionIndex = ratingQuestions.length + index + 1;
-        result += `- Question ${questionIndex}: ${response.questionText}\n  Response: "${response.text || 'Not provided'}"\n\n`;
-      });
-    }
-    
+  
     return result;
   }
-  
+
+
   /**
    * Analyze feedback for various quality factors (comprehensive analysis)
    */
-  analyzeFeedback(responses) {
+   // Enhanced analyzeFeedback with more refined checks
+   analyzeFeedback(responses) {
     const analysis = {
-      hasOffensiveLanguage: false,
-      offensivePhrases: [],
-      nonConstructivePhrases: [],
-      incompleteResponses: [],
-      shortResponses: [],
-      longResponses: [], // New: check for overly verbose responses
-      noExamples: [], // New: check for lack of concrete examples
-      tooSpecific: [], // New: check for potentially confidential information
-      feedbackBalance: {
-        positive: 0,
-        negative: 0,
-        neutral: 0,
-        tooPositive: false,
-        tooNegative: false
-      },
-      totalResponseCount: 0,
-      totalOpenEndedCount: 0,
-      totalRatingCount: 0,
-      averageRating: 0
+        hasOffensiveLanguage: false,
+        offensivePhrases: [],
+        nonConstructivePhrases: [],
+        incompleteResponses: [],
+        shortResponses: [], // Responses deemed too brief (e.g., < 5 words)
+        longResponses: [], // Responses deemed too long (e.g., > 250 words)
+        noExamples: [], // Open-ended responses lacking example keywords
+        highRatingNoComment: [], // High ratings (4/5) without sufficient comment justification
+        lowRatingNoComment: [], // Low ratings (1/2) without sufficient comment justification
+        tooSpecific: [], // Responses possibly containing confidential info
+        feedbackBalance: {
+            positive: 0,
+            negative: 0,
+            neutral: 0,
+            tooPositive: false, // Mostly positive comments
+            tooNegative: false // Mostly negative comments
+        },
+        totalResponseCount: 0,
+        totalOpenEndedCount: 0,
+        totalRatingCount: 0,
+        averageRating: 0,
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } // Track rating counts
     };
-    
-    // Lists for detection - EXPANDED to catch more offensive and non-constructive patterns
+
+    // Expanded lists for detection
     const offensiveTerms = [
-      'moron', 'idiot', 'stupid', 'incompetent', 'useless', 'hopeless', 'beyond hope', 
-      'terrible', 'awful', 'worst', 'never', 'always fails', 'disaster', 'mess', 'worthless',
-      'joke', 'waste', 'pathetic', 'clueless', 'fool', 'annoying', 'unbearable', 'hate'
+        'moron', 'idiot', 'stupid', 'incompetent', 'useless', 'hopeless', 'clueless', 'fool',
+        'terrible', 'awful', 'worst', 'disaster', 'mess', 'worthless', 'joke', 'waste', 'pathetic',
+        // Added potentially offensive/unprofessional terms
+        'lazy', 'arrogant', 'dishonest', 'untrustworthy', 'backstabber', 'gossip', 'suck up'
     ];
-    
     const nonConstructivePatterns = [
-      'change company', 'quit', 'resign', 'find another job', 'give up', 'fire', 'fired',
-      'not suited', 'wrong profession', 'wrong job', 'not cut out', 'leave the company',
-      'should be let go', 'get out', 'move on', 'leave the team', 'not a good fit'
+        'change company', 'quit', 'resign', 'find another job', 'give up', 'fire', 'fired',
+        'not suited', 'wrong profession', 'wrong job', 'not cut out', 'leave the company',
+        'should be let go', 'get out', 'move on', 'leave the team', 'not a good fit',
+        // Added more subtle non-constructive phrases
+        'no future here', 'better off elsewhere', 'pointless', 'beyond help'
     ];
-    
-    const positiveTerms = ['good', 'great', 'excellent', 'outstanding', 'impressive', 'fantastic', 
-                         'amazing', 'superb', 'exceptional', 'perfect', 'strength', 'brilliant'];
-    
-    const negativeTerms = ['bad', 'poor', 'weak', 'inadequate', 'disappointing', 'terrible', 'horrible', 
-                         'awful', 'fails', 'struggling', 'needs work', 'insufficient'];
-    
-    const specificityFlags = ['in the meeting on', 'during the call with', 'when speaking to client', 
-                          'confidential', 'secret', 'private', 'told me privately', 'mentioned to me only'];
-    
+    const positiveTerms = ['good', 'great', 'excellent', 'outstanding', 'impressive', 'fantastic', 'amazing', 'superb', 'exceptional', 'perfect', 'strength', 'brilliant', 'valuable', 'asset', 'leader', 'initiative', 'reliable', 'consistent', 'proactive'];
+    const negativeTerms = ['bad', 'poor', 'weak', 'inadequate', 'disappointing', 'terrible', 'horrible', 'awful', 'fails', 'struggling', 'needs work', 'insufficient', 'concern', 'issue', 'problem', 'lack', 'missed', 'late', 'slow', 'unclear', 'confusing'];
+    const specificityFlags = ['confidential', 'secret', 'private', 'told me privately', 'HR issue', 'salary', 'personal problem', 'medical condition'];
+    const exampleKeywords = ['example', 'instance', 'such as', 'e.g.', 'demonstrated', 'showed', 'when', 'scenario', 'situation'];
+
     let totalRatings = 0;
     let sumRatings = 0;
-    
-    // Analyze each response
+
+    // First pass: Analyze individual responses
     responses.forEach(response => {
-      analysis.totalResponseCount++;
-      
-      // Track response type counts
-      if (response.questionType === 'rating') {
-        analysis.totalRatingCount++;
-        if (response.rating) {
-          totalRatings++;
-          sumRatings += parseInt(response.rating);
-        }
-      } else if (response.questionType === 'open_ended') {
-        analysis.totalOpenEndedCount++;
-      }
-      
-      // Skip further analysis for empty responses
-      if (!response.text) {
-        if (response.questionType === 'open_ended') {
-          analysis.incompleteResponses.push(response.questionId);
-        }
-        return;
-      }
-      
-      const text = response.text.toLowerCase();
-      const wordCount = text.split(/\s+/).filter(word => word.trim() !== '').length;
-      
-      // Check for offensive language - directly mark as offensive
-      offensiveTerms.forEach(term => {
-        // Using word boundary check to match whole words only
-        const regex = new RegExp(`\\b${term}\\b`, 'i');
-        if (regex.test(text)) {
-          analysis.hasOffensiveLanguage = true;
-          analysis.offensivePhrases.push({
-            questionId: response.questionId,
-            phrase: term
-          });
-        }
-      });
-      
-      // Check for non-constructive patterns
-      nonConstructivePatterns.forEach(pattern => {
-        if (text.includes(pattern)) {
-          analysis.nonConstructivePhrases.push({
-            questionId: response.questionId,
-            phrase: pattern
-          });
-        }
-      });
-      
-      // Check for response length issues
-      if (response.questionType === 'open_ended') {
-        // Too short
-        if (wordCount < 5) {
-          analysis.shortResponses.push(response.questionId);
-        }
-        // Too long
-        else if (wordCount > 200) {
-          analysis.longResponses.push(response.questionId);
-        }
-        
-        // Check for examples (good)
-        const hasExamples = text.includes('example') || 
-                           text.includes('instance') || 
-                           text.includes('such as') || 
-                           text.includes('e.g.') || 
-                           text.includes('for instance') || 
-                           text.includes('demonstrated') ||
-                           text.includes('showed') ||
-                           text.includes('when');
-                           
-        if (!hasExamples && wordCount > 20) {
-          analysis.noExamples.push(response.questionId);
-        }
-        
-        // Check for potentially too specific/confidential details
-        specificityFlags.forEach(flag => {
-          if (text.includes(flag)) {
-            // Only flag if not already flagged
-            if (!analysis.tooSpecific.find(item => item.questionId === response.questionId)) {
-              analysis.tooSpecific.push({
-                questionId: response.questionId,
-                phrase: flag
-              });
+        analysis.totalResponseCount++;
+        const questionId = response.questionId;
+        if (!questionId) return; // Skip if no question ID
+
+        // Track response type counts and ratings
+        if (response.questionType === 'rating') {
+            analysis.totalRatingCount++;
+            const rating = parseInt(response.rating);
+            if (!isNaN(rating) && rating >= 1 && rating <= 5) {
+                totalRatings++;
+                sumRatings += rating;
+                analysis.ratingDistribution[rating]++;
+            } else if (response.required) {
+                 analysis.incompleteResponses.push(questionId);
             }
-          }
-        });
-        
-        // Sentiment analysis
-        let positiveCount = 0;
-        let negativeCount = 0;
-        
-        positiveTerms.forEach(term => {
-          const regex = new RegExp('\\b' + term + '\\b', 'gi');
-          const matches = text.match(regex);
-          if (matches) positiveCount += matches.length;
-        });
-        
-        negativeTerms.forEach(term => {
-          const regex = new RegExp('\\b' + term + '\\b', 'gi');
-          const matches = text.match(regex);
-          if (matches) negativeCount += matches.length;
-        });
-        
-        // Adjust feedback balance metrics
-        if (positiveCount > negativeCount * 2) {
-          analysis.feedbackBalance.positive++;
-        } else if (negativeCount > positiveCount * 2) {
-          analysis.feedbackBalance.negative++;
-        } else {
-          analysis.feedbackBalance.neutral++;
+        } else if (response.questionType === 'open_ended') {
+            analysis.totalOpenEndedCount++;
+            const text = (response.text || '').trim();
+            const lowerText = text.toLowerCase();
+
+            if (!text && response.required) {
+                analysis.incompleteResponses.push(questionId);
+                return; // Skip further analysis for empty required responses
+            }
+            if (!text) {
+                return; // Skip further analysis for empty optional responses
+            }
+
+            const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+            // Check length
+            if (wordCount < 5) analysis.shortResponses.push(questionId);
+            if (wordCount > 250) analysis.longResponses.push(questionId); // Increased threshold slightly
+
+            // Check offensive language
+            offensiveTerms.forEach(term => {
+                const regex = new RegExp(`\\b${term}\\b`, 'i');
+                if (regex.test(lowerText)) {
+                    analysis.hasOffensiveLanguage = true;
+                    analysis.offensivePhrases.push({ questionId, phrase: term });
+                }
+            });
+
+            // Check non-constructive patterns
+            nonConstructivePatterns.forEach(pattern => {
+                 const regex = new RegExp(`\\b${pattern}\\b`, 'i');
+                if (regex.test(lowerText)) {
+                    analysis.nonConstructivePhrases.push({ questionId, phrase: pattern });
+                }
+            });
+
+            // Check for examples
+            const hasExamples = exampleKeywords.some(keyword => lowerText.includes(keyword));
+            if (!hasExamples && wordCount > 15) { // Flag if reasonably long but no example keywords
+                analysis.noExamples.push(questionId);
+            }
+
+            // Check for potentially confidential info
+            specificityFlags.forEach(flag => {
+                if (lowerText.includes(flag)) {
+                    if (!analysis.tooSpecific.find(item => item.questionId === questionId)) {
+                        analysis.tooSpecific.push({ questionId, phrase: flag });
+                    }
+                }
+            });
+
+            // Basic sentiment analysis
+            let positiveScore = 0;
+            let negativeScore = 0;
+            positiveTerms.forEach(term => { if (lowerText.includes(term)) positiveScore++; });
+            negativeTerms.forEach(term => { if (lowerText.includes(term)) negativeScore++; });
+
+            if (positiveScore > negativeScore * 1.5) analysis.feedbackBalance.positive++;
+            else if (negativeScore > positiveScore * 1.5) analysis.feedbackBalance.negative++;
+            else analysis.feedbackBalance.neutral++;
         }
-      }
     });
-    
-    // Calculate average rating
+
+     // Second pass: Analyze relationships between ratings and comments
+     responses.forEach((response, index) => {
+         const questionId = response.questionId;
+         if (response.questionType === 'rating') {
+             const rating = parseInt(response.rating);
+             if (rating === 4 || rating === 5 || rating === 1 || rating === 2) {
+                 // Find related open-ended comments (e.g., next question or same category)
+                 let relatedCommentText = '';
+                 const nextQuestion = responses[index + 1];
+                 if (nextQuestion && nextQuestion.questionType === 'open_ended' && nextQuestion.text) {
+                      // Check if next question seems related (e.g., same category or generic improvement question)
+                     if (nextQuestion.category === response.category || /improve|develop|suggestion|comment/i.test(nextQuestion.questionText || '')) {
+                         relatedCommentText += (nextQuestion.text || '') + ' ';
+                     }
+                 }
+                 // Look for general comment questions
+                 responses.forEach(r => {
+                     if (r.questionType === 'open_ended' && /overall|additional comment|summary|final thoughts/i.test(r.questionText || '') && r.text) {
+                         relatedCommentText += (r.text || '') + ' ';
+                     }
+                 });
+
+                 const commentWordCount = relatedCommentText.trim().split(/\s+/).filter(Boolean).length;
+
+                 if (commentWordCount < 10) { // Require at least 10 words justification
+                     if (rating >= 4) analysis.highRatingNoComment.push(questionId);
+                     if (rating <= 2) analysis.lowRatingNoComment.push(questionId);
+                 }
+             }
+         }
+     });
+
+    // Calculate overall metrics
     if (totalRatings > 0) {
-      analysis.averageRating = sumRatings / totalRatings;
+        analysis.averageRating = sumRatings / totalRatings;
     }
-    
-    // Check feedback balance
     if (analysis.totalOpenEndedCount > 0) {
-      const positivePercentage = (analysis.feedbackBalance.positive / analysis.totalOpenEndedCount) * 100;
-      const negativePercentage = (analysis.feedbackBalance.negative / analysis.totalOpenEndedCount) * 100;
-      
-      analysis.feedbackBalance.tooPositive = positivePercentage > 90;
-      analysis.feedbackBalance.tooNegative = negativePercentage > 90;
+        const positivePercentage = (analysis.feedbackBalance.positive / analysis.totalOpenEndedCount) * 100;
+        const negativePercentage = (analysis.feedbackBalance.negative / analysis.totalOpenEndedCount) * 100;
+        analysis.feedbackBalance.tooPositive = positivePercentage > 80 && analysis.feedbackBalance.negative === 0; // Adjusted threshold
+        analysis.feedbackBalance.tooNegative = negativePercentage > 80 && analysis.feedbackBalance.positive === 0; // Adjusted threshold
     }
-    
+
+    // Remove duplicates from lists like incompleteResponses etc.
+    analysis.incompleteResponses = [...new Set(analysis.incompleteResponses)];
+    analysis.shortResponses = [...new Set(analysis.shortResponses)];
+    analysis.longResponses = [...new Set(analysis.longResponses)];
+    analysis.noExamples = [...new Set(analysis.noExamples)];
+    analysis.highRatingNoComment = [...new Set(analysis.highRatingNoComment)];
+    analysis.lowRatingNoComment = [...new Set(analysis.lowRatingNoComment)];
+
     return analysis;
-  }
-  
+}
+
+
   /**
-   * Fallback evaluation using comprehensive rule-based analysis
+   * Fallback evaluation using comprehensive rule-based analysis - Enhanced
    */
   fallbackEvaluation(responses, assessorType) {
-    console.log('Using fallback evaluation method');
-    
-    // Perform comprehensive analysis on the feedback
-    const analysisResults = this.analyzeFeedback(responses);
-    
-    // Basic rule-based evaluation
+    console.log('Using enhanced fallback evaluation method');
+    const analysisResults = this.analyzeFeedback(responses); // Use the enhanced analysis
+
     let quality = 'good';
-    let message = 'Your feedback is well-balanced and constructive.';
+    let message = 'Your feedback looks reasonable based on basic checks.'; // Default message
     const suggestions = [];
     const questionFeedback = {};
-    
-    // Start collecting issues for suggestion generation
-    const issues = [];
-    
-    // Check for offensive language
-    if (analysisResults.hasOffensiveLanguage) {
-      quality = 'poor';
-      message = 'Your feedback contains language that may be inappropriate. Please revise to ensure it is respectful.';
-      issues.push('offensive_language');
-      
-      // Add feedback for offensive phrases
-      analysisResults.offensivePhrases.forEach(({ questionId }) => {
+    const issues = new Set(); // Use a Set for unique issues
+
+    // Determine Quality based on analysis
+    if (analysisResults.hasOffensiveLanguage || analysisResults.nonConstructivePhrases.length > 0) {
+        quality = 'poor';
+        message = 'Your feedback contains potentially unprofessional or non-constructive language. Please revise.';
+        if (analysisResults.hasOffensiveLanguage) issues.add('offensive_language');
+        if (analysisResults.nonConstructivePhrases.length > 0) issues.add('non_constructive');
+    } else if (analysisResults.incompleteResponses.length > 0) {
+        quality = 'needs_improvement'; // Or 'poor' if many are incomplete? Let's start with needs_improvement
+        message = 'Some required questions are unanswered. Please complete all required fields.';
+        issues.add('incomplete');
+    } else if (analysisResults.shortResponses.length > analysisResults.totalOpenEndedCount / 2 || // Many short answers
+               analysisResults.highRatingNoComment.length > 0 || // High ratings lack comments
+               analysisResults.lowRatingNoComment.length > 0 || // Low ratings lack comments
+               analysisResults.noExamples.length > analysisResults.totalOpenEndedCount / 2) { // Many answers lack examples
+        quality = 'needs_improvement';
+        message = 'Your feedback could be more detailed and specific. Please review the suggestions.';
+        if (analysisResults.shortResponses.length > 0) issues.add('too_brief');
+        if (analysisResults.highRatingNoComment.length > 0) issues.add('high_rating_no_comment');
+        if (analysisResults.lowRatingNoComment.length > 0) issues.add('low_rating_no_comment');
+        if (analysisResults.noExamples.length > 0) issues.add('no_examples');
+    } else if (analysisResults.tooSpecific.length > 0) {
+        quality = 'needs_improvement';
+        message = 'Some responses might contain overly specific details. Ensure confidentiality is maintained.';
+        issues.add('too_specific');
+    } else if (analysisResults.feedbackBalance.tooPositive || analysisResults.feedbackBalance.tooNegative) {
+        quality = 'needs_improvement';
+        message = 'The feedback seems unbalanced. Aim for a mix of strengths and areas for development.';
+        if (analysisResults.feedbackBalance.tooPositive) issues.add('too_positive');
+        if (analysisResults.feedbackBalance.tooNegative) issues.add('too_negative');
+    } else if (analysisResults.longResponses.length > 0) {
+        // Long responses are less critical, only flag if quality is otherwise good
+        if (quality === 'good') {
+             quality = 'needs_improvement';
+             message = 'Some responses are quite long. Consider being more concise while keeping key details.';
+             issues.add('too_long');
+        }
+    }
+
+     // Generate Question-Specific Feedback based on analysis
+    analysisResults.offensivePhrases.forEach(({ questionId }) => {
         questionFeedback[questionId] = 'This response contains potentially inappropriate language.';
-      });
+    });
+    analysisResults.nonConstructivePhrases.forEach(({ questionId }) => {
+        questionFeedback[questionId] = 'This suggestion may not be constructive for development.';
+    });
+    analysisResults.incompleteResponses.forEach(questionId => {
+        questionFeedback[questionId] = 'This required question needs a response.';
+    });
+    analysisResults.shortResponses.forEach(questionId => {
+        questionFeedback[questionId] = (questionFeedback[questionId] ? questionFeedback[questionId] + ' ' : '') + 'This response is very brief. Please add more detail or examples.';
+    });
+     analysisResults.longResponses.forEach(questionId => {
+        questionFeedback[questionId] = (questionFeedback[questionId] ? questionFeedback[questionId] + ' ' : '') + 'This response is quite long. Consider summarizing key points.';
+    });
+    analysisResults.noExamples.forEach(questionId => {
+        questionFeedback[questionId] = (questionFeedback[questionId] ? questionFeedback[questionId] + ' ' : '') + 'Consider adding a specific example to illustrate this point.';
+    });
+    analysisResults.highRatingNoComment.forEach(questionId => {
+        questionFeedback[questionId] = (questionFeedback[questionId] ? questionFeedback[questionId] + ' ' : '') + 'A high rating should ideally be supported by comments or examples.';
+    });
+     analysisResults.lowRatingNoComment.forEach(questionId => {
+        questionFeedback[questionId] = (questionFeedback[questionId] ? questionFeedback[questionId] + ' ' : '') + 'A low rating should ideally be explained with specific comments or examples.';
+    });
+    analysisResults.tooSpecific.forEach(({ questionId }) => {
+        questionFeedback[questionId] = 'This may contain overly specific or confidential details. Consider generalizing.';
+    });
+
+
+    // Generate General Suggestions based on identified issues
+    if (issues.has('offensive_language')) suggestions.push('Replace unprofessional language with constructive, respectful feedback.');
+    if (issues.has('non_constructive')) suggestions.push('Focus suggestions on actionable improvements within the current role.');
+    if (issues.has('incomplete')) suggestions.push('Ensure all required questions are answered before submitting.');
+    if (issues.has('too_brief')) suggestions.push('Provide more detailed responses, especially for open-ended questions.');
+     if (issues.has('no_examples') || issues.has('high_rating_no_comment') || issues.has('low_rating_no_comment')) suggestions.push('Include concrete examples to illustrate your points and justify ratings.');
+     if (issues.has('too_long')) suggestions.push('Aim for clear and concise responses, avoiding unnecessary length.');
+    if (issues.has('too_specific')) suggestions.push('Avoid sharing confidential information; keep feedback focused on observable behaviors.');
+    if (issues.has('too_positive')) suggestions.push('Balance positive feedback by also including constructive areas for growth.');
+    if (issues.has('too_negative')) suggestions.push('Balance critical feedback by also acknowledging strengths and positive contributions.');
+
+
+    // If no specific issues found, but quality isn't perfect, add generic advice
+    if (suggestions.length === 0 && quality === 'needs_improvement') {
+      suggestions.push('Review feedback for clarity, specificity, and balance.');
     }
-    
-    // Check for non-constructive suggestions
-    if (analysisResults.nonConstructivePhrases.length > 0) {
-      quality = 'poor';
-      message = 'Your feedback contains suggestions that are not constructive for professional development.';
-      issues.push('non_constructive');
-      
-      // Add feedback for non-constructive phrases
-      analysisResults.nonConstructivePhrases.forEach(({ questionId }) => {
-        questionFeedback[questionId] = 'This response is not constructive for professional development.';
-      });
-    }
-    
-    // Check for incomplete or short responses
-    if (analysisResults.incompleteResponses.length > 0 || analysisResults.shortResponses.length > 0) {
-      quality = quality === 'poor' ? 'poor' : 'needs_improvement';
-      message = 'Some of your responses are too brief or incomplete. More detailed feedback will be more helpful.';
-      issues.push('too_brief');
-      
-      // Add feedback for incomplete responses
-      analysisResults.incompleteResponses.forEach(questionId => {
-        questionFeedback[questionId] = 'Please provide a complete response to this question.';
-      });
-      
-      // Add feedback for short responses
-      analysisResults.shortResponses.forEach(questionId => {
-        questionFeedback[questionId] = 'This response is too brief. Please provide more details.';
-      });
-    }
-    
-    // Check for overly long responses
-    if (analysisResults.longResponses.length > 0) {
-      if (quality === 'good') {
-        quality = 'needs_improvement';
-        message = 'Some responses are quite lengthy. Consider being more concise while keeping helpful details.';
-      }
-      issues.push('too_long');
-      
-      // Add feedback for long responses
-      analysisResults.longResponses.forEach(questionId => {
-        questionFeedback[questionId] = 'Consider making this response more concise while keeping the key insights.';
-      });
-    }
-    
-    // Check for lack of examples
-    if (analysisResults.noExamples.length > 0) {
-      if (quality === 'good') {
-        quality = 'needs_improvement';
-        message = 'Your feedback would be more helpful with specific examples.';
-      }
-      issues.push('no_examples');
-      
-      // Add feedback for responses without examples
-      analysisResults.noExamples.forEach(questionId => {
-        questionFeedback[questionId] = 'Include specific examples to make this feedback more actionable.';
-      });
-    }
-    
-    // Check for potentially confidential information
-    if (analysisResults.tooSpecific.length > 0) {
-      if (quality === 'good') {
-        quality = 'needs_improvement';
-      }
-      issues.push('too_specific');
-      
-      // Add feedback for overly specific responses
-      analysisResults.tooSpecific.forEach(({ questionId }) => {
-        questionFeedback[questionId] = 'This may contain overly specific or confidential information. Consider generalizing.';
-      });
-    }
-    
-    // Check for imbalanced feedback
-    if (analysisResults.feedbackBalance.tooPositive) {
-      if (quality === 'good') {
-        quality = 'needs_improvement';
-        message = 'Your feedback is very positive, but lacks constructive areas for development.';
-      }
-      issues.push('too_positive');
-    } else if (analysisResults.feedbackBalance.tooNegative) {
-      if (quality === 'good') {
-        quality = 'needs_improvement';
-        message = 'Your feedback focuses heavily on negative aspects. Consider balancing with strengths as well.';
-      }
-      issues.push('too_negative');
-    }
-    
-    // Generate suggestions based on identified issues
-    if (issues.includes('offensive_language')) {
-      suggestions.push('Replace unprofessional language with constructive, respectful feedback');
-    }
-    
-    if (issues.includes('non_constructive')) {
-      suggestions.push('Focus on actionable improvements within their current role');
-    }
-    
-    if (issues.includes('too_brief')) {
-      suggestions.push('Provide more detailed responses with specific examples');
-    }
-    
-    if (issues.includes('too_long')) {
-      suggestions.push('Be more concise while retaining important insights');
-    }
-    
-    if (issues.includes('no_examples')) {
-      suggestions.push('Include concrete examples to illustrate your points');
-    }
-    
-    if (issues.includes('too_specific')) {
-      suggestions.push('Avoid sharing confidential information or details that could identify specific situations');
-    }
-    
-    if (issues.includes('too_positive')) {
-      suggestions.push('Include constructive areas for growth and development');
-    }
-    
-    if (issues.includes('too_negative')) {
-      suggestions.push('Balance critical feedback with recognition of strengths');
-    }
-    
-    // If no suggestions were generated (no issues found), add a general one
-    if (suggestions.length === 0) {
-      suggestions.push('Continue providing balanced feedback with specific examples');
-    }
-    
+    // If truly no issues found
+     if (suggestions.length === 0 && quality === 'good') {
+       message = 'Your feedback appears well-balanced and constructive based on basic checks.' // More positive default good message
+       suggestions.push('Continue providing thoughtful and detailed feedback.');
+     }
+
     return {
       quality,
       message,
-      suggestions,
+      suggestions: suggestions.slice(0, 3), // Limit suggestions
       questionFeedback,
       analysisDetails: {
         ...analysisResults,
-        usedAI: false
+        usedAI: false // Explicitly flag that AI was not used for this result
       }
     };
   }
-  
-  // Create a test request to diagnose issues with FluxAI
+
+
+  // Create a test request to diagnose issues with FluxAI (No changes needed)
   async testFluxAiDirectly() {
     console.log('Testing FluxAI connection directly...');
-    
+
     try {
       // Try a simple check of the API first
       const response = await axios({
@@ -850,9 +973,9 @@ Question Y: [specific feedback]"`;
           'X-API-KEY': this.fluxAiConfig.apiKey
         }
       });
-      
+
       console.log('FluxAI models endpoint response:', JSON.stringify(response.data, null, 2));
-      
+
       // Now test the chat endpoint with a very simple request
       const chatResponse = await axios({
         method: 'POST',
@@ -871,23 +994,23 @@ Question Y: [specific feedback]"`;
           stream: false
         }
       });
-      
+
       console.log('FluxAI chat response status:', chatResponse.status);
       console.log('FluxAI chat response data:', JSON.stringify(chatResponse.data, null, 2));
-      
+
       return {
         success: true,
         llmsResponse: response.data,
         chatResponse: chatResponse.data
       };
-      
+
     } catch (error) {
       console.error('Error in direct FluxAI test:', error.message);
-      
+
       if (error.response) {
         console.error('API error response:', error.response.status, JSON.stringify(error.response.data, null, 2));
       }
-      
+
       return {
         success: false,
         error: error.message,
