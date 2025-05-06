@@ -446,10 +446,31 @@ const BrandingSettings = () => {
           <div className="mt-6 p-4 bg-primary/10 rounded-lg border border-primary/20">
             <h4 className="text-sm font-medium text-primary mb-2">Preview: How AI Will Sound</h4>
             <p className="text-sm text-primary/90">
-              {/* Dynamic preview based on selections */}
-              {formData.tone === 'professional' && "We value your input..."} {formData.formality === 'formal' && "We are here to assist..."} {formData.personality === 'helpful' && "We're here to support..."}
-              {/* Add more complete preview logic if desired */}
-              {formData.tone !== 'professional' && formData.formality !== 'formal' && formData.personality !== 'helpful' && "Configure tone, formality, and personality above."}
+              {
+                (() => {
+                  let previewText = '';
+                  // Tone variations
+                  if (formData.tone === 'professional') previewText += "We value your input and appreciate your participation. ";
+                  else if (formData.tone === 'friendly') previewText += "We really appreciate your input and participation! ";
+                  else if (formData.tone === 'casual') previewText += "Thanks for your input! ";
+                  else if (formData.tone === 'enthusiastic') previewText += "We're thrilled to receive your input! ";
+                  else if (formData.tone === 'authoritative') previewText += "Your input is valuable. ";
+
+                  // Formality variations
+                  if (formData.formality === 'formal') previewText += "We are here to assist if you have any questions. ";
+                  else if (formData.formality === 'semiformal') previewText += "We're here to help if you have any questions. ";
+                  else if (formData.formality === 'informal') previewText += "Let us know if you need any help! ";
+
+                  // Personality additions
+                  if (formData.personality === 'helpful') previewText += "We're here to support you throughout this process.";
+                  else if (formData.personality === 'innovative') previewText += "We're constantly improving this process for you.";
+                  else if (formData.personality === 'collaborative') previewText += "Together, we can create meaningful feedback.";
+                  else if (formData.personality === 'direct') previewText += "Clear communication makes this process effective.";
+                  else if (formData.personality === 'empathetic') previewText += "We understand providing feedback takes time and effort.";
+
+                  return previewText.trim() || "Select options above to see a preview.";
+                })()
+              }
             </p>
           </div>
         </div> {/* End main content padding */}
