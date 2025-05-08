@@ -377,7 +377,7 @@ const FeedbackAssessment = ({
           Providing feedback for: <span className="font-semibold">{targetEmployee.name}</span>
           {targetEmployee.position && <span> - {targetEmployee.position}</span>}
         </p>
-        <div className="bg-blue-50 text-blue-700 p-3 rounded-lg mt-4">
+        <div className="bg-primary/10 text-primary/90 border border-primary/20 p-3 rounded-lg mt-4">
           <p>{introMessage || `Your feedback will help ${targetEmployee.name} understand their strengths and areas for growth. Please be specific, constructive, and balanced.`}</p>
         </div>
       </div>
@@ -401,25 +401,25 @@ const FeedbackAssessment = ({
                 }}
                 className="checkbox checkbox-primary h-4 w-4" 
               />
-              <span className="ml-2 text-sm text-gray-600">Auto-save every minute</span>
+              <span className="ml-2 text-sm text-text-muted">Auto-save every minute</span>
             </label>
           </div>
         </div>
         
         <div className="flex items-center">
           {saving ? (
-            <span className="text-sm text-gray-500 flex items-center">
+            <span className="text-sm text-text-muted flex items-center">
               <Clock className="animate-spin h-3 w-3 mr-1" />
               Saving...
             </span>
           ) : lastSaved ? (
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-text-muted">
               Last saved: {lastSaved.toLocaleTimeString()}
             </span>
           ) : (
             <button
               onClick={saveDraft}
-              className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
+              className="text-sm text-accent hover:text-accent-hover flex items-center"
             >
               <Save className="h-3 w-3 mr-1" />
               Save Draft
@@ -513,13 +513,13 @@ const FeedbackAssessment = ({
 
       {/* Progress Bar - based on filled in required questions */}
       <div className="mb-8">
-        <div className="flex justify-between text-sm text-gray-600 mb-1">
+        <div className="flex justify-between text-sm text-text-muted mb-1">
           <span>Progress</span>
           <span>{calculateProgress()}%</span>
         </div>
-        <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+        <div className="h-2 w-full bg-border-muted rounded-full overflow-hidden">
           <div 
-            className="h-full bg-blue-600 transition-all duration-500"
+            className="h-full bg-primary transition-all duration-500"
             style={{ 
               width: `${calculateProgress()}%` 
             }}
@@ -535,13 +535,13 @@ const FeedbackAssessment = ({
               ? 'border-red-300 bg-red-50' 
               : formattedFeedback?.questionFeedback?.[question.id]
                 ? 'border-yellow-300 bg-yellow-50'
-                : 'border-gray-200'
+                : 'border-border-base bg-bg-surface hover:shadow-md transition-shadow'
           }`}>
             <h3 className="text-lg font-medium">{question.text}</h3>
             
             {/* Category Tag */}
             <div className="mt-1 mb-3">
-              <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+              <span className="inline-block bg-accent/10 text-accent text-xs px-2 py-1 rounded-full">
                 {question.category}
               </span>
               {question.required && (
@@ -553,7 +553,7 @@ const FeedbackAssessment = ({
             {question.type === 'rating' && (
               <div className="mt-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Poor</span>
+                  <span className="text-sm text-text-muted">Poor</span>
                   <div className="flex space-x-2">
                     {[1, 2, 3, 4, 5].map((value) => (
                       <button
@@ -563,8 +563,8 @@ const FeedbackAssessment = ({
                         className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors
                           ${
                             ratings[question.id] === value
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                              ? 'bg-primary text-on-primary ring-2 ring-offset-1 ring-primary'
+                              : 'bg-bg-muted hover:bg-border-base text-text-base border border-border-base'
                           }`}
                       >
                         {value}
@@ -586,14 +586,14 @@ const FeedbackAssessment = ({
                       ? 'border-red-300' 
                       : formattedFeedback?.questionFeedback?.[question.id]
                         ? 'border-yellow-300'
-                        : 'border-gray-300'
-                  } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                        : 'border-border-base bg-bg-surface text-text-base placeholder-text-muted'
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary`}
                   placeholder="Provide specific examples and constructive feedback"
                   value={responses[question.id] || ''}
                   onChange={(e) => handleResponseChange(question.id, e.target.value)}
                 ></textarea>
                 {responses[question.id] && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-text-muted mt-1">
                     Character count: {responses[question.id].length}
                   </div>
                 )}
@@ -618,7 +618,7 @@ const FeedbackAssessment = ({
       </div>
 
       {/* Review and Submit Section */}
-      <div className="mt-10 border-t border-gray-200 pt-6">
+      <div className="mt-10 border-t border-border-base pt-6">
         <h2 className="text-xl font-bold mb-4">Review Your Feedback</h2>
         
         {/* Initially show only AI Check button */}
@@ -627,7 +627,7 @@ const FeedbackAssessment = ({
             type="button"
             onClick={checkFeedbackWithAI}
             disabled={aiChecking}
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors flex items-center justify-center"
+            className="w-full py-3 px-4 bg-primary hover:bg-primary-hover text-on-primary rounded-md shadow-sm transition-colors flex items-center justify-center"
           >
             {aiChecking ? (
               <>
@@ -681,7 +681,7 @@ const FeedbackAssessment = ({
                   type="button"
                   onClick={checkFeedbackWithAI}
                   disabled={aiChecking}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm transition-colors flex items-center justify-center"
+                  className="w-full py-3 px-4 bg-primary hover:bg-primary-hover text-on-primary rounded-md shadow-sm transition-colors flex items-center justify-center"
                 >
                   {aiChecking ? (
                     <>
@@ -728,7 +728,7 @@ const FeedbackAssessment = ({
               </div>
             </div>
             <div className="mb-6">
-              <p className="text-gray-700 mb-3">
+              <p className="text-text-muted mb-3">
                 Our AI assistant has flagged potential issues with your feedback. Are you sure you want to submit it as is?
               </p>
               <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-md text-sm">
@@ -739,7 +739,7 @@ const FeedbackAssessment = ({
               <button
                 type="button"
                 onClick={() => setBypassWarningOpen(false)}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors"
+                className="px-4 py-2 bg-bg-muted hover:bg-border-base text-text-base rounded-md transition-colors border border-border-base"
               >
                 Go Back & Revise
               </button>
